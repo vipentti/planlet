@@ -174,8 +174,8 @@ The Plan skill should:
 7. Propose a descriptive kebab-case slug.
 8. Present a concise plan and task breakdown in the conversation.
 9. Ask the user to confirm before writing the planlet to the repository.
-10. After confirmation, create both `plan.md` and `tasks.md`.
-11. Validate the resulting planlet and report its path and status.
+10. After confirmation, use `planlet create` to scaffold both `plan.md` and `tasks.md`, then replace the stubs with the agreed plan and task content.
+11. Validate the populated planlet and report its path and status.
 
 Planning is conversational and may be abandoned without creating files. Unlike OpenSpec's separate Explore and Propose commands, Planlet intentionally combines exploration and proposal into one skill while retaining a confirmation boundary before persistence.
 
@@ -401,6 +401,8 @@ Sections can be omitted when they would add no value, but Summary, Scope, Approa
 
 The CLI should treat most of `plan.md` as opaque Markdown. It may extract the first H1 as the display title and validate the presence of expected headings, but it should not attempt semantic interpretation.
 
+This template describes the plan's eventual, populated content once an agent or human has filled it in; it is not what `planlet create` writes. `create` always scaffolds the minimal H1-only stub defined by §10.5, regardless of how much of this template the finished plan will use.
+
 ### 10.4 `tasks.md`
 
 `tasks.md` is the machine-readable progress surface and human checklist.
@@ -441,6 +443,28 @@ A completion record must be appended by the CLI before moving the planlet:
 For an incomplete override, `Mode` should be `incomplete override`, followed by the remaining task IDs and the user-approved reason.
 
 The task parser should be deliberately narrow and line-oriented. A general Markdown AST dependency is not necessary for the MVP.
+
+### 10.5 Creation scaffolding
+
+`planlet create <slug> [--title <title>]` creates a minimal, structurally valid draft for an agent or human to populate. It must create exactly these two primary files:
+
+`plan.md`:
+
+```markdown
+# Add Multiple User Support
+```
+
+`tasks.md`:
+
+```markdown
+# Tasks: Add Multiple User Support
+```
+
+When `--title` is supplied, trim surrounding whitespace, require non-empty single-line text, and use it for both H1 headings. Otherwise, derive the display title by splitting the slug at hyphens, uppercasing the first ASCII letter of each segment, leaving the remaining characters unchanged, and joining the segments with spaces. The CLI must not add instructional prose, placeholder tasks, or semantic plan content.
+
+The directory and both files should become visible as one safe creation operation, for example by preparing them in a temporary sibling directory and renaming it into place after both writes succeed. Creation must refuse active or completed logical-slug conflicts and must not leave a partially created planlet on failure.
+
+A newly created scaffold has zero recognized tasks and therefore derives the `draft` state. It is structurally valid, although normal advisory warnings such as missing recommended `plan.md` sections may remain until an agent or human populates it.
 
 ## 11. Derived Lifecycle States
 
@@ -652,7 +676,7 @@ Responsibilities:
 - Define scope, exclusions, acceptance criteria, and verification.
 - Propose the slug.
 - Obtain confirmation before writing.
-- Create or revise both files consistently.
+- After confirmation, scaffold new files with `planlet create` (per §8.1 step 10) rather than writing them directly, then replace the stubs with the agreed content; revise existing files consistently.
 - Run CLI validation.
 
 Must not:
@@ -932,6 +956,7 @@ interface PlanSummary {
 - Resolve and verify all mutation targets remain under the repository root.
 - Treat symlinks that escape the root as unsafe.
 - Use atomic writes for `tasks.md` updates.
+- Make whole-planlet creation atomic (see §10.5): prepare both new files and become visible as a single operation, so a crash or error mid-creation cannot leave a directory containing only one of `plan.md` or `tasks.md`.
 - Do not shell out for ordinary file operations.
 - Never overwrite an existing active or completed planlet silently.
 - Capture the completion timestamp once, derive the UTC archive date from that same value, and use both consistently in the completion record and destination path.
@@ -993,7 +1018,8 @@ The CLI should distinguish structural errors from advisory hygiene warnings.
 
 - Repository-root discovery from nested directories.
 - Initializing a clean fixture repository.
-- Creating and listing several active planlets.
+- Creating minimal H1-only `plan.md` and `tasks.md` scaffolds, including automatic `plans/` creation, deterministic title derivation, explicit titles, `draft` status, collision refusal, and cleanup after simulated partial failure.
+- Populating and listing several active planlets.
 - Checking and unchecking tasks idempotently.
 - Completing a fully checked planlet.
 - Recording a normal completion timestamp and moving to the corresponding date-prefixed archive path.
@@ -1038,7 +1064,7 @@ Phase 0 is temporary scaffolding for dogfooding, not a second implementation of 
 - Repository discovery.
 - Slug validation.
 - `plans/` initialization.
-- Create, list, show, status, tasks, validate.
+- Create minimal valid draft scaffolds, plus list, show, status, tasks, and validate.
 - Check and uncheck tasks.
 - Complete and incomplete-override behavior.
 - Compact default output plus JSON and human formats.
@@ -1109,7 +1135,6 @@ The following decisions can be resolved during prototyping:
 - Whether the default compact format should use the official TOON library or a small compatible subset.
 - Whether installed skills should invoke a global `planlet` binary or include a synchronized bundled CLI.
 - Whether Claude-style command adapters provide enough value beyond skills to include in the MVP.
-- Whether `planlet create` should write full templates or only create the directory for the Plan skill to populate atomically.
 - Whether incomplete completion records belong in `tasks.md` or a short section in `plan.md`.
 - Whether Node 22 should remain supported once Node 24 is ubiquitous in agent environments.
 - Whether plan freshness should be based on timestamps, Git commits, or remain purely advisory.
