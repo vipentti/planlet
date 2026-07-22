@@ -13,3 +13,8 @@
 - [x] T11 Review the finished skills against `planlet_design.md` and the external-inspiration boundary, confirming Planlet-specific behavior and independently written instructions.
 - [x] T12 Dogfood the bootstrap workflow on this planlet, keep its checkboxes current during implementation, and report any design changes that should feed into the CLI planlet.
 - [x] T13 Use `planlet-plan` to propose, obtain confirmation for, persist, and review `plans/cli-core/` for Phase 1, then hand it off without implementing, updating, or completing CLI-core tasks under this planlet.
+
+## Completion
+
+- Completed at: 2026-07-22T09:45:34Z
+- Mode: normal
