@@ -309,6 +309,8 @@ Suggested behavior:
 3. If no repository marker is found, use the current directory only when it already contains `plans/` or when the command explicitly creates a new setup.
 4. Never walk above the discovered root when resolving plan paths.
 
+The MVP supports exactly one `plans/` directory per repository, located at the discovered root. Multi-package monorepos that want isolated planlet sets are out of scope for the MVP; `--root` can be pointed at a package subdirectory as a manual workaround, but repository-root discovery does not search for or aggregate multiple `plans/` directories automatically.
+
 ## 10. Planlet File Contract
 
 ### 10.1 Slug rules
@@ -402,6 +404,7 @@ Rules:
 - Each task has a stable, unique ID such as `T1`.
 - Matching of `[x]` may be case-insensitive on read but should normalize to lowercase on write.
 - IDs must not be renumbered simply because tasks are reordered.
+- New task IDs are assigned as the highest existing numeric suffix plus one, not a count of current tasks, so IDs remain stable and collision-free after tasks are removed or reordered.
 - Task text should describe a verifiable outcome, not an agent thought process.
 - Verification should appear as explicit tasks when it is significant.
 - The MVP need not support nested task trees or dependency syntax.
@@ -552,6 +555,7 @@ Output rules:
 - List records should normally contain only slug, state, completed count, and total count.
 - Empty results must be explicit, for example `plans[0]` plus summary counts.
 - Large content should be truncated with a size hint and a `--full` escape hatch.
+- `--json` output should include a `schemaVersion` integer field so downstream integrations can detect breaking output changes independently of the CLI's own version number.
 
 ### 13.5 Structured errors
 
@@ -914,6 +918,8 @@ interface PlanSummary {
 - Do not infer authorization to delete abandoned or invalid plans.
 - Make task checking idempotent: checking an already checked task succeeds without duplicating changes.
 - Consider an optional precondition hash for future concurrent-agent safety.
+- When completing a planlet, use a plain filesystem move even inside a git working tree. Git can detect the rename from the resulting delete-plus-add, while index management remains the user's responsibility. The CLI must not inspect working-tree cleanliness, stage, or commit on its own.
+- Because `tasks.md` is a plain, line-oriented checklist under normal version control, concurrent edits across branches are expected to surface as ordinary git merge conflicts on individual checkbox lines. This is an acceptable, low-ceremony failure mode: conflicts are resolved like any other text conflict and do not require dedicated tooling in the MVP.
 
 ## 19. Validation Rules
 
@@ -1080,4 +1086,3 @@ None of these questions blocks the central product contract.
 - [Node.js TypeScript documentation](https://nodejs.org/api/typescript.html) — runtime TypeScript behavior and reasons to distribute compiled JavaScript.
 - [Node.js `util.parseArgs`](https://nodejs.org/api/util.html#utilparseargsconfig) — dependency-free argument parsing suitable for the initial CLI.
 - [Bun standalone executables](https://bun.com/docs/bundler/executables) and [Deno compile](https://docs.deno.com/runtime/reference/cli/compile/) — possible future standalone TypeScript distribution options.
-
