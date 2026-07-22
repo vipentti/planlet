@@ -1,0 +1,14 @@
+# Tasks: CLI Core
+
+- [ ] T1 Create the TypeScript and Node.js package, build, test, and executable scaffold
+- [ ] T2 Define the domain models, structured errors, schema versioning, and exit-code categories
+- [ ] T3 Implement repository-root discovery, safe path resolution, and slug and archive-name validation
+- [ ] T4 Implement narrow task parsing, planlet structural validation, completion-record validation, and lifecycle status derivation
+- [ ] T5 Implement planlet creation and the list, show, status, tasks, and validate read operations
+- [ ] T6 Implement atomic, idempotent task check and uncheck operations that preserve unrelated Markdown
+- [ ] T7 Implement normal and incomplete-override completion with one UTC timestamp, audit recording, collision refusal, and safe movement
+- [ ] T8 Implement compact default, versioned JSON, and human output renderers with stdout and stderr separation
+- [ ] T9 Wire command parsing, explicit root selection, no-argument dashboard behavior, help, and command dispatch
+- [ ] T10 Add unit tests for domain rules, status, rendering, errors, timestamps, and archive names
+- [ ] T11 Add disposable integration fixtures for command workflows, malformed data, collisions, unsafe paths, symlink escape, and exit behavior
+- [ ] T12 Run the full verification suite and document the stable repository commands in `AGENTS.md`
