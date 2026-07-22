@@ -42,7 +42,7 @@ The implementation will:
 - Provide an explicit CLI-unavailable fallback for bootstrapping this repository.
 - Preserve the one-planlet-per-mutating-workflow rule.
 - Make the skills usable through natural-language requests as well as harness-specific invocation syntax.
-- Add scenario-based evaluations or fixtures outside the skill directories.
+- Add committed scenario definitions at `evaluations/skills/scenarios.md` and run them against disposable repository fixtures outside the skill directories and active `plans/` state.
 
 ### Planning workflow
 
@@ -65,6 +65,8 @@ Malformed or missing files must never be treated as completed work. Completion w
 ## CLI-Unavailable Bootstrap Behavior
 
 At the beginning of a workflow, each skill will determine whether the required `planlet` command is available. CLI use is preferred whenever possible. If it is unavailable, the skill may perform only the equivalent repository-local operations needed for its own workflow and must announce that fallback behavior is active.
+
+This workflow-start decision belongs in each skill's primary path: `planlet-plan`, `planlet-implement`, and `planlet-complete` will each check for the command required by that workflow and delegate to it when available. The separate fallback task supplies and verifies the narrow manual branches behind those decision points; it does not postpone CLI detection until after the core workflows are written.
 
 The fallback will follow the contract in `planlet_design.md`, including:
 
@@ -97,7 +99,7 @@ These conventions should be expressed in each relevant skill rather than introdu
 
 ### 2. Build concise skill entry points
 
-Initialize each skill using the repository's chosen skill scaffolding process, then replace generated placeholders with original Planlet-specific instructions. Keep the main skill bodies procedural and concise. Put nuanced guidance and examples in the referenced files, avoiding duplicated text between `SKILL.md` and references.
+Create the declared skill directories and files directly under `skills/`; this repository does not yet provide or select a skill generator. Write original Planlet-specific instructions without generated examples or placeholders. Keep the main skill bodies procedural and concise. Put nuanced guidance and examples in the referenced files, avoiding duplicated text between `SKILL.md` and references.
 
 Skill instructions will use imperative language and avoid assumptions about harness-specific tools. They may describe capabilities such as asking the user, inspecting files, or executing the CLI without naming a vendor-only interaction mechanism.
 
@@ -119,9 +121,11 @@ This separation keeps invocation intent predictable while still allowing a user 
 
 ### 5. Validate structure and behavior
 
-Run structural skill validation for each skill. Add scenario coverage for vague and precise planning requests, abandoned persistence, plan revision, ambiguous target selection, repository drift, failed verification, normal completion, and incomplete override confirmation.
+No automated skill validator is currently available in this repository. Manually validate each skill against the checklist in Verification rather than inventing a command or depending on a machine-local generator or validator. If the repository gains a documented skill-validation command before implementation reaches this step, run it in addition to the manual checklist.
 
-Finally, use the bootstrap skills on this planlet and at least one subsequent CLI planlet. Record discovered changes directly in the canonical skill sources and keep this task list current throughout implementation.
+Define scenario coverage in `evaluations/skills/scenarios.md` for vague and precise planning requests, abandoned persistence, plan revision, ambiguous target selection, repository drift, failed verification, normal completion, and incomplete override confirmation. Each scenario will record its fixture setup, user prompt, expected workflow decisions, expected artifacts, and safety checks. Execute scenarios in disposable repository fixtures so generated planlets, completion moves, raw outputs, and diffs cannot alter active repository state; the disposable outputs need not be committed.
+
+Finally, dogfood the bootstrap workflow on this planlet and use `planlet-plan` to propose, obtain confirmation for, persist, and review `plans/cli-core/` as the Phase 1 planlet described by `planlet_design.md`. This bootstrap planlet ends at the reviewed planning handoff: it does not implement CLI code or execute the CLI-core planlet's implementation and completion workflows. Those later dogfood steps belong to `cli-core`; any resulting skill changes require a separately approved revision of the canonical skill sources.
 
 ## Inspiration and Originality Boundary
 
@@ -140,6 +144,7 @@ References consulted during planning:
 ## Out of Scope
 
 - Implementing the Planlet CLI.
+- Implementing, updating progress for, or completing tasks from the separate `cli-core` planlet as part of this bootstrap planlet.
 - Building harness installers or generated copies under `.agents/`, `.claude/`, or `.codex/`.
 - Adding harness-specific slash-command adapters.
 - Publishing skills to a registry or npm package.
@@ -150,7 +155,7 @@ References consulted during planning:
 
 ## Acceptance Criteria
 
-- Canonical `planlet-plan`, `planlet-implement`, and `planlet-complete` skill directories exist under `skills/` and pass the selected structural validator.
+- Canonical `planlet-plan`, `planlet-implement`, and `planlet-complete` skill directories exist under `skills/` and pass the manual structural checklist in Verification.
 - Each skill has valid `name` and `description` frontmatter that makes its intended triggers distinguishable from the other two skills.
 - `planlet-plan` inspects the repository, keeps planning separate from product implementation, obtains confirmation before persistence, and creates or revises both Planlet files consistently.
 - `planlet-implement` selects one planlet, re-reads both files, checks current repository conditions, updates tasks incrementally, and leaves failed or unverified tasks unchecked.
@@ -158,20 +163,25 @@ References consulted during planning:
 - All skills prefer available CLI commands but can dogfood the repository through a clearly announced, narrowly scoped manual fallback.
 - The manual fallback follows the Planlet slug, file, task, selection, and completion safety contracts without becoming a general-purpose parser.
 - Plan and task templates are useful to a fresh agent and avoid unnecessary documentation ceremony.
-- Scenario evaluations cover the primary workflow, ambiguity, failure, drift, revision, and override cases.
+- `evaluations/skills/scenarios.md` defines the primary workflow, ambiguity, failure, drift, revision, and override cases with enough setup and expected behavior to run them against disposable repositories.
 - Skill content is original Planlet-specific work; external projects are credited as inspiration without copied instruction text or borrowed product-specific mechanics.
 - This planlet is exercised using the bootstrap workflow, with task checkboxes updated as work is implemented and verified.
+- The completed planning skill is used to propose, confirm, persist, and review `plans/cli-core/` for Phase 1, without implementing CLI code under this planlet.
 
 ## Verification
 
-- Run the skill scaffolding validator against all three skill directories.
-- Inspect frontmatter parsing, skill names, and descriptions.
-- Review every referenced resource path from each `SKILL.md` and confirm it exists.
-- Confirm the skill directories contain no placeholder or unnecessary auxiliary files.
-- Run scenario evaluations with fresh agent context where practical and inspect the resulting artifacts, diffs, and workflow decisions.
+- Confirm the three skill directories and their required files exactly match the layout in Scope, with no unplanned resource directories.
+- Confirm every `SKILL.md` starts with YAML frontmatter containing only non-empty `name` and `description` fields, each `name` matches its directory, and all names use lowercase letters, digits, and single hyphens.
+- Confirm every `SKILL.md` has a non-empty instruction body, the three descriptions distinguish their intended triggers, and every referenced relative path resolves to an existing file.
+- Confirm the skill directories contain no TODOs, generated examples, placeholder files, or unnecessary auxiliary documentation.
+- Confirm the planning templates have H1 titles and that the task template demonstrates valid, unique `T<number>` task lines using recognized checkbox syntax.
+- If a repository-documented automated skill validator exists by verification time, run it in addition to these manual checks; otherwise state explicitly that automated skill validation was unavailable.
+- Run the scenarios defined in `evaluations/skills/scenarios.md` with fresh agent context where practical, using disposable repositories, and inspect the resulting artifacts, diffs, and workflow decisions.
 - Exercise the CLI-unavailable paths against disposable repository fixtures, including UTC-derived archive naming and collision handling, before using completion behavior on a real planlet.
 - Compare resulting planlets with the structural rules in `planlet_design.md`.
 - Search the new skills for suspiciously matching external phrasing and rewrite anything that is not independently expressed.
+- Confirm `plans/cli-core/plan.md` and `tasks.md` are created only after user confirmation, satisfy the Planlet file contract, and contain no implementation changes from this bootstrap workflow.
+- Run `git diff --check`.
 
 ## Risks and Considerations
 
