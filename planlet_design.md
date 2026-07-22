@@ -1,0 +1,1083 @@
+# Planlet Design
+
+> **Status:** Initial product and technical design
+>
+> **Purpose:** Provide durable context for designing and implementing the Planlet CLI and its agent skills.
+
+## 1. Summary
+
+Planlet is a lightweight, repository-local planning and task-management utility designed primarily for AI coding agents and secondarily for human review.
+
+It supports a simple lifecycle:
+
+```text
+explore and plan -> human review -> implement -> verify -> complete/archive
+```
+
+Every unit of work is a **planlet**: a small, self-contained, reviewable implementation plan consisting of exactly two primary Markdown files:
+
+```text
+plans/<descriptive-name-slug>/
+├── plan.md
+└── tasks.md
+```
+
+Completed planlets are moved to:
+
+```text
+plans/completed/<descriptive-name-slug>/
+```
+
+Planlet deliberately provides less documentation ceremony than specification-driven systems such as OpenSpec. It does not require separate proposal, requirements, design, or specification documents. The intended product boundary is:
+
+- Agent skills provide reasoning, investigation, conversation, implementation, and judgment.
+- The CLI provides deterministic naming, discovery, validation, progress updates, status calculation, installation, and archival operations.
+- Markdown files remain the transparent, version-controlled source of truth.
+
+## 2. Name and Vocabulary
+
+**Project name:** Planlet  
+**CLI executable:** `planlet`  
+**Tagline:** *Small plans. Clear handoffs.*
+
+A **planlet** is a small, executable, reviewable unit of intended work. The name communicates the core distinction from heavier specification systems: Planlet manages focused plans rather than a permanent specification corpus or full project roadmap.
+
+Canonical skill names:
+
+- `planlet-plan`
+- `planlet-implement`
+- `planlet-complete`
+
+Possible user-facing invocations depend on the agent harness:
+
+```text
+$planlet-plan Add support for multiple users
+$planlet-implement add-more-users
+$planlet-complete add-more-users
+```
+
+Some harnesses may expose these as slash commands, namespaced commands, or skills selected through natural language. The underlying skill behavior must remain the same.
+
+Use **complete** as the canonical lifecycle term. **Archive** describes the storage operation and may be retained as a CLI or skill alias for discoverability.
+
+## 3. Problem Statement
+
+AI coding sessions often contain important planning context that is lost when the conversation ends. Existing spec-driven workflows solve this but may introduce more documents, phases, and long-lived specification management than a small project or personal workflow needs.
+
+Planlet should make it inexpensive to:
+
+- Investigate an idea before changing code.
+- Agree on a concrete implementation plan.
+- Persist only the context needed by a future implementing agent.
+- Track progress reliably across sessions.
+- Let humans review and edit plans using ordinary Markdown and Git.
+- Support several active plans without confusing which one is being implemented.
+- Prevent accidental archival of unfinished work.
+- Work across multiple agent harnesses rather than being tied to one vendor.
+
+## 4. Goals
+
+### 4.1 Primary goals
+
+- Keep planning artifacts small, obvious, and human-readable.
+- Store all project state locally in the repository.
+- Make a plan portable between users, sessions, agents, and CI systems.
+- Separate generative agent behavior from deterministic file and lifecycle operations.
+- Support many active planlets while targeting exactly one planlet per implementation or completion operation.
+- Make status and task progress cheap for agents to query.
+- Produce compact, structured, token-efficient CLI output.
+- Make incomplete completion attempts safe and explicit.
+- Support Agent Skills-compatible harnesses through generated or copied installation artifacts.
+- Work well for code changes while remaining general enough for other repository-local work.
+
+### 4.2 Secondary goals
+
+- Support automated implementation in CI or background-agent environments.
+- Make it easy for a later integration to create a pull request after successful implementation.
+- Allow optional native standalone executables in the future.
+- Allow additional workflow skills or harness adapters without changing the plan format.
+
+## 5. Non-goals
+
+The initial product is not intended to be:
+
+- A permanent desired-state specification system.
+- A replacement for GitHub Issues, Jira, Linear, or project roadmaps.
+- A database-backed task service.
+- A multi-user real-time collaboration server.
+- A general Markdown editor or parser.
+- A dependency-graph scheduler or multi-agent orchestrator.
+- An agent runtime or model provider.
+- A tool that creates pull requests by itself in the MVP.
+- A tool that semantically decides whether an implementation is correct without an agent.
+
+These boundaries should remain explicit. Planlet may integrate with larger systems later without absorbing their responsibilities.
+
+## 6. Design Principles
+
+1. **Two primary files per planlet.** Keep `plan.md` and `tasks.md` sufficient for the normal workflow.
+2. **Files are the source of truth.** Avoid hidden databases and opaque state.
+3. **Skills reason; the CLI calculates.** Put judgment in skills and deterministic mechanics in code.
+4. **Review before implementation.** A user should be able to inspect and revise the persisted plan before work begins.
+5. **No silent completion.** Always verify task completion before archival.
+6. **One target per mutating operation.** Implementation and completion must never implicitly operate on several planlets.
+7. **Many active plans are normal.** Listing and status commands must handle this efficiently.
+8. **Agent-efficient by default.** Minimize output fields and round trips.
+9. **Human-readable without special tools.** The repository remains understandable if the CLI is unavailable.
+10. **Portable skills, thin adapters.** Maintain one canonical workflow and render only harness-specific packaging.
+11. **Safe, non-destructive lifecycle operations.** Completion moves files; it does not delete them.
+12. **Low ceremony over exhaustive documentation.** Add structure only when it improves implementation reliability.
+
+## 7. High-Level Architecture
+
+```text
+User or automation
+        |
+        v
+Agent harness (Codex, Claude Code, generic Agent Skills, ...)
+        |
+        v
+Planlet skill (plan / implement / complete)
+        |                        \
+        | judgment               \ deterministic operations
+        v                         v
+Repository analysis          Planlet CLI
+                                  |
+                                  v
+                      plans/<slug>/{plan.md,tasks.md}
+```
+
+The skill is responsible for activities such as reading code, comparing technical options, asking clarifying questions, deciding what tests are appropriate, and implementing changes.
+
+The CLI is responsible for activities such as validating slugs, locating the repository root, creating folders, parsing task checkboxes, calculating progress, producing structured output, installing skills, and moving completed plans.
+
+The CLI must not call an LLM. Skills must not duplicate deterministic parsing and lifecycle rules when the CLI is available.
+
+## 8. User Workflows
+
+### 8.1 Plan
+
+Example request:
+
+```text
+$planlet-plan Let's implement a feature that adds more users to the system.
+```
+
+The Plan skill should:
+
+1. Accept the user's description, or ask what they want to plan when no useful description is provided.
+2. Inspect the repository before recommending an approach.
+3. Clarify the problem, desired outcome, boundaries, constraints, and acceptance criteria.
+4. Compare reasonable approaches when the choice is not obvious.
+5. Call out risks, migrations, compatibility concerns, and testing needs.
+6. Narrow the discussion into a concrete, buildable scope.
+7. Propose a descriptive kebab-case slug.
+8. Present a concise plan and task breakdown in the conversation.
+9. Ask the user to confirm before writing the planlet to the repository.
+10. After confirmation, create both `plan.md` and `tasks.md`.
+11. Validate the resulting planlet and report its path and status.
+
+Planning is conversational and may be abandoned without creating files. Unlike OpenSpec's separate Explore and Propose commands, Planlet intentionally combines exploration and proposal into one skill while retaining a confirmation boundary before persistence.
+
+If the user already knows exactly what they want, the skill should avoid unnecessary questions and proceed directly to repository analysis and a proposed written plan.
+
+### 8.2 Human review and revision
+
+After creation, the user may:
+
+- Read or edit `plan.md` and `tasks.md` directly.
+- Ask an agent to revise the plan.
+- Commit the plan without implementing it.
+- Hand it to a different agent or future session.
+- Start implementation immediately.
+
+When a revision changes scope, approach, acceptance criteria, or deliverables, the Plan skill must reconcile both files. It must not update `plan.md` while leaving a stale task list.
+
+Revision rules:
+
+- Preserve stable IDs of unchanged tasks.
+- Do not silently remove completed tasks.
+- Explain when a plan change invalidates or supersedes completed work.
+- Add, remove, split, or reorder unfinished tasks to match the revised plan.
+- Re-run structural validation after editing.
+
+The CLI can validate structure, but semantic consistency between the two documents remains an agent responsibility.
+
+### 8.3 Implement
+
+Example request:
+
+```text
+$planlet-implement add-more-users
+```
+
+The Implement skill should:
+
+1. Accept exactly one slug, or resolve which active planlet the user means.
+2. Read both `plan.md` and `tasks.md` completely.
+3. Validate the planlet before changing code.
+4. Inspect the current repository because the code may have changed since planning.
+5. Compare current conditions with the plan and raise material conflicts.
+6. Implement tasks in a sensible order, respecting dependencies described by the checklist.
+7. Mark a task complete only after its work and relevant verification succeed.
+8. Keep `tasks.md` current throughout implementation, not only at the end.
+9. Run tests and other checks in proportion to the change.
+10. Report failures, blockers, deviations, and newly discovered work clearly.
+11. Avoid silently expanding scope. Material additions should be reflected in the plan and task list or approved by the user.
+12. Finish with a summary of changes, verification results, and any remaining tasks.
+
+Starting implementation is considered approval to execute that specific persisted planlet. A separate `approved` metadata field is not required in the MVP.
+
+### 8.4 Complete and archive
+
+Example request:
+
+```text
+$planlet-complete add-more-users
+```
+
+The Complete skill should:
+
+1. Resolve exactly one active planlet.
+2. Run structural validation.
+3. Ask the CLI to verify task completion.
+4. If all tasks are complete, summarize the result and complete the planlet.
+5. If tasks remain incomplete, show the remaining task IDs and descriptions.
+6. Warn the user that the planlet is incomplete and ask for explicit confirmation before overriding the check.
+7. If confirmed, provide an explicit reason to the CLI and archive with the incomplete-task override.
+8. Move the planlet to `plans/completed/<slug>`.
+9. Report the final destination and whether completion was normal or forced.
+
+The CLI itself should remain non-interactive. On incomplete work it returns a structured error and non-zero exit code. The skill owns the human confirmation conversation and then, if approved, calls an explicit override such as:
+
+```bash
+planlet complete add-more-users \
+  --allow-incomplete \
+  --reason "Two deployment tasks were intentionally deferred"
+```
+
+The completion operation should record the timestamp, remaining task IDs, and override reason in `tasks.md` before moving the directory. This preserves the two-file model while leaving an audit trail.
+
+### 8.5 CI and pull-request workflow
+
+A future automated workflow may:
+
+1. Select one active planlet explicitly.
+2. Run the Implement skill in a non-interactive agent session.
+3. Verify that all tasks and tests pass.
+4. Commit the implementation and updated task list.
+5. Create a pull request through a separate integration.
+6. Allow a human or follow-up job to run the Complete skill after approval or merge.
+
+Planlet should expose clean exit codes and machine output to enable this, but should not couple the core CLI to a particular CI or Git hosting service.
+
+## 9. Repository Layout
+
+Default layout:
+
+```text
+<repository-root>/
+├── plans/
+│   ├── add-more-users/
+│   │   ├── plan.md
+│   │   └── tasks.md
+│   ├── improve-search-ranking/
+│   │   ├── plan.md
+│   │   └── tasks.md
+│   └── completed/
+│       └── previous-change/
+│           ├── plan.md
+│           └── tasks.md
+└── ...
+```
+
+Defaults:
+
+- Active root: `plans/`
+- Completed root: `plans/completed/`
+- Plan filename: `plan.md`
+- Task filename: `tasks.md`
+
+The MVP should prefer convention over configuration. Custom paths can be considered later, but the CLI should support an explicit `--root <path>` for automation and unusual repository layouts.
+
+### 9.1 Repository-root discovery
+
+Suggested behavior:
+
+1. Use `--root` when supplied.
+2. Otherwise walk upward from the current directory until a repository marker such as `.git` is found.
+3. If no repository marker is found, use the current directory only when it already contains `plans/` or when the command explicitly creates a new setup.
+4. Never walk above the discovered root when resolving plan paths.
+
+## 10. Planlet File Contract
+
+### 10.1 Slug rules
+
+A slug should:
+
+- Use lowercase ASCII letters, digits, and single hyphens.
+- Begin and end with an alphanumeric character.
+- Be descriptive rather than numbered-only.
+- Reject path separators, `.` segments, whitespace, underscores, and repeated hyphens.
+- Be unique among both active and completed planlets unless an explicit reopen or rename workflow is added later.
+
+Example valid slug:
+
+```text
+add-multiple-user-support
+```
+
+Example validation expression:
+
+```text
+^[a-z0-9]+(?:-[a-z0-9]+)*$
+```
+
+### 10.2 `plan.md`
+
+`plan.md` contains intent and implementation context. It should be detailed enough for a capable agent in a fresh session, without duplicating the task checklist.
+
+Recommended template:
+
+```markdown
+# Add Multiple User Support
+
+## Summary
+
+Briefly describe the intended outcome.
+
+## Motivation
+
+Explain the problem and why it is worth solving.
+
+## Scope
+
+Describe what will change.
+
+## Out of Scope
+
+List nearby work that is intentionally excluded.
+
+## Approach
+
+Describe the chosen technical approach and important decisions.
+
+## Acceptance Criteria
+
+- Observable outcome one.
+- Observable outcome two.
+
+## Verification
+
+Describe relevant automated and manual checks.
+
+## Risks and Considerations
+
+Record migrations, compatibility concerns, security implications, or open risks.
+```
+
+Sections can be omitted when they would add no value, but Summary, Scope, Approach, Acceptance Criteria, and Verification should normally be present.
+
+The CLI should treat most of `plan.md` as opaque Markdown. It may extract the first H1 as the display title and validate the presence of expected headings, but it should not attempt semantic interpretation.
+
+### 10.3 `tasks.md`
+
+`tasks.md` is the machine-readable progress surface and human checklist.
+
+Recommended template:
+
+```markdown
+# Tasks: Add Multiple User Support
+
+- [ ] T1 Add the user persistence model and migration
+- [ ] T2 Implement user creation and retrieval services
+- [ ] T3 Expose the required API operations
+- [ ] T4 Add unit and integration tests
+- [ ] T5 Run the relevant verification suite
+```
+
+Rules:
+
+- A task line uses `- [ ]` or `- [x]`.
+- Each task has a stable, unique ID such as `T1`.
+- Matching of `[x]` may be case-insensitive on read but should normalize to lowercase on write.
+- IDs must not be renumbered simply because tasks are reordered.
+- Task text should describe a verifiable outcome, not an agent thought process.
+- Verification should appear as explicit tasks when it is significant.
+- The MVP need not support nested task trees or dependency syntax.
+- Free-form Markdown notes are allowed outside recognized task lines.
+
+An optional completion record may be appended by the CLI:
+
+```markdown
+## Completion
+
+- Completed at: 2026-07-22T12:34:56Z
+- Mode: incomplete override
+- Remaining tasks: T4, T5
+- Reason: Deployment verification was intentionally deferred.
+```
+
+The task parser should be deliberately narrow and line-oriented. A general Markdown AST dependency is not necessary for the MVP.
+
+## 11. Derived Lifecycle States
+
+Avoid mandatory status frontmatter in the MVP. Status can be calculated from file location and task progress:
+
+| Condition | Derived state |
+|---|---|
+| Required files missing or malformed | `invalid` |
+| Valid files but zero recognized tasks | `draft` |
+| Tasks exist and none are checked | `planned` |
+| Some but not all tasks are checked | `in_progress` |
+| All tasks are checked in an active directory | `ready_to_complete` |
+| Planlet is under `plans/completed/` | `completed` |
+
+Completed planlets should still be structurally inspectable. A completed planlet with unchecked tasks and no override record should produce a hygiene warning.
+
+## 12. Target Selection and Concurrency
+
+Several active planlets may exist simultaneously, but every mutating workflow must target exactly one.
+
+Selection rules when a skill receives no slug:
+
+1. If there are no active planlets, report that clearly.
+2. If exactly one active planlet exists, the skill may propose or select it and state the selection.
+3. If several active planlets exist, ask the user which one to use.
+4. Never choose the newest or first planlet silently when several are available.
+
+The CLI should require a slug for mutating commands. It may provide a read-only `resolve` or `list` command that helps a skill perform the selection logic.
+
+“One at a time” means one target per invocation or agent workflow. The MVP does not need a global active-plan pointer.
+
+Task-file writes should be atomic. Future support for multiple simultaneous agents may add optimistic concurrency, file hashes, or locks, but Planlet should initially document that a single planlet must not be implemented concurrently by several agents.
+
+## 13. CLI Design
+
+### 13.1 Intended audience
+
+The primary CLI consumer is an AI agent. Humans can also use it, especially for inspection and setup.
+
+The CLI should follow agent-ergonomic principles:
+
+- Compact default output.
+- Minimal fields for list results.
+- Precomputed progress totals and status.
+- Explicit empty states.
+- Structured errors and stable exit codes.
+- No interactive prompts in operational commands.
+- Idempotent operations where practical.
+- Clear next-action hints without verbose prose.
+- A concise, consistent help surface.
+- Content-first behavior when invoked without arguments.
+
+### 13.2 Proposed commands
+
+Setup and skill installation:
+
+```text
+planlet init [--tools <ids>]
+planlet update [--tools <ids>]
+planlet tools
+```
+
+Plan management:
+
+```text
+planlet
+planlet list [--state <state>] [--completed]
+planlet create <slug> [--title <title>]
+planlet show <slug> [--part plan|tasks|summary]
+planlet status <slug>
+planlet validate [<slug>|--all]
+```
+
+Task management:
+
+```text
+planlet tasks <slug> [--remaining|--completed]
+planlet task check <slug> <task-id>
+planlet task uncheck <slug> <task-id>
+```
+
+Lifecycle management:
+
+```text
+planlet complete <slug> [--allow-incomplete --reason <text>]
+planlet archive <slug> [same options]     # optional alias
+```
+
+Possible future commands:
+
+```text
+planlet rename <old-slug> <new-slug>
+planlet reopen <slug>
+planlet doctor
+planlet config
+planlet completions <shell>
+```
+
+### 13.3 No-argument behavior
+
+Running `planlet` with no arguments should display a compact active-plan dashboard rather than the full help text. This follows the AXI content-first principle.
+
+Example conceptual output:
+
+```text
+plans[2]{slug,state,done,total}:
+  add-more-users,in_progress,3,5
+  improve-search,planned,0,4
+summary{active,ready,invalid}: 2,0,0
+```
+
+Use `planlet help` or `planlet <command> --help` for command reference.
+
+### 13.4 Output formats
+
+Proposed formats:
+
+- Default: compact TOON or TOON-inspired structured output for agents.
+- `--json`: stable JSON for integrations and tests.
+- `--human`: readable tables and explanatory text.
+- `--quiet`: identifiers or minimal success output where appropriate.
+- `--full`: disable normal truncation for large task text or plan previews.
+
+The default should be deterministic rather than changing automatically based on whether stdout is a terminal. Agents and scripts should not receive different schemas in different environments.
+
+Output rules:
+
+- Data goes to stdout.
+- Diagnostics and warnings go to stderr.
+- Do not use decorative banners or spinners when output is not explicitly human-oriented.
+- List records should normally contain only slug, state, completed count, and total count.
+- Empty results must be explicit, for example `plans[0]` plus summary counts.
+- Large content should be truncated with a size hint and a `--full` escape hatch.
+
+### 13.5 Structured errors
+
+Errors should include a stable code, concise message, relevant fields, and suggested next action.
+
+Example incomplete completion error:
+
+```text
+error{code,message,slug,completed,total,remaining}:
+  incomplete_tasks,"Planlet has incomplete tasks",add-more-users,3,5,"T4,T5"
+next: planlet tasks add-more-users --remaining
+```
+
+Suggested error codes:
+
+- `repo_not_found`
+- `plans_not_initialized`
+- `invalid_slug`
+- `plan_not_found`
+- `plan_already_exists`
+- `completed_plan_exists`
+- `invalid_plan`
+- `task_not_found`
+- `duplicate_task_id`
+- `incomplete_tasks`
+- `archive_collision`
+- `unsafe_path`
+- `unsupported_tool`
+- `write_conflict`
+
+Suggested exit-code categories:
+
+- `0`: success
+- `1`: general operational error
+- `2`: usage or invalid arguments
+- `3`: invalid planlet structure
+- `4`: requested state transition is not allowed
+- `5`: filesystem or write conflict
+
+Exact codes should be documented and tested before the public CLI contract is considered stable.
+
+## 14. Skills
+
+All skills should follow the open Agent Skills structure, with `SKILL.md` as the canonical workflow definition and optional scripts, references, and assets:
+
+```text
+skills/
+├── planlet-plan/
+│   ├── SKILL.md
+│   ├── references/
+│   │   └── planning-guidance.md
+│   └── assets/
+│       ├── plan-template.md
+│       └── tasks-template.md
+├── planlet-implement/
+│   ├── SKILL.md
+│   └── references/
+│       └── implementation-guidance.md
+└── planlet-complete/
+    ├── SKILL.md
+    └── references/
+        └── completion-guidance.md
+```
+
+The required `name` and `description` frontmatter should make each skill discoverable without loading its full instructions. Detailed material should use progressive disclosure so ordinary agent context remains small.
+
+### 14.1 `planlet-plan`
+
+Responsibilities:
+
+- Explore the user's request and repository.
+- Ask only questions that materially affect the plan.
+- Compare options and recommend an approach.
+- Define scope, exclusions, acceptance criteria, and verification.
+- Propose the slug.
+- Obtain confirmation before writing.
+- Create or revise both files consistently.
+- Run CLI validation.
+
+Must not:
+
+- Modify product code during planning.
+- Persist a plan before confirmation.
+- Create extra documents by default.
+- Leave `tasks.md` inconsistent with `plan.md`.
+
+### 14.2 `planlet-implement`
+
+Responsibilities:
+
+- Select exactly one planlet.
+- Read and validate it.
+- Reinspect the current codebase.
+- Implement tasks and verify outcomes.
+- Check off tasks incrementally through the CLI.
+- Surface plan drift and blockers.
+- Report completion readiness.
+
+Must not:
+
+- Implement several planlets in one invocation.
+- Check a task merely because code was written; relevant verification must pass.
+- archive the planlet automatically unless the user explicitly requested combined implementation and completion behavior.
+
+### 14.3 `planlet-complete`
+
+Responsibilities:
+
+- Select exactly one planlet.
+- Validate it and inspect remaining tasks.
+- Complete normally when all tasks are checked.
+- Warn and ask for confirmation when work remains.
+- Supply an override reason only after explicit confirmation.
+- Report the archived path and completion mode.
+
+Must not:
+
+- Bypass the CLI's completion check silently.
+- treat missing or malformed task files as completed.
+- complete several planlets at once in the core workflow.
+
+## 15. Multi-Harness Support
+
+Multi-harness support is a core architectural requirement. Planlet should not hard-code its skills around Claude Code, Codex, or any single product.
+
+### 15.1 Canonical format
+
+Maintain one canonical Agent Skills-compatible skill directory for each workflow. Harness installations should be generated or copied from these sources.
+
+Do not maintain separate hand-written Claude, Codex, and generic versions of the workflow. Harness-specific command files should be thin launch adapters that point to the canonical skill behavior.
+
+### 15.2 Initial harness registry
+
+Suggested initial tool IDs and project-local skill destinations:
+
+| Tool ID | Harness | Skill path pattern | Command adapter |
+|---|---|---|---|
+| `agents` | Generic Agent Skills | `.agents/skills/planlet-*/SKILL.md` | None |
+| `claude` | Claude Code | `.claude/skills/planlet-*/SKILL.md` | Optional `.claude/commands/planlet/<id>.md` |
+| `codex` | Codex | `.codex/skills/planlet-*/SKILL.md` | None; skills-first |
+
+Likely later additions, following the same data-driven registry pattern:
+
+| Tool ID | Skill path pattern |
+|---|---|
+| `cursor` | `.cursor/skills/planlet-*/SKILL.md` |
+| `gemini` | `.gemini/skills/planlet-*/SKILL.md` |
+| `github-copilot` | `.github/skills/planlet-*/SKILL.md` |
+| `opencode` | `.opencode/skills/planlet-*/SKILL.md` |
+| `antigravity` | `.agent/skills/planlet-*/SKILL.md` |
+
+These paths follow the general convention demonstrated by OpenSpec's multi-tool installer. Exact behavior should be covered by adapter tests because harness conventions can evolve.
+
+### 15.3 Setup interface
+
+Suggested commands:
+
+```bash
+# Install for specific harnesses
+planlet init --tools claude,codex,agents
+
+# Install all currently supported adapters
+planlet init --tools all
+
+# Initialize only the plans directory
+planlet init --tools none
+
+# Refresh generated skills after upgrading Planlet
+planlet update --tools claude,codex,agents
+
+# Detect supported harness directories without modifying them
+planlet tools
+```
+
+The CLI should avoid interactive prompts in agent and CI use. If a future human-friendly wizard is added, every choice must have a non-interactive flag equivalent.
+
+### 15.4 Adapter architecture
+
+Represent harness support as data plus small renderers:
+
+```ts
+interface HarnessAdapter {
+  id: string;
+  displayName: string;
+  skillDirectory: string;
+  supportsSkills: boolean;
+  supportsCommands: boolean;
+  commandDirectory?: string;
+  renderCommand?: (skill: SkillDefinition) => string;
+}
+```
+
+Installer behavior should:
+
+1. Validate requested tool IDs.
+2. Resolve destinations inside the repository root.
+3. Copy or render all selected Planlet skills.
+4. Generate optional command adapters only for harnesses that support them.
+5. Avoid symlinks by default for Windows and repository portability.
+6. Mark generated files clearly.
+7. Detect locally modified generated files before overwriting them.
+8. Support deterministic `update` behavior.
+9. Produce a compact installation summary.
+
+The MVP may package the compiled CLI alongside each installed skill or have skills call the globally installed `planlet` executable. Bundling a synchronized, dependency-free `planlet.mjs` makes skills more self-contained, while a global executable simplifies updates. This choice should be tested through a small installation prototype before finalizing packaging.
+
+### 15.5 Project-local and global installation
+
+Project-local installation should be the initial default because it is reviewable, version-controlled, and reproducible for collaborators and CI.
+
+Possible future scopes:
+
+- `--scope project`: install under the repository's harness directories.
+- `--scope user`: install under user-level harness skill directories.
+
+User-level paths vary by harness and should not be added until their behavior and update semantics are well tested.
+
+## 16. Technology Choice
+
+### 16.1 Recommended implementation
+
+Use TypeScript for development and distribute compiled JavaScript for Node.js.
+
+Recommended baseline:
+
+- TypeScript source.
+- Node.js 22 or newer.
+- Test on maintained Node 22 and Node 24 LTS environments initially.
+- Bundle the CLI into one `dist/planlet.mjs` artifact.
+- Publish an npm package with a `bin` entry for `planlet`.
+- Use `#!/usr/bin/env node` in the executable bundle.
+- Prefer Node built-ins and keep runtime dependencies minimal.
+- Use Node's stable `util.parseArgs()` before adopting a large CLI framework.
+- Use the built-in `node:test` runner unless project needs outgrow it.
+
+Do not rely on executing raw TypeScript in user environments. Node's native type stripping differs across versions, does not perform type checking, ignores `tsconfig.json` features, and is unnecessary when a normal build already exists.
+
+### 16.2 Distribution
+
+Primary installation:
+
+```bash
+npm install --global planlet
+```
+
+Occasional execution may also work through:
+
+```bash
+npx planlet list
+```
+
+However, installed or bundled execution is preferable for agents because it avoids repeated package resolution, network access, and version ambiguity.
+
+Suggested package contents:
+
+```text
+package.json
+dist/planlet.mjs
+skills/planlet-plan/...
+skills/planlet-implement/...
+skills/planlet-complete/...
+README.md
+LICENSE
+```
+
+### 16.3 Alternatives
+
+**Go** is the strongest alternative if a small, standalone native binary with no runtime dependency becomes a defining requirement. It offers fast startup and straightforward cross-compilation, at the cost of a separate binary release matrix and less direct npm/skill packaging.
+
+**Bun** and **Deno** can compile TypeScript into standalone executables and may be useful for optional release binaries. Neither should be a mandatory runtime for the MVP because Node is more likely to be present in arbitrary agent environments.
+
+**Rust** would provide excellent native binaries but adds complexity without a clear benefit for this filesystem-oriented tool.
+
+**Python** would be productive for development, but global CLI installation is more variable because of Python versions, virtual environments, `pipx`, and externally managed installations.
+
+## 17. Suggested Source Layout
+
+```text
+src/
+├── cli.ts
+├── commands/
+│   ├── init.ts
+│   ├── update.ts
+│   ├── tools.ts
+│   ├── list.ts
+│   ├── create.ts
+│   ├── show.ts
+│   ├── status.ts
+│   ├── validate.ts
+│   ├── tasks.ts
+│   ├── task-check.ts
+│   ├── task-uncheck.ts
+│   └── complete.ts
+├── core/
+│   ├── repository.ts
+│   ├── paths.ts
+│   ├── slugs.ts
+│   ├── discovery.ts
+│   ├── plan.ts
+│   ├── task-parser.ts
+│   ├── status.ts
+│   ├── validation.ts
+│   └── completion.ts
+├── harnesses/
+│   ├── registry.ts
+│   ├── installer.ts
+│   └── renderers/
+├── output/
+│   ├── model.ts
+│   ├── toon.ts
+│   ├── json.ts
+│   └── human.ts
+└── errors/
+    ├── codes.ts
+    └── planlet-error.ts
+
+skills/
+├── planlet-plan/
+├── planlet-implement/
+└── planlet-complete/
+
+tests/
+├── fixtures/
+├── unit/
+├── integration/
+└── harnesses/
+```
+
+Keep the domain model independent from output formatting. For example:
+
+```ts
+interface PlanSummary {
+  slug: string;
+  title?: string;
+  state:
+    | "invalid"
+    | "draft"
+    | "planned"
+    | "in_progress"
+    | "ready_to_complete"
+    | "completed";
+  completedTasks: number;
+  totalTasks: number;
+  path: string;
+  warnings: string[];
+}
+```
+
+## 18. Safety and Filesystem Requirements
+
+- Reject unsafe slugs before constructing paths.
+- Resolve and verify all mutation targets remain under the repository root.
+- Treat symlinks that escape the root as unsafe.
+- Use atomic writes for `tasks.md` updates.
+- Do not shell out for ordinary file operations.
+- Never overwrite an existing active or completed planlet silently.
+- Fail completion when the destination directory already exists.
+- Preserve both files during completion; completion is a move, not deletion.
+- On partial failure, leave the source recoverable and report the exact state.
+- Do not infer authorization to delete abandoned or invalid plans.
+- Make task checking idempotent: checking an already checked task succeeds without duplicating changes.
+- Consider an optional precondition hash for future concurrent-agent safety.
+
+## 19. Validation Rules
+
+A valid active planlet should normally satisfy:
+
+- Directory name is a valid slug.
+- `plan.md` exists and is readable.
+- `tasks.md` exists and is readable.
+- `plan.md` contains an H1 title.
+- `tasks.md` contains an H1 title.
+- At least one recognized task exists for a non-draft planlet.
+- Every recognized task has a valid ID.
+- Task IDs are unique within the file.
+- Checkbox syntax is valid.
+- No completed-plan destination collision exists when completing.
+
+Warnings, rather than hard failures, may cover:
+
+- Missing recommended `plan.md` sections.
+- Very large plan or task files.
+- A completed planlet containing unchecked tasks with a recorded override.
+- A title that differs substantially from the slug.
+- A plan that has not been modified in a long time before implementation.
+
+The CLI should distinguish structural errors from advisory hygiene warnings.
+
+## 20. Testing Strategy
+
+### 20.1 Unit tests
+
+- Slug validation.
+- Task-line parsing and normalization.
+- Duplicate task detection.
+- Derived lifecycle status.
+- Output rendering for TOON, JSON, and human formats.
+- Stable error codes and exit-code mapping.
+- Harness registry and destination resolution.
+
+### 20.2 Integration tests
+
+- Repository-root discovery from nested directories.
+- Initializing a clean fixture repository.
+- Creating and listing several active planlets.
+- Checking and unchecking tasks idempotently.
+- Completing a fully checked planlet.
+- Refusing incomplete completion.
+- Completing with an explicit incomplete override and reason.
+- Refusing archive collisions.
+- Preventing path traversal and symlink escape.
+- Installing and updating generic, Claude, and Codex skills.
+- Detecting modified generated skill files before overwrite.
+- Verifying stdout, stderr, and exit codes separately.
+
+### 20.3 Skill evaluation
+
+Skills need scenario-based evaluation in addition to CLI tests:
+
+- Vague feature request requiring exploration.
+- Precise request requiring few or no questions.
+- User declines persistence after planning.
+- Revision that changes both plan and tasks.
+- Implementation against a codebase that drifted after planning.
+- Failing verification that must leave a task unchecked.
+- Several active planlets requiring explicit selection.
+- Completion with unfinished work requiring a warning and confirmation.
+- The same workflow under generic Agent Skills, Claude Code, and Codex installations.
+
+## 21. MVP Scope
+
+### Phase 1: File and CLI core
+
+- Repository discovery.
+- Slug validation.
+- `plans/` initialization.
+- Create, list, show, status, tasks, validate.
+- Check and uncheck tasks.
+- Complete and incomplete-override behavior.
+- Compact default output plus JSON and human formats.
+- Unit and fixture-based integration tests.
+
+### Phase 2: Core skills
+
+- `planlet-plan`.
+- `planlet-implement`.
+- `planlet-complete`.
+- Plan and task templates.
+- Skill scenario evaluations.
+
+### Phase 3: Harness installation
+
+- Generic `.agents/skills` adapter.
+- Claude Code `.claude/skills` adapter.
+- Codex `.codex/skills` adapter.
+- `planlet init --tools ...` and `planlet update --tools ...`.
+- Generated-file protection and adapter tests.
+
+### Phase 4: Packaging and polish
+
+- npm package and `bin` entry.
+- Bundled single-file JavaScript artifact.
+- CI across supported operating systems and maintained Node versions.
+- Installation documentation.
+- Optional command adapters for harnesses that benefit from them.
+
+## 22. Future Possibilities
+
+- More harness adapters.
+- User-level skill installation.
+- Standalone Bun, Deno, Go, or Node single-executable releases.
+- Plan renaming and reopening.
+- Abandon or cancel lifecycle distinct from completion.
+- Explicit task dependencies.
+- Plan freshness and code-drift hints.
+- Optimistic concurrency for simultaneous agents.
+- Git metadata, commit, and pull-request references in completion notes.
+- Hooks that show an active-plan dashboard at agent-session start.
+- Optional integration with GitHub Issues or pull requests.
+- A read-only web or terminal dashboard for human review.
+- Bulk reporting across repositories while retaining one-plan-at-a-time mutation.
+
+These should not complicate the initial two-file workflow prematurely.
+
+## 23. Initial Product Acceptance Criteria
+
+The initial product should be considered useful when:
+
+1. A user can ask a supported agent to plan a code change.
+2. The skill investigates and discusses the request before writing files.
+3. The user confirms persistence and receives `plans/<slug>/plan.md` and `tasks.md`.
+4. Another fresh agent session can understand the work using only the repository and those files.
+5. The Implement skill completes tasks and updates checkboxes incrementally.
+6. The CLI lists several active planlets with accurate compact progress.
+7. Every implementation and completion operation targets one explicit planlet.
+8. The CLI refuses normal completion while tasks remain unchecked.
+9. The Complete skill warns the user and obtains confirmation before an incomplete override.
+10. Completion moves both files into `plans/completed/<slug>` without data loss.
+11. The same canonical skills can be installed for generic Agent Skills, Claude Code, and Codex.
+12. CLI behavior is deterministic and useful in both interactive sessions and CI.
+
+## 24. Open Design Questions
+
+The following decisions can be resolved during prototyping:
+
+- Whether the default compact format should use the official TOON library or a small compatible subset.
+- Whether installed skills should invoke a global `planlet` binary or include a synchronized bundled CLI.
+- Whether Claude-style command adapters provide enough value beyond skills to include in the MVP.
+- Whether `planlet create` should write full templates or only create the directory for the Plan skill to populate atomically.
+- Whether incomplete completion records belong in `tasks.md` or a short section in `plan.md`.
+- Whether Node 22 should remain supported once Node 24 is ubiquitous in agent environments.
+- Whether plan freshness should be based on timestamps, Git commits, or remain purely advisory.
+
+None of these questions blocks the central product contract.
+
+## 25. Related Projects and References
+
+- [OpenSpec](https://github.com/Fission-AI/OpenSpec) — main inspiration for the explore/propose/apply/archive lifecycle and multi-harness installation approach.
+- [OpenSpec Explore](https://github.com/Fission-AI/OpenSpec/blob/main/docs/explore.md) — conversational investigation before artifact creation.
+- [OpenSpec Supported Tools](https://github.com/Fission-AI/OpenSpec/blob/main/docs/supported-tools.md) — reference for tool IDs, skill destinations, and thin harness adapters.
+- [Agent Skills specification](https://agentskills.io/specification) — canonical portable `SKILL.md` format.
+- [AXI](https://github.com/kunchenguid/axi) — agent-ergonomic CLI principles including compact output, minimal schemas, structured errors, and contextual disclosure.
+- [SpecOps](https://github.com/JarvusInnovations/specops) — adjacent example of a deterministic TypeScript/Node CLI over repository-local planning files.
+- [PlanKit](https://github.com/FlineDev/PlanKit) — adjacent conversational planning and archival workflow, with more roadmap structure than Planlet intends to require.
+- [Kiro Specs](https://kiro.dev/docs/cli/v3/specs/) — example of plan-then-execute behavior and editable repository-local artifacts.
+- [Node.js TypeScript documentation](https://nodejs.org/api/typescript.html) — runtime TypeScript behavior and reasons to distribute compiled JavaScript.
+- [Node.js `util.parseArgs`](https://nodejs.org/api/util.html#utilparseargsconfig) — dependency-free argument parsing suitable for the initial CLI.
+- [Bun standalone executables](https://bun.com/docs/bundler/executables) and [Deno compile](https://docs.deno.com/runtime/reference/cli/compile/) — possible future standalone TypeScript distribution options.
+
