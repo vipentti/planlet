@@ -10,7 +10,7 @@ plans/<slug>/
 └── tasks.md
 ```
 
-Completed planlets move to `plans/completed/<slug>/`. Markdown files are the source of truth. Agent skills provide investigation and judgment; the future CLI provides deterministic discovery, validation, progress, and lifecycle operations.
+Completed planlets move to `plans/completed/<YYYY-MM-DD>-<slug>/`, using the UTC date of completion while retaining the original logical slug. Markdown files are the source of truth. Agent skills provide investigation and judgment; the future CLI provides deterministic discovery, validation, progress, and lifecycle operations.
 
 Tagline: **Small plans. Clear handoffs.**
 
@@ -60,7 +60,7 @@ Until the CLI exists, follow the narrow manual fallback specified by the design 
 - Each file starts with an H1 title.
 - Recognized tasks use `- [ ] T<number> Description` or `- [x] T<number> Description`.
 - Task IDs are unique and stable; reordering tasks must not renumber them.
-- Active planlets live directly under `plans/`; completed planlets live under `plans/completed/`.
+- Active planlets live directly under `plans/`; completed planlets use `<YYYY-MM-DD>-<slug>` archive names under `plans/completed/`.
 - Never overwrite an existing active or completed planlet silently.
 
 ## Architecture and implementation direction

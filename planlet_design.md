@@ -25,7 +25,7 @@ plans/<descriptive-name-slug>/
 Completed planlets are moved to:
 
 ```text
-plans/completed/<descriptive-name-slug>/
+plans/completed/<YYYY-MM-DD>-<descriptive-name-slug>/
 ```
 
 Planlet deliberately provides less documentation ceremony than specification-driven systems such as OpenSpec. It does not require separate proposal, requirements, design, or specification documents. The intended product boundary is:
@@ -245,8 +245,9 @@ The Complete skill should:
 5. If tasks remain incomplete, show the remaining task IDs and descriptions.
 6. Warn the user that the planlet is incomplete and ask for explicit confirmation before overriding the check.
 7. If confirmed, provide an explicit reason to the CLI and archive with the incomplete-task override.
-8. Move the planlet to `plans/completed/<slug>`.
-9. Report the final destination and whether completion was normal or forced.
+8. Capture one UTC completion timestamp and derive the `YYYY-MM-DD` archive date from it.
+9. Move the planlet to `plans/completed/<YYYY-MM-DD>-<slug>`.
+10. Report the logical slug, final destination, and whether completion was normal or forced.
 
 The CLI itself should remain non-interactive. On incomplete work it returns a structured error and non-zero exit code. The skill owns the human confirmation conversation and then, if approved, calls an explicit override such as:
 
@@ -256,7 +257,7 @@ planlet complete add-more-users \
   --reason "Two deployment tasks were intentionally deferred"
 ```
 
-The completion operation should record the timestamp, remaining task IDs, and override reason in `tasks.md` before moving the directory. This preserves the two-file model while leaving an audit trail.
+The completion operation should record the full UTC timestamp and completion mode in `tasks.md` before moving the directory. An incomplete override should additionally record the remaining task IDs and override reason. The archive date and recorded timestamp must come from the same captured instant. This preserves the two-file model while leaving an audit trail.
 
 ### 8.5 CI and pull-request workflow
 
@@ -285,7 +286,7 @@ Default layout:
 │   │   ├── plan.md
 │   │   └── tasks.md
 │   └── completed/
-│       └── previous-change/
+│       └── 2026-07-22-previous-change/
 │           ├── plan.md
 │           └── tasks.md
 └── ...
@@ -295,6 +296,7 @@ Defaults:
 
 - Active root: `plans/`
 - Completed root: `plans/completed/`
+- Completed archive name: `<YYYY-MM-DD>-<slug>`
 - Plan filename: `plan.md`
 - Task filename: `tasks.md`
 
@@ -321,7 +323,7 @@ A slug should:
 - Begin and end with an alphanumeric character.
 - Be descriptive rather than numbered-only.
 - Reject path separators, `.` segments, whitespace, underscores, and repeated hyphens.
-- Be unique among both active and completed planlets unless an explicit reopen or rename workflow is added later.
+- Be unique among both active and completed planlets unless an explicit reopen or rename workflow is added later. The date prefix on a completed archive does not change or replace this logical slug.
 
 Example valid slug:
 
@@ -335,7 +337,24 @@ Example validation expression:
 ^[a-z0-9]+(?:-[a-z0-9]+)*$
 ```
 
-### 10.2 `plan.md`
+### 10.2 Completed archive names
+
+Completion changes a planlet's storage name without changing its logical slug. A completed archive name must:
+
+- Use `<YYYY-MM-DD>-<slug>`.
+- Derive `YYYY-MM-DD` from the UTC calendar date of the full completion timestamp recorded in `tasks.md`.
+- Contain a real calendar date followed by the unchanged logical slug.
+- Be treated as a storage name, not as the planlet's slug or a new identifier.
+
+For example, completing `add-multiple-user-support` at `2026-07-22T23:59:59Z` produces:
+
+```text
+plans/completed/2026-07-22-add-multiple-user-support/
+```
+
+Completed-plan discovery should parse and validate the date prefix, then expose the original slug separately from the archive name and path. A date-prefixed archive does not permit another active or completed planlet with the same logical slug. Completion must refuse both logical-slug conflicts and an existing destination archive.
+
+### 10.3 `plan.md`
 
 `plan.md` contains intent and implementation context. It should be detailed enough for a capable agent in a fresh session, without duplicating the task checklist.
 
@@ -382,7 +401,7 @@ Sections can be omitted when they would add no value, but Summary, Scope, Approa
 
 The CLI should treat most of `plan.md` as opaque Markdown. It may extract the first H1 as the display title and validate the presence of expected headings, but it should not attempt semantic interpretation.
 
-### 10.3 `tasks.md`
+### 10.4 `tasks.md`
 
 `tasks.md` is the machine-readable progress surface and human checklist.
 
@@ -410,16 +429,16 @@ Rules:
 - The MVP need not support nested task trees or dependency syntax.
 - Free-form Markdown notes are allowed outside recognized task lines.
 
-An optional completion record may be appended by the CLI:
+A completion record must be appended by the CLI before moving the planlet:
 
 ```markdown
 ## Completion
 
 - Completed at: 2026-07-22T12:34:56Z
-- Mode: incomplete override
-- Remaining tasks: T4, T5
-- Reason: Deployment verification was intentionally deferred.
+- Mode: normal
 ```
+
+For an incomplete override, `Mode` should be `incomplete override`, followed by the remaining task IDs and the user-approved reason.
 
 The task parser should be deliberately narrow and line-oriented. A general Markdown AST dependency is not necessary for the MVP.
 
@@ -434,7 +453,7 @@ Avoid mandatory status frontmatter in the MVP. Status can be calculated from fil
 | Tasks exist and none are checked | `planned` |
 | Some but not all tasks are checked | `in_progress` |
 | All tasks are checked in an active directory | `ready_to_complete` |
-| Planlet is under `plans/completed/` | `completed` |
+| Planlet is under a valid date-prefixed archive in `plans/completed/` | `completed` |
 
 Completed planlets should still be structurally inspectable. A completed planlet with unchecked tasks and no override record should produce a hygiene warning.
 
@@ -553,6 +572,7 @@ Output rules:
 - Diagnostics and warnings go to stderr.
 - Do not use decorative banners or spinners when output is not explicitly human-oriented.
 - List records should normally contain only slug, state, completed count, and total count.
+- Completed-plan output should keep the logical slug distinct from the archive name and path, and expose the recorded completion timestamp when the selected format requests completion details.
 - Empty results must be explicit, for example `plans[0]` plus summary counts.
 - Large content should be truncated with a size hint and a `--full` escape hatch.
 - `--json` output should include a `schemaVersion` integer field so downstream integrations can detect breaking output changes independently of the CLI's own version number.
@@ -889,6 +909,8 @@ Keep the domain model independent from output formatting. For example:
 ```ts
 interface PlanSummary {
   slug: string;
+  archiveName?: string;
+  completedAt?: string;
   title?: string;
   state:
     | "invalid"
@@ -912,7 +934,8 @@ interface PlanSummary {
 - Use atomic writes for `tasks.md` updates.
 - Do not shell out for ordinary file operations.
 - Never overwrite an existing active or completed planlet silently.
-- Fail completion when the destination directory already exists.
+- Capture the completion timestamp once, derive the UTC archive date from that same value, and use both consistently in the completion record and destination path.
+- Fail completion when the logical slug already exists in completed storage or when the computed date-prefixed destination directory already exists.
 - Preserve both files during completion; completion is a move, not deletion.
 - On partial failure, leave the source recoverable and report the exact state.
 - Do not infer authorization to delete abandoned or invalid plans.
@@ -936,6 +959,13 @@ A valid active planlet should normally satisfy:
 - Checkbox syntax is valid.
 - No completed-plan destination collision exists when completing.
 
+A valid completed planlet should additionally satisfy:
+
+- Its directory name is a valid `<YYYY-MM-DD>-<slug>` archive name.
+- Its parsed logical slug satisfies the normal slug rules and remains unique across active and completed planlets.
+- Its completion record contains a valid UTC timestamp and mode.
+- Its archive date matches the UTC date of its recorded completion timestamp.
+
 Warnings, rather than hard failures, may cover:
 
 - Missing recommended `plan.md` sections.
@@ -951,6 +981,7 @@ The CLI should distinguish structural errors from advisory hygiene warnings.
 ### 20.1 Unit tests
 
 - Slug validation.
+- Completed archive-name construction, parsing, real-date validation, and UTC date derivation.
 - Task-line parsing and normalization.
 - Duplicate task detection.
 - Derived lifecycle status.
@@ -965,9 +996,11 @@ The CLI should distinguish structural errors from advisory hygiene warnings.
 - Creating and listing several active planlets.
 - Checking and unchecking tasks idempotently.
 - Completing a fully checked planlet.
+- Recording a normal completion timestamp and moving to the corresponding date-prefixed archive path.
 - Refusing incomplete completion.
 - Completing with an explicit incomplete override and reason.
-- Refusing archive collisions.
+- Refusing logical-slug conflicts and date-prefixed archive collisions.
+- Reporting malformed archive names and archive dates that disagree with recorded completion timestamps.
 - Preventing path traversal and symlink escape.
 - Installing and updating generic, Claude, and Codex skills.
 - Detecting modified generated skill files before overwrite.
@@ -993,7 +1026,7 @@ Skills need scenario-based evaluation in addition to CLI tests:
 
 - Create the canonical `planlet-plan`, `planlet-implement`, and `planlet-complete` skill skeletons.
 - Add shared `plan.md` and `tasks.md` templates based on the file contract in this document.
-- Document a narrow CLI-unavailable fallback that lets the skills create planlets, read progress, update checkboxes, and move completed planlets using ordinary repository file operations.
+- Document a narrow CLI-unavailable fallback that lets the skills create planlets, read progress, update checkboxes, record completion, and move completed planlets to date-prefixed archive paths using ordinary repository file operations.
 - Require fallback operations to follow the same slug, target-selection, validation, task-ID, and completion-safety rules intended for the CLI.
 - Make fallback use explicit in skill output, including which deterministic CLI validations could not be run.
 - Manually create the first planlet for implementing the CLI core and use it to exercise planning, implementation handoff, incremental task updates, and completion.
@@ -1065,7 +1098,7 @@ The initial product should be considered useful when:
 7. Every implementation and completion operation targets one explicit planlet.
 8. The CLI refuses normal completion while tasks remain unchecked.
 9. The Complete skill warns the user and obtains confirmation before an incomplete override.
-10. Completion moves both files into `plans/completed/<slug>` without data loss.
+10. Completion records one full UTC timestamp and moves both files into the matching `plans/completed/<YYYY-MM-DD>-<slug>` archive without data loss or changing the logical slug.
 11. The same canonical skills can be installed for generic Agent Skills, Claude Code, and Codex.
 12. CLI behavior is deterministic and useful in both interactive sessions and CI.
 
