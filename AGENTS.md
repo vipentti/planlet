@@ -20,24 +20,15 @@ Read [`planlet_design.md`](planlet_design.md) before making product, architectur
 
 For scoped implementation work, also read the selected planlet's `plan.md` and `tasks.md` completely. A planlet may refine implementation details for its own scope, but it must not silently contradict the main design. Surface material conflicts before proceeding.
 
-Current bootstrap planlet:
+This file does not track which planlet is currently active. Inspect `plans/` to see what exists, and ask the user which one to target when more than one is active or none is obvious from the request.
 
-- [`plans/bootstrap-planlet-skills/plan.md`](plans/bootstrap-planlet-skills/plan.md)
-- [`plans/bootstrap-planlet-skills/tasks.md`](plans/bootstrap-planlet-skills/tasks.md)
-
-Keep this file short and navigational. Durable product detail belongs in the design document, and change-specific detail belongs in a planlet.
+Keep this file short and navigational. Durable product detail belongs in the design document, and change-specific, in-progress detail belongs in a planlet under `plans/`.
 
 ## Current repository state
 
-The repository is in Phase 0: dogfooding bootstrap. There is no Planlet CLI, package scaffold, build, or automated test suite yet. Do not invent commands or report CLI validation as having run.
+Do not assume a fixed development phase or a specific set of files that should exist. Inspect the repository directly (for example, whether a `planlet` CLI, package scaffold, build, or test suite exists) before acting, and read `plans/` to see what work is currently planned, in progress, or completed.
 
-The first intended implementation creates canonical skill sources under `skills/`:
-
-- `planlet-plan`
-- `planlet-implement`
-- `planlet-complete`
-
-Until the CLI exists, follow the narrow manual fallback specified by the design and the active bootstrap planlet. State explicitly when fallback behavior is used and which deterministic CLI checks were unavailable.
+When a described CLI capability is not yet present, do not invent commands or report CLI validation as having run. Follow the manual fallback specified by `planlet_design.md` and the selected planlet, and state explicitly when fallback behavior was used and which deterministic CLI checks were unavailable.
 
 ## Working rules
 
