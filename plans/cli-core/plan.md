@@ -10,7 +10,7 @@ The bootstrap skills currently reproduce a narrow set of filesystem checks becau
 
 ## Scope
 
-- Establish the TypeScript package, build, test, and executable scaffolding for Node.js 22 and newer.
+- Establish the TypeScript package, build, test, and executable scaffolding for Node.js 22 and newer, including a `.gitignore` covering standard Node.js/TypeScript build and tooling artifacts.
 - Discover repository roots and resolve Planlet paths without escaping the selected root.
 - Validate active and completed planlet names, required files, H1 headings, recognized tasks, unique task IDs, completion records, and archive dates.
 - Derive planlet lifecycle states from file location and task progress.
@@ -34,6 +34,8 @@ The bootstrap skills currently reproduce a narrow set of filesystem checks becau
 
 Use TypeScript for source and compile to JavaScript for Node.js. Keep reusable domain modules for repository discovery, paths, slugs, planlets, task parsing, validation, status, completion, and errors separate from command handlers and output renderers. Prefer Node built-ins, `util.parseArgs()`, and `node:test`; add runtime dependencies only when they materially reduce risk.
 
+The package scaffold includes a `.gitignore` so dependency installs and build output are never tracked. At minimum it excludes `node_modules/`, the `dist/` build output (per §16.1's `dist/planlet.mjs` bundle), `*.tsbuildinfo`, test/coverage output, package-manager debug logs, `.env*` files, and common OS and editor artifacts (for example `.DS_Store`, `.vscode/`, `.idea/`).
+
 ### Filesystem model
 
 Resolve all operations from an explicit or discovered repository root. Reject unsafe slugs and paths before mutation, detect symlink escape where relevant, and never overwrite an active or completed planlet. Treat `plans/<slug>/plan.md` and `tasks.md` as the complete active record and parse only the narrow top-level task syntax defined by `planlet_design.md`.
@@ -55,6 +57,7 @@ Use unit tests for validation, parsing, state derivation, archive-name handling,
 ## Acceptance Criteria
 
 - The repository has documented build and test commands that produce a runnable `planlet` executable from TypeScript source.
+- The repository includes a `.gitignore` that excludes `node_modules/`, build output, and other common Node.js/TypeScript artifacts so they are never accidentally tracked.
 - Commands discover or accept a repository root and never resolve Planlet mutations outside it.
 - `create` creates `plans/` automatically when it is missing and safely creates exactly the two H1-only primary files, using a validated explicit title or a title deterministically derived from the slug, so no prior initialization step is required.
 - A newly created scaffold refuses active or completed logical-slug conflicts, is reported as a structurally valid `draft`, contains no placeholder tasks or semantic prose, and cannot be left partially visible after a failed creation.
@@ -75,6 +78,7 @@ Use unit tests for validation, parsing, state derivation, archive-name handling,
 - Run integration fixtures for repository discovery, creation (including automatic `plans/` creation on a fresh repository, minimal stub contents, title handling, `draft` status, creation-time slug-collision refusal, and simulated partial failure), listing, validation, task updates, normal completion, incomplete overrides, completion-time logical-slug and archive-destination collisions, malformed structures, unsafe paths, and symlink escape.
 - Exercise the compiled CLI's default, JSON, human, quiet, and full output where implemented, checking stdout, stderr, and exit codes independently.
 - Run `git diff --check` and confirm generated build artifacts do not introduce unintended tracked files.
+- After running a build and test cycle, confirm `git status` shows no untracked build or dependency artifacts, verifying `.gitignore` coverage.
 
 ## Risks and Considerations
 

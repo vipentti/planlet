@@ -1,6 +1,6 @@
 # Tasks: CLI Core
 
-- [ ] T1 Create the TypeScript and Node.js package, build, test, and executable scaffold
+- [ ] T1 Create the TypeScript and Node.js package, build, test, and executable scaffold, including a `.gitignore` covering standard Node.js/TypeScript build and tooling artifacts
 - [ ] T2 Define the domain models (including advisory `warnings`), structured errors, schema versioning, and exit-code categories
 - [ ] T3 Implement repository-root discovery, safe path resolution, and slug and archive-name validation
 - [ ] T4 Implement narrow task parsing, planlet structural validation, completion-record validation, and lifecycle status derivation
