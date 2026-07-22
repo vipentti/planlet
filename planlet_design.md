@@ -989,6 +989,17 @@ Skills need scenario-based evaluation in addition to CLI tests:
 
 ## 21. MVP Scope
 
+### Phase 0: Dogfooding bootstrap
+
+- Create the canonical `planlet-plan`, `planlet-implement`, and `planlet-complete` skill skeletons.
+- Add shared `plan.md` and `tasks.md` templates based on the file contract in this document.
+- Document a narrow CLI-unavailable fallback that lets the skills create planlets, read progress, update checkboxes, and move completed planlets using ordinary repository file operations.
+- Require fallback operations to follow the same slug, target-selection, validation, task-ID, and completion-safety rules intended for the CLI.
+- Make fallback use explicit in skill output, including which deterministic CLI validations could not be run.
+- Manually create the first planlet for implementing the CLI core and use it to exercise planning, implementation handoff, incremental task updates, and completion.
+
+Phase 0 is temporary scaffolding for dogfooding, not a second implementation of Planlet's deterministic behavior. Skills should not grow their own general-purpose parser or lifecycle engine. As each required CLI operation becomes available, the skills should delegate to it and retain manual behavior only as a small, clearly identified fallback. The bootstrap skills may be revised during development; Phase 2 hardens them after the CLI contract exists.
+
 ### Phase 1: File and CLI core
 
 - Repository discovery.
@@ -1002,10 +1013,9 @@ Skills need scenario-based evaluation in addition to CLI tests:
 
 ### Phase 2: Core skills
 
-- `planlet-plan`.
-- `planlet-implement`.
-- `planlet-complete`.
-- Plan and task templates.
+- Harden the bootstrap `planlet-plan`, `planlet-implement`, and `planlet-complete` skills against the implemented CLI contract.
+- Finalize plan and task templates.
+- Minimize and test the CLI-unavailable fallback.
 - Skill scenario evaluations.
 
 ### Phase 3: Harness installation
