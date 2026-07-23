@@ -10,7 +10,8 @@ The bootstrap skills currently reproduce a narrow set of filesystem checks becau
 
 ## Scope
 
-- Establish the TypeScript package, build, test, and executable scaffolding for Node.js 22 and newer, including a `.gitignore` covering standard Node.js/TypeScript build and tooling artifacts.
+- Establish the TypeScript package, build, test, and executable scaffolding for Node.js 22 and newer, including a `.gitignore` covering standard Node.js/TypeScript build and tooling artifacts. Write all tests in TypeScript and execute them directly with `tsx` layered on Node's built-in `node:test` runner.
+- Structure command handlers as directly callable functions with an injected execution context (repository root, stdout/stderr sinks, clock), decoupled from process wiring (argv parsing, process stdout/stderr, exit codes), so the large majority of CLI behavior is exercisable in-process without spawning the compiled executable.
 - Discover repository roots and resolve Planlet paths without escaping the selected root.
 - Validate active and completed planlet names, required files, H1 headings, recognized tasks, unique task IDs, completion records, and archive dates.
 - Derive planlet lifecycle states from file location and task progress.
@@ -36,6 +37,10 @@ Use TypeScript for source and compile to JavaScript for Node.js. Keep reusable d
 
 The package scaffold includes a `.gitignore` so dependency installs and build output are never tracked. At minimum it excludes `node_modules/`, the `dist/` build output (per §16.1's `dist/planlet.mjs` bundle), `*.tsbuildinfo`, test/coverage output, package-manager debug logs, `.env*` files, and common OS and editor artifacts (for example `.DS_Store`, `.vscode/`, `.idea/`).
 
+### Test tooling
+
+Write every test in TypeScript and run it directly with `tsx` on top of Node's built-in `node:test` runner (for example `tsx --test tests/**/*.test.ts`), so tests execute without a separate compile step during development. Add `tsx` as a development-only dependency and a `test` npm script that invokes it; the compiled `dist/planlet.mjs` bundle remains the only artifact packaged for distribution. This is a test-only use of on-the-fly TypeScript execution: it does not conflict with `planlet_design.md` §16.1's guidance against relying on raw TypeScript execution for the distributed CLI, because installed users only ever run the compiled bundle and never execute source or test files directly.
+
 ### Filesystem model
 
 Resolve all operations from an explicit or discovered repository root. Reject unsafe slugs and paths before mutation, detect symlink escape where relevant, and never overwrite an active or completed planlet. Treat `plans/<slug>/plan.md` and `tasks.md` as the complete active record and parse only the narrow top-level task syntax defined by `planlet_design.md`.
@@ -46,13 +51,13 @@ Use atomic replacement for task-file updates. Make task checking idempotent and 
 
 ### Command and output model
 
-Build thin command handlers over the domain modules. Mutating commands require one explicit slug; read-only listing and resolution expose explicit empty and ambiguous states. Running `planlet` without arguments displays the active-plan dashboard, while help remains explicitly available.
+Build thin command handlers over the domain modules. Each handler accepts parsed arguments and an injected execution context (repository root, stdout/stderr sinks, clock) and returns a structured result, rather than reading `process.argv`/`process.env`, writing to `process.stdout`/`process.stderr`, or calling `process.exit` directly. This lets unit and integration tests invoke command logic directly in-process for the majority of coverage. A thin outer layer (argument parsing, root discovery, process I/O, exit-code mapping) wraps these handlers for real invocation and is covered by a smaller set of fixtures that spawn the compiled executable end-to-end. Mutating commands require one explicit slug; read-only listing and resolution expose explicit empty and ambiguous states. Running `planlet` without arguments displays the active-plan dashboard, while help remains explicitly available.
 
 Represent successful results and failures as structured internal models, including a `warnings` list on planlet summaries for advisory hygiene issues (for example a completed planlet with unchecked tasks and no override record) that must not be conflated with hard validation errors. Render compact deterministic output by default, stable JSON containing `schemaVersion`, and an opt-in human format. Truncate large plan or task content with a size hint and honor `--full` to disable truncation. Send data to stdout and diagnostics (including warnings) to stderr, and map error categories to documented exit codes.
 
 ### Verification strategy
 
-Use unit tests for validation, parsing, state derivation, archive-name handling, output, and error mapping. Use disposable repositories for discovery, initialization, multiple active plans, task updates, completion records and movement, incomplete overrides, collisions, malformed data, path traversal, symlink escape, and stdout/stderr behavior. Test supported Node versions in CI when CI is introduced.
+Use unit tests for validation, parsing, state derivation, archive-name handling, output, and error mapping. Use disposable repositories for discovery, initialization, multiple active plans, task updates, completion records and movement, incomplete overrides, collisions, malformed data, path traversal, symlink escape, and stdout/stderr behavior. Write and run all of these tests as TypeScript files executed directly via `tsx`'s `node:test` integration; prefer invoking command handlers in-process (see Command and output model) over spawning the compiled executable, reserving compiled-executable fixtures for end-to-end argv, exit-code, and stdout/stderr framing checks. Test supported Node versions in CI when CI is introduced.
 
 ## Acceptance Criteria
 
@@ -69,12 +74,14 @@ Use unit tests for validation, parsing, state derivation, archive-name handling,
 - Default, JSON, and human output keep data and diagnostics separated and use documented error and exit-code behavior.
 - Advisory hygiene issues (unchecked tasks under a recorded override, missing recommended sections, oversized content) surface as `warnings`, distinct from structural validation errors, and large content truncates with a `--full` escape hatch.
 - Unit and disposable integration tests cover successful workflows and the principal safety failures.
+- Tests are written in TypeScript and run directly via `tsx` atop `node:test`, with a documented `test` script; no separate compile step is required to run them.
+- Command handlers are directly callable, dependency-injected functions decoupled from process wiring, so the large majority of CLI behavior is covered in-process, with a smaller set of fixtures exercising the compiled executable end-to-end.
 - The bootstrap skills can delegate their deterministic Phase 1 operations to the CLI without changing the two-file Planlet contract.
 
 ## Verification
 
-- Run the documented format, type-check, build, lint, and test commands introduced by the package scaffold.
-- Run unit tests for slugs, archive names and dates, task parsing, duplicate IDs, state derivation, rendering, and error mapping.
+- Run the documented format, type-check, build, lint, and test commands introduced by the package scaffold, including the `tsx`-executed TypeScript test suite.
+- Run unit tests for slugs, archive names and dates, task parsing, duplicate IDs, state derivation, rendering, and error mapping, invoking command handlers directly in-process where applicable.
 - Run integration fixtures for repository discovery, creation (including automatic `plans/` creation on a fresh repository, minimal stub contents, title handling, `draft` status, creation-time slug-collision refusal, and simulated partial failure), listing, validation, task updates, normal completion, incomplete overrides, completion-time logical-slug and archive-destination collisions, malformed structures, unsafe paths, and symlink escape.
 - Exercise the compiled CLI's default, JSON, human, quiet, and full output where implemented, checking stdout, stderr, and exit codes independently.
 - Run `git diff --check` and confirm generated build artifacts do not introduce unintended tracked files.

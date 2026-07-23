@@ -1,6 +1,6 @@
 # Tasks: CLI Core
 
-- [ ] T1 Create the TypeScript and Node.js package, build, test, and executable scaffold, including a `.gitignore` covering standard Node.js/TypeScript build and tooling artifacts
+- [ ] T1 Create the TypeScript and Node.js package, build, and executable scaffold, including a `.gitignore` covering standard Node.js/TypeScript build and tooling artifacts, plus a test runner setup that executes TypeScript test files directly via `tsx` atop `node:test` (dev dependency, `test` npm script, `tests/` directory layout)
 - [ ] T2 Define the domain models (including advisory `warnings`), structured errors, schema versioning, and exit-code categories
 - [ ] T3 Implement repository-root discovery, safe path resolution, and slug and archive-name validation
 - [ ] T4 Implement narrow task parsing, planlet structural validation, completion-record validation, and lifecycle status derivation
@@ -8,7 +8,8 @@
 - [ ] T6 Implement atomic, idempotent task check and uncheck operations that preserve unrelated Markdown
 - [ ] T7 Implement normal and incomplete-override completion with one UTC timestamp, audit recording, collision refusal, and safe movement
 - [ ] T8 Implement compact default, versioned JSON, and human output renderers with stdout and stderr separation, warnings surfaced as diagnostics, and `--full`-aware truncation
-- [ ] T9 Wire command parsing, explicit root selection, no-argument dashboard behavior, help, and command dispatch
-- [ ] T10 Add unit tests for domain rules, status, rendering, errors, timestamps, and archive names
-- [ ] T11 Add disposable integration fixtures for creation scaffolds and failure cleanup, command workflows, malformed data, collisions, unsafe paths, symlink escape, and exit behavior
+- [ ] T9 Wire command parsing, explicit root selection, no-argument dashboard behavior, help, and command dispatch, implementing commands as directly callable handlers with an injected execution context (root, stdout/stderr sinks, clock) so most behavior is testable in-process without spawning the compiled executable
+- [ ] T10 Add TypeScript unit tests, executed via `tsx`'s `node:test` integration, for domain rules, status, rendering, errors, timestamps, and archive names
+- [ ] T11 Add disposable integration fixtures, written as TypeScript and executed via `tsx`, for creation scaffolds and failure cleanup, command workflows, malformed data, collisions, unsafe paths, and symlink escape, invoking command handlers in-process
+- [ ] T13 Add a smaller set of compiled-executable fixtures that spawn the built `planlet` binary to verify end-to-end argv parsing, stdout/stderr separation, and exit-code behavior
 - [ ] T12 Run the full verification suite and document the stable repository commands in `AGENTS.md`
