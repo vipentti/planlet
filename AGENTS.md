@@ -71,6 +71,7 @@ For Markdown-only work:
 - Confirm referenced local paths exist.
 - Check planlet filenames, headings, task syntax, and unique task IDs.
 - Run `git diff --check`.
+- After writing or editing a planlet file, confirm the diff contains only the intended content — no leaked tool-output markup or other unintended trailing text.
 
 Once implementation tooling exists, use the build, test, lint, fixture, and skill-validation commands documented by the repository. Do not add guessed commands to this guide; update it when real commands are introduced.
 
