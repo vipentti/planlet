@@ -582,10 +582,10 @@ Use `planlet help` or `planlet <command> --help` for command reference.
 
 Proposed formats:
 
-- Default: compact TOON or TOON-inspired structured output for agents.
-- `--json`: stable JSON for integrations and tests.
-- `--human`: readable tables and explanatory text.
-- `--quiet`: identifiers or minimal success output where appropriate.
+- Default: compact structured output for agents, serialized with the official TOON library (`@toon-format/toon`). Phase 1 ships this format only; see §21.
+- `--json`: stable JSON for integrations and tests. Deferred beyond Phase 1.
+- `--human`: readable tables and explanatory text. Deferred beyond Phase 1.
+- `--quiet`: identifiers or minimal success output where appropriate. Deferred beyond Phase 1.
 - `--full`: disable normal truncation for large task text or plan previews.
 
 The default should be deterministic rather than changing automatically based on whether stdout is a terminal. Agents and scripts should not receive different schemas in different environments.
@@ -831,11 +831,12 @@ Recommended baseline:
 - Bundle the CLI into one `dist/planlet.mjs` artifact.
 - Publish an npm package with a `bin` entry for `planlet`.
 - Use `#!/usr/bin/env node` in the executable bundle.
-- Prefer Node built-ins and keep runtime dependencies minimal.
+- Prefer Node built-ins and keep runtime dependencies minimal. The official TOON library (`@toon-format/toon`, see §13.4) is a deliberate exception, adopted as the default-output serializer instead of a hand-rolled implementation of the format.
 - Use Node's stable `util.parseArgs()` before adopting a large CLI framework.
 - Use the built-in `node:test` runner unless project needs outgrow it.
+- Use ESLint for linting and Prettier for formatting, with documented `lint` and `format`/`format:check` scripts.
 
-Do not rely on executing raw TypeScript in user environments. Node's native type stripping differs across versions, does not perform type checking, ignores `tsconfig.json` features, and is unnecessary when a normal build already exists.
+Do not rely on executing raw TypeScript in user environments. Node's native type stripping differs across versions, does not perform type checking, ignores `tsconfig.json` features, and is unnecessary when a normal build already exists. This restriction governs the distributed CLI only: tests are dev-only tooling, are written in TypeScript, and run directly via `tsx` layered on `node:test`, without a separate compile step.
 
 ### 16.2 Distribution
 
@@ -1067,8 +1068,9 @@ Phase 0 is temporary scaffolding for dogfooding, not a second implementation of 
 - Create minimal valid draft scaffolds, plus list, show, status, tasks, and validate.
 - Check and uncheck tasks.
 - Complete and incomplete-override behavior.
-- Compact default output plus JSON and human formats.
-- Unit and fixture-based integration tests.
+- Compact default output using the official TOON library (`@toon-format/toon`); `--json`, `--human`, and `--quiet` are deferred beyond Phase 1.
+- ESLint and Prettier tooling for the package scaffold.
+- Unit and fixture-based integration tests, written in TypeScript and executed via `tsx` atop `node:test`.
 
 ### Phase 2: Core skills
 
@@ -1132,7 +1134,6 @@ The initial product should be considered useful when:
 
 The following decisions can be resolved during prototyping:
 
-- Whether the default compact format should use the official TOON library or a small compatible subset.
 - Whether installed skills should invoke a global `planlet` binary or include a synchronized bundled CLI.
 - Whether Claude-style command adapters provide enough value beyond skills to include in the MVP.
 - Whether incomplete completion records belong in `tasks.md` or a short section in `plan.md`.
