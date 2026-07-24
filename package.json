@@ -1,0 +1,37 @@
+{
+  "name": "planlet",
+  "version": "0.0.0",
+  "description": "Small plans. Clear handoffs.",
+  "type": "module",
+  "bin": {
+    "planlet": "dist/planlet.mjs"
+  },
+  "files": [
+    "dist",
+    "skills",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "format": "prettier --write package.json tsconfig.json eslint.config.js README.md \"src/**/*.ts\" \"tests/**/*.ts\" \"scripts/**/*.mjs\"",
+    "format:check": "prettier --check package.json tsconfig.json eslint.config.js README.md \"src/**/*.ts\" \"tests/**/*.ts\" \"scripts/**/*.mjs\"",
+    "lint": "eslint \"src/**/*.ts\" \"tests/**/*.ts\"",
+    "test": "tsx --test \"tests/**/*.test.ts\"",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@toon-format/toon": "4.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.1",
+    "esbuild": "0.28.1",
+    "eslint": "10.7.0",
+    "prettier": "3.9.6",
+    "tsx": "4.23.1",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.65.0"
+  }
+}
