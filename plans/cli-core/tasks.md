@@ -2,8 +2,8 @@
 
 - [x] T1 Create the TypeScript and Node.js package, build, and executable scaffold, including a `.gitignore` covering standard Node.js/TypeScript build and tooling artifacts, plus a test runner setup that executes TypeScript test files directly via `tsx` atop `node:test` (dev dependency, `test` npm script, `tests/` directory layout)
 - [x] T2 Set up ESLint (linting) and Prettier (formatting) as dev dependencies with documented `lint` and `format`/`format:check` npm scripts, and add `@toon-format/toon` as a runtime dependency
-- [ ] T3 Define the domain models (including advisory `warnings`), structured errors, and exit-code categories, with unit tests covering their invariants
-- [ ] T4 Implement repository-root discovery, safe path resolution, and slug and archive-name validation, with unit tests covering slug rules, archive-name and date handling, and path-safety checks
+- [x] T3 Define the domain models (including advisory `warnings`), structured errors, and exit-code categories, with unit tests covering their invariants
+- [x] T4 Implement repository-root discovery, safe path resolution, and slug and archive-name validation, with unit tests covering slug rules, archive-name and date handling, and path-safety checks
 - [ ] T5 Implement narrow task parsing, planlet structural validation, completion-record validation, and lifecycle status derivation, with unit tests covering parsing, duplicate task IDs, and state derivation
 - [ ] T6 Implement safe planlet creation with automatic `plans/` setup, validated or derived titles, exactly two H1-only stub files, `draft` status, logical-slug collision refusal, and no partial result on failure, with integration fixtures covering creation scaffolds, title handling, `draft` status, collision refusal, and simulated partial-failure cleanup
 - [ ] T7 Implement the list, show, status, tasks, and validate read-only operations, including their `--state`, `--completed`, `--part`, `--all`, and `--remaining`/`--completed` flags, with fixtures covering empty, valid, invalid, active, and completed states across these commands
