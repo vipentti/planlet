@@ -132,6 +132,48 @@ and inspection of the first CI run across all six matrix combinations. Report
 CI results per combination; a green Linux run alone does not satisfy this
 planlet.
 
+## Verification results
+
+Local suite (2026-07-26): `format:check`, `lint`, `type-check`, and `build`
+passed; `npm test` reported 133 passed, 0 failed; `git diff --check` was clean.
+`git status --porcelain` showed only the in-progress edit to this planlet's
+`tasks.md`; `dist/` remained ignored.
+
+`npm publish --dry-run` exited zero, ran `prepack` to rebuild the bundle, and
+published 15 files at 31.1 kB packed and 129.0 kB unpacked:
+
+```text
+LICENSE
+README.md
+package.json
+dist/planlet.mjs
+skills/planlet-plan/SKILL.md
+skills/planlet-plan/agents/openai.yaml
+skills/planlet-plan/assets/plan-template.md
+skills/planlet-plan/assets/tasks-template.md
+skills/planlet-plan/references/planning-guidance.md
+skills/planlet-implement/SKILL.md
+skills/planlet-implement/agents/openai.yaml
+skills/planlet-implement/references/implementation-guidance.md
+skills/planlet-complete/SKILL.md
+skills/planlet-complete/agents/openai.yaml
+skills/planlet-complete/references/completion-guidance.md
+```
+
+CI run 30191599809 on `feature/phase4` succeeded on every matrix combination:
+
+| Combination | Result |
+| --- | --- |
+| ubuntu-latest, Node 22 | success |
+| ubuntu-latest, Node 24 | success |
+| macos-latest, Node 22 | success |
+| macos-latest, Node 24 | success |
+| windows-latest, Node 22 | success |
+| windows-latest, Node 24 | success |
+
+The Linux-only generated-skill drift guard runs as a step inside the
+ubuntu-latest / Node 22 job and passed with it.
+
 ## Risks and Considerations
 
 - Windows is unexercised today, so the first CI run may fail in several modules
