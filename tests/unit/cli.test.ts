@@ -18,6 +18,26 @@ test("help exits successfully without using process I/O or repository state", ()
   assert.match(stdout.join(""), /^Usage: planlet/);
   assert.equal(stderr.join(""), "");
 });
+test("installation command help documents selectors and force flags", () => {
+  for (const [command, pattern] of [
+    ["init", /init \[--tools <ids>\] \[--force\]/],
+    ["update", /update \[--tools <ids>\] \[--force\]/],
+    ["tools", /planlet tools/],
+  ] as const) {
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    assert.equal(
+      main(["help", command], {
+        cwd: "/path/that/does/not/need/to/exist",
+        stdout: (value) => stdout.push(value),
+        stderr: (value) => stderr.push(value),
+      }),
+      0,
+    );
+    assert.match(stdout.join(""), pattern);
+    assert.equal(stderr.join(""), "");
+  }
+});
 
 test("invalid commands and arguments fail with usage before repository discovery", () => {
   for (const arguments_ of [["status"], ["bogus"], ["list", "--bogus"]]) {

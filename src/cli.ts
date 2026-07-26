@@ -3,6 +3,9 @@ import { parseArgs, type ParseArgsOptionsConfig } from "node:util";
 
 import {
   handleComplete,
+  handleHarnessInit,
+  handleHarnessUpdate,
+  handleTools,
   handleCreate,
   handleDashboard,
   handleList,
@@ -23,6 +26,9 @@ import { renderToon } from "./output/toon.js";
 const HELP = `Usage: planlet [--root <path>] [--full] <command> [options]
 
 Commands:
+  init [--tools <ids>] [--force]
+  update [--tools <ids>] [--force]
+  tools
   list [--state <state>] [--completed]
   create <slug> [--title <title>]
   show <slug> [--part plan|tasks|summary]
@@ -37,6 +43,9 @@ Running planlet without a command displays the active-plan dashboard.
 `;
 
 const COMMAND_HELP: Readonly<Record<string, string>> = Object.freeze({
+  init: "Usage: planlet init [--tools <ids>] [--force]\n",
+  update: "Usage: planlet update [--tools <ids>] [--force]\n",
+  tools: "Usage: planlet tools\n",
   list: "Usage: planlet list [--state <state>] [--completed]\n",
   create: "Usage: planlet create <slug> [--title <title>]\n",
   show: "Usage: planlet show <slug> [--part plan|tasks|summary]\n",
@@ -87,7 +96,13 @@ function extractGlobalArguments(
   const remaining: string[] = [];
   let explicitRoot: string | undefined;
   let full = false;
-  const valueOptions = new Set(["--state", "--title", "--part", "--reason"]);
+  const valueOptions = new Set([
+    "--state",
+    "--title",
+    "--part",
+    "--reason",
+    "--tools",
+  ]);
 
   for (let index = 0; index < arguments_.length; index += 1) {
     const argument = arguments_[index];
@@ -127,7 +142,13 @@ function extractGlobalArguments(
 }
 
 function hasHelpFlag(arguments_: readonly string[]): boolean {
-  const valueOptions = new Set(["--state", "--title", "--part", "--reason"]);
+  const valueOptions = new Set([
+    "--state",
+    "--title",
+    "--part",
+    "--reason",
+    "--tools",
+  ]);
   for (let index = 0; index < arguments_.length; index += 1) {
     const argument = arguments_[index];
     if (argument !== undefined && valueOptions.has(argument)) {
@@ -175,6 +196,26 @@ function prepareCommand(
 ): PreparedCommand {
   // `--help` is intercepted by `main` before this point.
   switch (command) {
+    case "init":
+    case "update": {
+      const { values, positionals } = parse(arguments_, {
+        tools: { type: "string" },
+        force: { type: "boolean" },
+      });
+      requirePositionals(positionals, 0, command);
+      const commandArguments = {
+        ...(values.tools === undefined ? {} : { tools: values.tools }),
+        ...(values.force === undefined ? {} : { force: values.force }),
+      };
+      return command === "init"
+        ? (context) => handleHarnessInit(commandArguments, context)
+        : (context) => handleHarnessUpdate(commandArguments, context);
+    }
+    case "tools": {
+      const { positionals } = parse(arguments_, {});
+      requirePositionals(positionals, 0, command);
+      return (context) => handleTools(context);
+    }
     case "list": {
       const { values, positionals } = parse(arguments_, {
         state: { type: "string" },
@@ -363,7 +404,9 @@ export function main(
     const root = discoverRepositoryRoot({
       startPath: runtime.cwd,
       ...(explicitRoot === undefined ? {} : { explicitRoot }),
-      ...(command === "create" ? { allowUnmarkedStart: true } : {}),
+      ...(command === "create" || command === "init"
+        ? { allowUnmarkedStart: true }
+        : {}),
     });
     const context: ExecutionContext = {
       root,

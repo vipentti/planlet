@@ -270,3 +270,26 @@ test("tasks, task updates, and completion route plan warnings to stderr", () => 
     assert.doesNotMatch(completed.stdout, /diagnostics|warnings/);
   });
 });
+
+test("compiled init resolves and installs packaged canonical skills", () => {
+  withRepository((root) => {
+    const result = runCli(["init", "--tools", "agents"], root);
+
+    assert.equal(result.exitCode, EXIT_CODES.success, result.stderr);
+    assert.equal(result.stderr, "");
+    assert.deepEqual(
+      readFileSync(
+        join(root, ".agents", "skills", "planlet-implement", "SKILL.md"),
+      ),
+      readFileSync(
+        join(packageRoot, "skills", "planlet-implement", "SKILL.md"),
+      ),
+    );
+    assert.equal(
+      runCli(["init", "--tools", "agents"], root).stdout.includes(
+        "changed: false",
+      ),
+      true,
+    );
+  });
+});

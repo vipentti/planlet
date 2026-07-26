@@ -32,6 +32,7 @@ test("each error code is locked to its exact exit-code category", () => {
     duplicate_task_id: EXIT_CODES.invalidPlan,
     incomplete_tasks: EXIT_CODES.stateTransition,
     archive_collision: EXIT_CODES.stateTransition,
+    unsupported_tool: EXIT_CODES.usage,
     unsafe_path: EXIT_CODES.filesystemConflict,
     write_conflict: EXIT_CODES.filesystemConflict,
   };

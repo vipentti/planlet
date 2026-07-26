@@ -1,4 +1,8 @@
 import { createPlanlet } from "../core/creation.js";
+import {
+  detectHarnesses,
+  installHarnessSkills,
+} from "../core/harness-installer.js";
 import type { PlanletState, PlanSummary } from "../core/models.js";
 import { complete } from "./complete.js";
 import {
@@ -81,6 +85,40 @@ function emit(
     if (rendered.stderr.length > 0) context.stderr(rendered.stderr);
     return rendered.exitCode;
   }
+}
+
+export function handleHarnessInit(
+  arguments_: { readonly tools?: string; readonly force?: boolean },
+  context: ExecutionContext,
+): ExitCode {
+  return emit(context, () => ({
+    data: installHarnessSkills({
+      repositoryRoot: context.root,
+      operation: "init",
+      ...(arguments_.tools === undefined ? {} : { tools: arguments_.tools }),
+      ...(arguments_.force === undefined ? {} : { force: arguments_.force }),
+    }),
+  }));
+}
+
+export function handleHarnessUpdate(
+  arguments_: { readonly tools?: string; readonly force?: boolean },
+  context: ExecutionContext,
+): ExitCode {
+  return emit(context, () => ({
+    data: installHarnessSkills({
+      repositoryRoot: context.root,
+      operation: "update",
+      ...(arguments_.tools === undefined ? {} : { tools: arguments_.tools }),
+      ...(arguments_.force === undefined ? {} : { force: arguments_.force }),
+    }),
+  }));
+}
+
+export function handleTools(context: ExecutionContext): ExitCode {
+  return emit(context, () => ({
+    data: { tools: detectHarnesses({ repositoryRoot: context.root }) },
+  }));
 }
 
 export function handleDashboard(context: ExecutionContext): ExitCode {

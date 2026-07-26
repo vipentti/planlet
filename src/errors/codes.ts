@@ -10,6 +10,7 @@ export const ERROR_CODES = [
   "duplicate_task_id",
   "incomplete_tasks",
   "archive_collision",
+  "unsupported_tool",
   "unsafe_path",
   "write_conflict",
 ] as const;
@@ -40,6 +41,7 @@ export const ERROR_EXIT_CODES: Readonly<Record<ErrorCode, ExitCode>> =
     duplicate_task_id: EXIT_CODES.invalidPlan,
     incomplete_tasks: EXIT_CODES.stateTransition,
     archive_collision: EXIT_CODES.stateTransition,
+    unsupported_tool: EXIT_CODES.usage,
     unsafe_path: EXIT_CODES.filesystemConflict,
     write_conflict: EXIT_CODES.filesystemConflict,
   });

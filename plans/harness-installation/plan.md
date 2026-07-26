@@ -26,7 +26,7 @@ Out of scope:
 
 ## Approach
 
-Represent harness support as registry data plus small behaviors, following design §15.4. Each adapter declares an ID, display name, skill directory, and command support. Selection trims and deduplicates comma-separated IDs, rejects empty values and unknown IDs, and treats `all` and `none` as exclusive selectors that cannot be combined with each other or concrete IDs. Destinations resolve beneath the repository root, and IDs that share a destination are coalesced so `agents` and `codex` reconcile the shared `.agents/skills` tree exactly once while every selected ID appears in the summary.
+Represent harness support as registry data plus small behaviors, following design §15.4. Each adapter declares an ID, display name, and skill directory. Selection trims and deduplicates comma-separated IDs, rejects empty values and unknown IDs, and treats `all` and `none` as exclusive selectors that cannot be combined with each other or concrete IDs. Destinations resolve beneath the repository root, and IDs that share a destination are coalesced so `agents` and `codex` reconcile the shared `.agents/skills` tree exactly once while every selected ID appears in the summary.
 
 Resolve the canonical skill source relative to the module location so the same code works when executed from `src/` under `tsx` and from the bundled `dist/planlet.mjs`, where `skills/` sits alongside `dist/` in the published package.
 
