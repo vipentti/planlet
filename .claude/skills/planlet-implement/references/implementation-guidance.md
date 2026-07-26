@@ -13,6 +13,8 @@ Use this narrow fallback only for CLI operations that are unavailable:
 
 Do not grow this fallback into a general Markdown parser.
 
+CLI support is operation-specific. Missing `show` permits direct reads; missing `validate` permits narrow structural validation; missing `tasks` or `status` permits reporting counts from already validated recognized lines; missing `task check` permits one safe checkbox edit. A supported operation returning a non-zero exit is a workflow failure, not evidence that operation is unavailable.
+
 ## Evaluate drift
 
 Repository change since planning is expected. Continue when current code merely changes incidental file locations or makes an equivalent implementation adjustment obvious. Explain the adjustment in the final summary.
@@ -24,6 +26,8 @@ Treat drift as material when it invalidates the stated approach, changes public 
 Before checking a task, confirm that its whole described outcome exists and that relevant verification passed. A code edit alone is not completion. Use targeted checks during implementation and broader checks when the plan or repository requires them.
 
 If a check fails, distinguish an in-scope defect from unrelated existing failure. Fix in-scope defects when the plan authorizes it. Otherwise report the failing command and evidence, leave the task unchecked, and continue only when independent remaining work is safe.
+
+Treat CLI exit status and stable structured error code as authoritative. Do not parse field order, whitespace, or incidental TOON layout. After a successful task check, inspect canonical task and status results instead of inferring progress from command prose.
 
 For newly discovered necessary work, determine whether it is a small implementation detail or a material scope addition. Incorporate small details transparently. For material additions, propose consistent edits to both `plan.md` and `tasks.md`; preserve existing IDs and allocate new IDs above the highest current numeric suffix.
 

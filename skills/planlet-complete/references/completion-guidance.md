@@ -13,9 +13,13 @@ Use manual behavior only for missing CLI operations:
 
 Do not turn the fallback into a general parser or use it when the corresponding CLI operation exists.
 
+CLI support is operation-specific. Missing `show` permits direct reads; missing `tasks` permits remaining-task inspection from already validated recognized lines; missing `validate` permits narrow structural validation; missing `complete` permits manual audit and movement. A supported operation returning a non-zero exit is a workflow failure, not evidence that operation is unavailable.
+
 ## Require explicit incomplete approval
 
 List each remaining task ID and description before asking. Explain that an override moves the planlet while retaining unchecked tasks. Require an explicit confirmation directed at this planlet and a non-empty reason suitable for the audit trail. If either is absent, stop without editing.
+
+Use reason exactly as approved except necessary surrounding-whitespace trimming. Never invent, generalize, or reuse reason from another planlet.
 
 ## Record one completion instant
 

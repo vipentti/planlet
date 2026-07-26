@@ -10,10 +10,11 @@ Complete one planlet without hiding unfinished or invalid work.
 ## Start the workflow
 
 1. Discover the repository root without traversing above its boundary.
-2. Determine whether the required `planlet` validate, tasks, and complete operations are available. Prefer them whenever present; the CLI remains non-interactive and owns deterministic checks and movement.
-3. If any required operation is unavailable, announce the narrow repository-local fallback and name the CLI validation, completion, or collision checks that cannot run.
-4. Resolve exactly one active planlet. Accept one valid explicit slug. With no slug, select and announce the sole active planlet; report none when none exist; ask the user to choose when several exist.
-5. Re-read both files completely and validate structure. Treat a missing, unreadable, or malformed file as invalid, never as completed.
+2. Use one available `planlet` executable throughout. Confirm needed operations with `planlet help <command>` and pass `--root "<repository-root>"` to every operational command. Treat angle-bracket runtime values as separate argv values; when invoking through a shell, apply shell-specific escaping instead of interpolating raw text.
+3. Resolve exactly one active planlet with `planlet --root "<repository-root>" list`. Accept one valid explicit active slug. With no slug, select and announce sole active planlet; report none; or ask user to choose when several exist.
+4. Run `planlet --root "<repository-root>" validate <slug>`. Stop on non-zero exit. Re-read both files completely with `planlet --root "<repository-root>" --full show <slug> --part plan` and `planlet --root "<repository-root>" --full show <slug> --part tasks`; treat missing, unreadable, or malformed files as invalid.
+5. Run `planlet --root "<repository-root>" tasks <slug> --remaining`.
+6. If an operation is unavailable, announce fallback for that operation only and name missing CLI validation, task inspection, collision, audit, atomic-write, or move behavior. Continue using supported CLI operations.
 
 ## Decide completion
 
@@ -21,10 +22,14 @@ Inspect all recognized tasks. For normal completion, require every task to be ch
 
 Read [completion guidance](references/completion-guidance.md) before performing manual completion. Refuse unsafe paths, invalid slugs, an existing completed planlet with the same logical slug, or an occupied destination. Do not change the source when any check fails.
 
-When the CLI complete operation is available, delegate normal or explicitly approved incomplete completion to it and inspect the result. Otherwise capture one UTC instant, append the required completion record to `tasks.md`, derive the archive date from that same instant, revalidate the source and destination, and move the whole directory to `plans/completed/<YYYY-MM-DD>-<slug>`.
+For zero remaining tasks, run `planlet --root "<repository-root>" complete <slug>`. For explicitly approved incomplete completion, run `planlet --root "<repository-root>" complete <slug> --allow-incomplete --reason "<reason>"`. Never attempt normal completion first merely to prompt user; `tasks --remaining` supplies decision evidence.
+
+Treat CLI non-zero exit and stable structured error code as authoritative. Do not retry around `incomplete_tasks`, collision, invalid-plan, unsafe-path, or write-conflict failures with manual movement. On success, inspect reported logical slug, mode, timestamp, and archive path, then run `planlet --root "<repository-root>" validate <slug>` to inspect completed storage.
+
+Only when `complete` is unavailable, capture one UTC instant, append required completion record to `tasks.md`, derive archive date from same instant, revalidate source and destination, and move whole directory to `plans/completed/<YYYY-MM-DD>-<slug>`.
 
 Do not implement remaining tasks, complete several planlets, overwrite a destination, change the logical slug, or delete either primary file.
 
 ## Finish
 
-Report the logical slug, recorded UTC timestamp, normal or incomplete-override mode, remaining task IDs for an override, and final archive path. If the operation stopped, report the exact unchanged source and blocking check. When fallback was used, repeat which deterministic CLI checks were unavailable.
+Report logical slug, recorded UTC timestamp, mode, remaining task IDs for override, final archive path, and post-completion validation result. If operation stopped, report exact source state and blocking code. When fallback was used, repeat each unavailable deterministic operation.

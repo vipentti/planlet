@@ -10,9 +10,10 @@ Create or revise one focused planlet while keeping planning separate from implem
 ## Start the workflow
 
 1. Discover the repository root without traversing above its boundary.
-2. Determine whether the required `planlet` create and validate operations are available. Prefer those operations whenever they exist; do not duplicate their deterministic work.
-3. If they are unavailable, announce that the narrow repository-local fallback is active and that CLI creation and validation checks cannot run.
-4. Read `planlet_design.md` and applicable repository instructions when present. For a revision, resolve exactly one active planlet and re-read both `plan.md` and `tasks.md` from disk.
+2. Use one available `planlet` executable throughout the workflow. Confirm each needed operation with `planlet help <command>`; do not infer support from this skill. Pass `--root "<repository-root>"` to every operational command. Treat angle-bracket runtime values as separate argv values; when invoking through a shell, apply shell-specific escaping instead of interpolating raw text.
+3. Use `planlet --root "<repository-root>" list` to inspect active logical slugs and `planlet --root "<repository-root>" list --completed` to inspect completed logical slugs. For a revision, resolve exactly one active slug, run `planlet --root "<repository-root>" validate <slug>`, and read both files completely with `planlet --root "<repository-root>" --full show <slug> --part plan` and `planlet --root "<repository-root>" --full show <slug> --part tasks`.
+4. Read `planlet_design.md` and applicable repository instructions when present.
+5. If an operation is unavailable, announce fallback for that operation only and name its missing deterministic CLI behavior. Continue using CLI for every supported operation.
 
 ## Develop the proposal
 
@@ -25,16 +26,18 @@ Create or revise one focused planlet while keeping planning separate from implem
 
 ## Persist or revise
 
-When the CLI supports creation and validation, delegate those operations to it and inspect the result. Otherwise:
+For a new confirmed planlet:
 
-1. Resolve all paths beneath the repository root. Refuse an invalid slug, unsafe path, existing active directory, completed logical-slug conflict, or overwrite.
-2. Create exactly `plans/<slug>/plan.md` and `plans/<slug>/tasks.md` only after confirmation.
-3. Require each file to start with an H1. Recognize tasks only from top-level lines shaped as `- [ ] T<number> Description` or `- [x] T<number> Description`; require unique IDs.
-4. For revisions, preserve IDs for unchanged tasks, assign new IDs above the highest numeric suffix, and reconcile both files. Never silently remove completed work; explain any completed task that becomes invalid or superseded.
-5. Re-read both written files and perform the available structural checks.
+1. Run `planlet --root "<repository-root>" create <slug> --title "<title>"`. Treat non-zero exit as no authorization to write around a slug, path, or collision failure.
+2. Confirm CLI created only H1 stubs, then replace those two stubs with approved `plan.md` and `tasks.md` content. Never use `create` for revision or overwrite an existing planlet.
+3. Run `planlet --root "<repository-root>" validate <slug>`, then re-read both files with `planlet --root "<repository-root>" --full show <slug> --part plan` and `planlet --root "<repository-root>" --full show <slug> --part tasks`; inspect exact persisted content.
+
+For a confirmed revision, edit both existing files directly because CLI has no semantic revision operation. Preserve IDs for unchanged tasks, assign new IDs above highest numeric suffix, and never silently remove completed work. Then run targeted `validate` and full `show` inspection as above.
+
+Use manual creation only when `create` is unavailable: resolve paths beneath repository root, refuse invalid or conflicting slugs, and publish exactly both primary files without partial state or overwrite. Use manual structural validation only when `validate` is unavailable: require H1 headings, recognized top-level task lines, non-empty descriptions, and unique IDs. A missing `show` operation permits direct file reads, not manual validation. Report unavailable canonical collision checks, validation, structured errors, or atomic creation as applicable.
 
 Do not modify product code, create extra planning documents by default, or begin implementation unless the user separately requests it.
 
 ## Finish
 
-Report the selected logical slug, paths written or revised, proposal status, validation performed, and any warnings or unresolved decisions. When fallback was used, repeat that deterministic CLI creation or validation was unavailable.
+Report selected logical slug, paths written or revised, proposal status, exact CLI validation result, warnings, and unresolved decisions. When fallback was used, repeat each unavailable deterministic operation.

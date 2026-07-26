@@ -31,3 +31,9 @@ Avoid catch-all tasks such as "finish implementation" or "test everything." A fr
 ## Review before persistence
 
 Show the proposed title, slug, plan content, and task list before writing. Call out assumptions, exclusions, and unresolved decisions. Treat edits requested during review as part of the proposal and ask for confirmation of the final version. Confirmation authorizes only creation or revision of the two planning files, not product implementation.
+
+After confirmed creation, populate only stubs produced by `planlet create`. After confirmed revision, re-read current files immediately before editing and reconcile both documents in one reviewable change. In either case, targeted CLI validation and full post-write inspection must succeed before reporting a valid handoff.
+
+## Handle failures
+
+Treat CLI exit status and structured error code as authoritative. Do not depend on field order, whitespace, or incidental TOON formatting. Stop on unsafe path, invalid slug, collision, write conflict, or invalid-plan errors; report code and suggested next action without bypassing CLI. Warnings require review but do not automatically invalidate a structurally valid planlet.

@@ -10,10 +10,11 @@ Implement one persisted planlet and keep its progress truthful.
 ## Start the workflow
 
 1. Discover the repository root without traversing above its boundary.
-2. Determine whether the required `planlet` show, validate, tasks, and task-check operations are available. Prefer available operations; do not reproduce their deterministic work.
-3. If any required operation is unavailable, announce the narrow repository-local fallback and name the CLI inspection, validation, or progress checks that cannot run.
-4. Resolve exactly one active planlet. Accept one valid explicit slug. With no slug, select the sole active planlet and announce it; report none when none exist; ask the user to choose when several exist. Never select by recency or directory order.
-5. Re-read the selected `plan.md` and `tasks.md` completely from disk and validate them before changing product code.
+2. Use one available `planlet` executable throughout. Confirm needed operations with `planlet help <command>` and pass `--root "<repository-root>"` to every operational command. Treat angle-bracket runtime values as separate argv values; when invoking through a shell, apply shell-specific escaping instead of interpolating raw text.
+3. Resolve exactly one active planlet with `planlet --root "<repository-root>" list`. Accept one valid explicit active slug. With no slug, select and announce sole active planlet; report none; or ask user to choose when several exist. Never select by recency or output order.
+4. Run `planlet --root "<repository-root>" validate <slug>`. Stop on non-zero exit.
+5. Re-read both files completely with `planlet --root "<repository-root>" --full show <slug> --part plan` and `planlet --root "<repository-root>" --full show <slug> --part tasks`; use `planlet --root "<repository-root>" tasks <slug>` and `planlet --root "<repository-root>" status <slug>` for canonical progress.
+6. If an operation is unavailable, announce fallback for that operation only and name missing CLI inspection, validation, progress, structured-error, or atomic-update behavior. Continue using supported CLI operations.
 
 ## Implement
 
@@ -21,8 +22,10 @@ Implement one persisted planlet and keep its progress truthful.
 2. Compare current conditions with the persisted plan. Read [implementation guidance](references/implementation-guidance.md) for drift, task, and pause decisions.
 3. Work through tasks in a sensible dependency order. Limit mutations to this planlet and its implementation scope.
 4. Verify each task with checks proportionate to its outcome. Mark it complete immediately after both implementation and relevant verification succeed; leave failed or unverified tasks unchecked.
-5. Use the CLI task-check operation when available. Otherwise update only the exact recognized task line in `tasks.md`, preserve its ID and text, normalize the checked marker to `[x]`, write safely, and re-read the file. Treat checking an already checked task as successful without duplicating content.
-6. Reinspect progress after each update. If new work materially expands scope, update the plan and tasks only with user approval or pause for direction.
+5. Run `planlet --root "<repository-root>" task check <slug> <task-id>` only after whole task outcome and relevant verification succeed. Treat successful `changed: false` as idempotent completion, not failure.
+6. Immediately run `planlet --root "<repository-root>" tasks <slug>` and `planlet --root "<repository-root>" status <slug>` after each check. Confirm expected task and counts before continuing.
+7. If task-check is unavailable, update only exact recognized line in `tasks.md`, preserve ID and text, normalize marker to `[x]`, write safely, and re-read file. Never fall back around a supported command's `task_not_found`, `invalid_plan`, `unsafe_path`, or `write_conflict` error.
+8. If new work materially expands scope, update plan and tasks only with user approval or pause for direction.
 
 Pause rather than guess when the plan is materially stale, a task has multiple consequential interpretations, verification fails without an in-scope remedy, required authority is missing, or safe progress would expand scope. Record evidence and keep affected tasks unchecked.
 
@@ -30,4 +33,4 @@ Do not implement multiple planlets, infer completion from malformed or missing f
 
 ## Finish
 
-Report the logical slug, implemented outcomes, task IDs checked during this run, exact verification and results, deviations or blockers, and remaining task IDs. State whether the planlet is ready to complete. When fallback was used, repeat which deterministic CLI checks were unavailable.
+Run final `planlet --root "<repository-root>" tasks <slug> --remaining` and `planlet --root "<repository-root>" status <slug>`. Report logical slug, outcomes, task IDs checked during this run, exact verification and results, deviations or blockers, remaining task IDs, and canonical state. State whether state is `ready_to_complete`. When fallback was used, repeat each unavailable deterministic operation.

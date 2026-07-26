@@ -1,0 +1,66 @@
+[
+  {
+    "id": "vague-planning",
+    "skill": "planlet-plan",
+    "prompt": "Plan a better search experience.",
+    "expectedDecision": "clarify-material-unknowns",
+    "evidence": ["Clarify only uncertainties that materially affect scope"]
+  },
+  {
+    "id": "precise-planning",
+    "skill": "planlet-plan",
+    "prompt": "Plan adding --csv to report command with unit and integration coverage.",
+    "expectedDecision": "propose-without-extra-questions",
+    "evidence": ["If the request is already precise, proceed without ceremonial questions"]
+  },
+  {
+    "id": "declined-persistence",
+    "skill": "planlet-plan",
+    "prompt": "Do not save proposed plan.",
+    "expectedDecision": "leave-repository-unchanged",
+    "evidence": ["If confirmation is declined or absent, leave the repository unchanged"]
+  },
+  {
+    "id": "consistent-revision",
+    "skill": "planlet-plan",
+    "prompt": "Revise scope and corresponding implementation tasks.",
+    "expectedDecision": "reconcile-plan-and-tasks",
+    "evidence": ["reconcile both documents", "Preserve IDs for unchanged tasks"]
+  },
+  {
+    "id": "implementation-drift",
+    "skill": "planlet-implement",
+    "prompt": "Implement plan after underlying API changed.",
+    "expectedDecision": "pause-on-material-drift",
+    "evidence": ["Treat drift as material when it invalidates the stated approach"]
+  },
+  {
+    "id": "failed-verification",
+    "skill": "planlet-implement",
+    "prompt": "Verification fails after code edit.",
+    "expectedDecision": "leave-task-unchecked",
+    "evidence": ["leave failed or unverified tasks unchecked"]
+  },
+  {
+    "id": "multiple-targets",
+    "skill": "planlet-implement",
+    "prompt": "Implement without slug while several active planlets exist.",
+    "expectedDecision": "request-explicit-selection",
+    "evidence": ["ask user to choose when several exist", "Never select by recency or output order"]
+  },
+  {
+    "id": "incomplete-completion",
+    "skill": "planlet-complete",
+    "prompt": "Archive planlet with unchecked tasks.",
+    "expectedDecision": "request-confirmed-override",
+    "evidence": ["obtain explicit confirmation plus a non-empty reason", "Do not reuse general implementation approval"]
+  },
+  {
+    "id": "portable-canonical-workflow",
+    "skill": "all",
+    "prompt": "Run same workflow from generic Agent Skills, Claude Code, and Codex copies.",
+    "expectedDecision": "use-canonical-resources",
+    "evidence": ["Treat angle-bracket runtime values as separate argv values"],
+    "harnesses": ["agents", "claude", "codex"]
+  }
+]

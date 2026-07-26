@@ -20,3 +20,7 @@ Explain the chosen implementation direction and key decisions.
 ## Verification
 
 Describe the automated and manual checks that establish success.
+
+## Risks and Considerations
+
+Record only material compatibility, migration, security, or delivery risks.
