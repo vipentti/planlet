@@ -5,6 +5,7 @@ import {
   readFileSync,
   readdirSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -181,5 +182,68 @@ test("missing tasks and malformed planlets fail without modifying Markdown", () 
         error instanceof PlanletError && error.code === "duplicate_task_id",
     );
     assert.equal(readFileSync(tasksPath, "utf8"), malformed);
+  });
+});
+
+test("task updates refuse planlet directory symlinks", () => {
+  const root = mkdtempSync(join(tmpdir(), "planlet-task-symlink-"));
+  const target = join(root, "target");
+  mkdirSync(join(root, ".git"));
+  mkdirSync(join(root, "plans"));
+  mkdirSync(target);
+  writeFileSync(join(target, "plan.md"), "# Fixture Plan\n");
+  writeFileSync(join(target, "tasks.md"), "# Tasks\n\n- [ ] T1 Pending\n");
+  symlinkSync(target, join(root, "plans", "fixture-plan"), "dir");
+  try {
+    assert.throws(
+      () =>
+        checkTask({
+          repositoryRoot: root,
+          slug: "fixture-plan",
+          taskId: "T1",
+        }),
+      (error) => error instanceof PlanletError && error.code === "unsafe_path",
+    );
+    assert.equal(
+      readFileSync(join(target, "tasks.md"), "utf8"),
+      "# Tasks\n\n- [ ] T1 Pending\n",
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("task mutations cannot diverge from an active completion record", () => {
+  const incompleteOverride =
+    "# Tasks: Fixture Plan\n\n- [ ] T1 Pending\n\n## Completion\n\n- Completed at: 2026-07-22T12:34:56Z\n- Mode: incomplete override\n- Remaining tasks: T1\n- Reason: Interrupted archive\n";
+  withPlanlet(incompleteOverride, (root, tasksPath) => {
+    assert.throws(
+      () =>
+        checkTask({
+          repositoryRoot: root,
+          slug: "fixture-plan",
+          taskId: "T1",
+        }),
+      (error) =>
+        error instanceof PlanletError &&
+        error.code === "invalid_plan" &&
+        error.next === "planlet complete fixture-plan",
+    );
+    assert.equal(readFileSync(tasksPath, "utf8"), incompleteOverride);
+  });
+
+  const normal =
+    "# Tasks: Fixture Plan\n\n- [x] T1 Done\n\n## Completion\n\n- Completed at: 2026-07-22T12:34:56Z\n- Mode: normal\n";
+  withPlanlet(normal, (root, tasksPath) => {
+    assert.throws(
+      () =>
+        uncheckTask({
+          repositoryRoot: root,
+          slug: "fixture-plan",
+          taskId: "T1",
+        }),
+      (error) => error instanceof PlanletError && error.code === "invalid_plan",
+    );
+    assert.equal(readFileSync(tasksPath, "utf8"), normal);
   });
 });

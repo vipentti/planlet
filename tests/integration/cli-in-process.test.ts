@@ -189,6 +189,20 @@ test("dispatch handles --help without reaching option parsing", () => {
   });
 });
 
+test("global-looking option values are not consumed as globals or help", () => {
+  withRepository((root) => {
+    for (const arguments_ of [
+      ["create", "root-value", "--title", "--root", root],
+      ["create", "help-value", "--title", "--help"],
+    ]) {
+      const { capture, runtime } = captureRuntime(root);
+      assert.equal(main(arguments_, runtime), 2);
+      assert.equal(capture.stdout.join(""), "");
+      assert.match(capture.stderr.join(""), /^usage: /);
+    }
+  });
+});
+
 test("dispatch passes the injected clock to completion", () => {
   withRepository((root) => {
     writePlanlet(

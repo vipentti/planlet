@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import {
+  chmodSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -22,6 +23,9 @@ import {
   type ExecutionContext,
 } from "../../src/commands/handlers.js";
 import type { ExitCode } from "../../src/errors/codes.js";
+
+const COMPLETE_PLAN =
+  "# Fixture\n\n## Summary\nFixture.\n\n## Scope\nFixture.\n\n## Approach\nFixture.\n\n## Acceptance Criteria\n- Works.\n\n## Verification\nTests.\n";
 
 interface CommandOutcome {
   readonly exitCode: ExitCode;
@@ -242,9 +246,14 @@ test("a planlet directory symlinked outside the repository is refused", () => {
 
     for (const [name, command] of Object.entries(SLUG_COMMANDS)) {
       const outcome = run(root, command("escaped-plan"));
-      assert.equal(outcome.exitCode, 5, name);
-      assert.equal(errorCode(outcome), "unsafe_path", name);
-      assert.equal(outcome.stdout, "", name);
+      if (name === "validate") {
+        assert.equal(outcome.exitCode, 3, name);
+        assert.deepEqual(validationErrorCodes(outcome), ["unsafe_path"], name);
+      } else {
+        assert.equal(outcome.exitCode, 5, name);
+        assert.equal(errorCode(outcome), "unsafe_path", name);
+        assert.equal(outcome.stdout, "", name);
+      }
     }
   });
 });
@@ -275,7 +284,7 @@ test("a planlet file symlinked outside the repository is refused", () => {
 test("symlinks that stay inside the repository remain usable", () => {
   withRepository((root) => {
     const real = writePlanlet(root, "real-plan", {
-      plan: "# Real Plan\n",
+      plan: COMPLETE_PLAN.replace("# Fixture", "# Real Plan"),
       tasks: "# Tasks: Real Plan\n\n- [ ] T1 Stay inside\n",
     });
     symlinkSync(real, join(root, "plans", "linked-plan"), "dir");
@@ -283,5 +292,45 @@ test("symlinks that stay inside the repository remain usable", () => {
     const outcome = run(root, SLUG_COMMANDS.show!("linked-plan"));
     assert.equal(outcome.exitCode, 0);
     assert.equal(outcome.stderr, "");
+  });
+});
+
+test("targeted reads ignore unrelated escaping planlet symlinks", () => {
+  withRepository((root, outside) => {
+    writePlanlet(root, "valid-plan", {
+      plan: COMPLETE_PLAN.replace("# Fixture", "# Valid Plan"),
+      tasks: "# Tasks: Valid Plan\n\n- [ ] T1 Read this\n",
+    });
+    mkdirSync(join(outside, "unrelated-plan"));
+    symlinkSync(
+      join(outside, "unrelated-plan"),
+      join(root, "plans", "unrelated-plan"),
+      "dir",
+    );
+
+    for (const command of ["show", "tasks", "validate"] as const) {
+      const outcome = run(root, SLUG_COMMANDS[command]!("valid-plan"));
+      assert.equal(outcome.exitCode, 0, command);
+      assert.equal(outcome.stderr, "", command);
+    }
+
+    const all = run(root, (context) => handleValidate({}, context));
+    assert.equal(all.exitCode, 3);
+    assert.deepEqual(validationErrorCodes(all), ["unsafe_path", "undefined"]);
+  });
+});
+
+test("directory enumeration failures become structured plan errors", () => {
+  withRepository((root) => {
+    const plans = join(root, "plans");
+    chmodSync(plans, 0o000);
+    try {
+      const outcome = run(root, (context) => handleValidate({}, context));
+      assert.equal(outcome.exitCode, 3);
+      assert.equal(errorCode(outcome), "invalid_plan");
+      assert.match(outcome.stderr, /Cannot read planlet directory/);
+    } finally {
+      chmodSync(plans, 0o700);
+    }
   });
 });

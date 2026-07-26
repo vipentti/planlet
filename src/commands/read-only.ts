@@ -5,6 +5,7 @@ import {
   type Dirent,
   type Stats,
 } from "node:fs";
+import { resolve } from "node:path";
 
 import {
   createPlanSummary,
@@ -63,6 +64,7 @@ export interface TasksResult {
   readonly tasks: readonly PlanletTask[];
   readonly completedTasks: number;
   readonly totalTasks: number;
+  readonly warnings: readonly string[];
 }
 
 export interface ValidatePlanletsOptions {
@@ -89,6 +91,7 @@ export interface ValidationResult {
 interface PlanletCandidate {
   readonly directoryName: string;
   readonly location: PlanletLocation;
+  readonly storageRoot: string;
   readonly path: string;
 }
 
@@ -124,9 +127,33 @@ function plansPath(repositoryRoot: string): string {
 }
 
 function directoryEntries(path: string): readonly Dirent[] {
-  return readdirSync(path, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory() || entry.isSymbolicLink())
-    .sort((left, right) => left.name.localeCompare(right.name));
+  try {
+    return readdirSync(path, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() || entry.isSymbolicLink())
+      .sort((left, right) =>
+        left.name < right.name ? -1 : left.name > right.name ? 1 : 0,
+      );
+  } catch (error) {
+    throw new PlanletError("invalid_plan", "Cannot read planlet directory", {
+      details: { path },
+      cause: error,
+    });
+  }
+}
+
+function makeCandidate(
+  parent: string,
+  directoryName: string,
+  location: PlanletLocation,
+): PlanletCandidate {
+  return {
+    directoryName,
+    location,
+    storageRoot: parent,
+    // Preserve lexical entry. Resolving here lets one unsafe symlink abort
+    // discovery before commands can report that entry as invalid.
+    path: resolve(parent, directoryName),
+  };
 }
 
 function discoverCandidates(
@@ -140,11 +167,7 @@ function discoverCandidates(
     if (entry.name === "completed" || entry.name.startsWith(".")) {
       continue;
     }
-    candidates.push({
-      directoryName: entry.name,
-      location: "active",
-      path: resolveSafePath(root, entry.name),
-    });
+    candidates.push(makeCandidate(root, entry.name, "active"));
   }
 
   if (!includeCompleted) {
@@ -168,18 +191,18 @@ function discoverCandidates(
     if (entry.name.startsWith(".")) {
       continue;
     }
-    candidates.push({
-      directoryName: entry.name,
-      location: "completed",
-      path: resolveSafePath(completedRoot, entry.name),
-    });
+    candidates.push(makeCandidate(completedRoot, entry.name, "completed"));
   }
 
   return candidates;
 }
 
 function readMarkdown(candidate: PlanletCandidate, filename: string): string {
-  const path = resolveSafePath(candidate.path, filename);
+  const path = resolveSafePath(
+    candidate.storageRoot,
+    candidate.directoryName,
+    filename,
+  );
   try {
     return readFileSync(path, "utf8");
   } catch (error) {
@@ -252,12 +275,31 @@ function invalidSummary(candidate: PlanletCandidate): PlanSummary {
 
 function findCandidate(repositoryRoot: string, slug: string): PlanletCandidate {
   assertValidSlug(slug);
-  const matches = discoverCandidates(repositoryRoot, true).filter(
-    (candidate) =>
-      (candidate.location === "active" && candidate.directoryName === slug) ||
-      (candidate.location === "completed" &&
-        parseArchiveName(candidate.directoryName)?.slug === slug),
-  );
+  const root = plansPath(repositoryRoot);
+  const matches: PlanletCandidate[] = [];
+
+  // Filter names before resolving candidate paths. Unrelated unsafe entries
+  // must not block a targeted lookup.
+  if (directoryEntries(root).some((entry) => entry.name === slug)) {
+    matches.push(makeCandidate(root, slug, "active"));
+  }
+
+  const completedRoot = resolveSafePath(root, "completed");
+  const completedStats = tryLstat(completedRoot);
+  if (completedStats !== null) {
+    if (!completedStats.isDirectory()) {
+      throw new PlanletError(
+        "invalid_plan",
+        "Completed planlet storage is not a directory",
+        { details: { path: completedRoot } },
+      );
+    }
+    for (const entry of directoryEntries(completedRoot)) {
+      if (parseArchiveName(entry.name)?.slug === slug) {
+        matches.push(makeCandidate(completedRoot, entry.name, "completed"));
+      }
+    }
+  }
 
   if (matches.length === 0) {
     throw new PlanletError("plan_not_found", `Planlet not found: ${slug}`, {
@@ -373,6 +415,7 @@ export function getPlanletTasks(options: TasksOptions): TasksResult {
     tasks: Object.freeze(tasks),
     completedTasks: loaded.summary.completedTasks,
     totalTasks: loaded.summary.totalTasks,
+    warnings: loaded.summary.warnings,
   });
 }
 

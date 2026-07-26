@@ -71,7 +71,7 @@ function writePlanlet(
   root: string,
   slug: string,
   tasks: string,
-  plan = `# ${slug}\n`,
+  plan = `# ${slug}\n\n## Summary\nFixture.\n\n## Scope\nFixture.\n\n## Approach\nFixture.\n\n## Acceptance Criteria\n- Works.\n\n## Verification\nTests.\n`,
 ): void {
   const directory = join(root, "plans", slug);
   mkdirSync(directory, { recursive: true });
@@ -145,7 +145,7 @@ test("large content truncates by default and --full restores it", () => {
       root,
       "large",
       "# Tasks: Large\n\n- [ ] T1 Pending\n",
-      `# Large\n\n${body}\n`,
+      `# Large\n\n## Summary\n${body}\n\n## Scope\nFixture.\n\n## Approach\nFixture.\n\n## Acceptance Criteria\n- Works.\n\n## Verification\nTests.\n`,
     );
 
     const truncated = runCli(["show", "large", "--part", "plan"], root);
@@ -242,5 +242,31 @@ test("warnings reach stderr while data stays on stdout and the exit code stays s
       listed.stderr,
       /Completed planlet contains an incomplete-task override/,
     );
+  });
+});
+
+test("tasks, task updates, and completion route plan warnings to stderr", () => {
+  withRepository((root) => {
+    writePlanlet(
+      root,
+      "warning-route",
+      "# Tasks: Warning Route\n\n- [ ] T1 Pending\n",
+      "# Warning Route\n",
+    );
+
+    const tasks = runCli(["tasks", "warning-route"], root);
+    assert.equal(tasks.exitCode, EXIT_CODES.success);
+    assert.match(tasks.stderr, /missing recommended sections/);
+    assert.doesNotMatch(tasks.stdout, /diagnostics|warnings/);
+
+    const checked = runCli(["task", "check", "warning-route", "T1"], root);
+    assert.equal(checked.exitCode, EXIT_CODES.success);
+    assert.match(checked.stderr, /missing recommended sections/);
+    assert.doesNotMatch(checked.stdout, /diagnostics|warnings/);
+
+    const completed = runCli(["complete", "warning-route"], root);
+    assert.equal(completed.exitCode, EXIT_CODES.success);
+    assert.match(completed.stderr, /missing recommended sections/);
+    assert.doesNotMatch(completed.stdout, /diagnostics|warnings/);
   });
 });

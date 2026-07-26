@@ -7,6 +7,7 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
+import { resolve } from "node:path";
 
 import type { PlanletTask } from "./models.js";
 import { resolveSafePath } from "./paths.js";
@@ -36,6 +37,7 @@ export interface UpdateTaskResult {
   readonly slug: string;
   readonly task: PlanletTask;
   readonly changed: boolean;
+  readonly warnings: readonly string[];
 }
 
 const DEFAULT_DEPENDENCIES: UpdateTaskDependencies = {
@@ -50,14 +52,31 @@ const DEFAULT_DEPENDENCIES: UpdateTaskDependencies = {
   temporaryName: (slug) => `.${slug}.tasks-${randomUUID()}.tmp`,
 };
 
-function pathIsDirectory(path: string): boolean {
+function assertActivePlanletDirectory(path: string, slug: string): void {
+  let status: ReturnType<typeof lstatSync> | null;
   try {
-    return lstatSync(path).isDirectory();
+    status = lstatSync(path);
   } catch (error) {
-    if (error instanceof Error && "code" in error && error.code === "ENOENT") {
-      return false;
+    if (!(
+      error instanceof Error &&
+      "code" in error &&
+      error.code === "ENOENT"
+    )) {
+      throw error;
     }
-    throw error;
+    status = null;
+  }
+  if (status?.isSymbolicLink()) {
+    throw new PlanletError(
+      "unsafe_path",
+      `Planlet directory must not be a symbolic link: ${slug}`,
+      { details: { slug, path } },
+    );
+  }
+  if (!status?.isDirectory()) {
+    throw new PlanletError("plan_not_found", `Planlet not found: ${slug}`, {
+      details: { slug },
+    });
   }
 }
 
@@ -131,12 +150,9 @@ function asWriteConflict(
  */
 export function updateTask(options: UpdateTaskOptions): UpdateTaskResult {
   const slug = assertValidSlug(options.slug);
-  const planletPath = resolveSafePath(options.repositoryRoot, "plans", slug);
-  if (!pathIsDirectory(planletPath)) {
-    throw new PlanletError("plan_not_found", `Planlet not found: ${slug}`, {
-      details: { slug },
-    });
-  }
+  const plansPath = resolveSafePath(options.repositoryRoot, "plans");
+  const planletPath = resolve(plansPath, slug);
+  assertActivePlanletDirectory(planletPath, slug);
 
   const planPath = resolveSafePath(planletPath, "plan.md");
   const tasksPath = resolveSafePath(planletPath, "tasks.md");
@@ -163,7 +179,23 @@ export function updateTask(options: UpdateTaskOptions): UpdateTaskResult {
 
   const completed = options.operation === "check";
   if (task.completed === completed) {
-    return Object.freeze({ slug, task, changed: false });
+    return Object.freeze({
+      slug,
+      task,
+      changed: false,
+      warnings: validated.warnings,
+    });
+  }
+
+  if (validated.completion !== null) {
+    throw new PlanletError(
+      "invalid_plan",
+      "Tasks cannot be changed after completion has been recorded",
+      {
+        details: { slug, taskId: task.id },
+        next: `planlet complete ${slug}`,
+      },
+    );
   }
 
   const updatedMarkdown = replaceTaskMarker(tasksMarkdown, task.id, completed);
@@ -226,5 +258,6 @@ export function updateTask(options: UpdateTaskOptions): UpdateTaskResult {
     slug,
     task: Object.freeze({ ...task, completed }),
     changed: true,
+    warnings: validated.warnings,
   });
 }

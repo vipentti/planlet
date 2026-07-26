@@ -5,6 +5,14 @@ import { deriveLifecycleState, type PlanletLocation } from "./status.js";
 import { parseTasks } from "./task-parser.js";
 import { PlanletError } from "../errors/planlet-error.js";
 
+const RECOMMENDED_PLAN_SECTIONS = Object.freeze([
+  "Summary",
+  "Scope",
+  "Approach",
+  "Acceptance Criteria",
+  "Verification",
+]);
+
 export interface PlanletStructureInput {
   readonly directoryName: string;
   readonly location: PlanletLocation;
@@ -71,6 +79,20 @@ export function validatePlanletStructure(
   const parsedTasks = parseTasks(input.tasksMarkdown);
   const completion = parseCompletionRecord(input.tasksMarkdown);
   const warnings: string[] = [];
+  const planHeadings = new Set(
+    input.planMarkdown.split(/\r?\n/).flatMap((line) => {
+      const match = /^## (\S(?:.*\S)?)$/.exec(line);
+      return match?.[1] === undefined ? [] : [match[1]];
+    }),
+  );
+  const missingSections = RECOMMENDED_PLAN_SECTIONS.filter(
+    (section) => !planHeadings.has(section),
+  );
+  if (missingSections.length > 0) {
+    warnings.push(
+      `plan.md is missing recommended sections: ${missingSections.join(", ")}`,
+    );
+  }
 
   if (input.location === "active" && completion !== null) {
     warnings.push(
@@ -99,6 +121,14 @@ export function validatePlanletStructure(
       throw new PlanletError(
         "invalid_plan",
         "Completed planlet requires a completion record",
+        { details: { archiveName: input.directoryName } },
+      );
+    }
+
+    if (parsedTasks.tasks.length === 0) {
+      throw new PlanletError(
+        "invalid_plan",
+        "Completed planlet requires at least one recognized task",
         { details: { archiveName: input.directoryName } },
       );
     }

@@ -45,7 +45,9 @@ function writePlanlet(
   writeFileSync(join(directory, "tasks.md"), tasksMarkdown);
 }
 
-const PLAN = "# Valid Plan\n\n## Summary\nA fixture.\n";
+const PLAN =
+  "# Valid Plan\n\n## Summary\nA fixture.\n\n## Scope\nFixture.\n\n## Approach\nFixture.\n\n## Acceptance Criteria\n- Works.\n\n## Verification\nTests.\n";
+const OLD_PLAN = PLAN.replace("# Valid Plan", "# Old Plan");
 const ACTIVE_TASKS =
   "# Tasks: Valid Plan\n\n- [x] T1 Done\n- [ ] T2 Remaining\n";
 const COMPLETED_TASKS =
@@ -103,13 +105,7 @@ test("list covers active lifecycle states and state filtering", () => {
 test("--completed includes valid completed archives and supports completed filtering", () => {
   withRepository((root) => {
     writePlanlet(root, "valid-plan", PLAN, ACTIVE_TASKS);
-    writePlanlet(
-      root,
-      "2026-07-22-old-plan",
-      "# Old Plan\n",
-      COMPLETED_TASKS,
-      true,
-    );
+    writePlanlet(root, "2026-07-22-old-plan", OLD_PLAN, COMPLETED_TASKS, true);
 
     assert.deepEqual(
       listPlanlets({ repositoryRoot: root }).map((summary) => summary.slug),
@@ -143,13 +139,7 @@ test("--completed includes valid completed archives and supports completed filte
 test("show, status, and tasks expose valid active and completed planlets", () => {
   withRepository((root) => {
     writePlanlet(root, "valid-plan", PLAN, ACTIVE_TASKS);
-    writePlanlet(
-      root,
-      "2026-07-22-old-plan",
-      "# Old Plan\n",
-      COMPLETED_TASKS,
-      true,
-    );
+    writePlanlet(root, "2026-07-22-old-plan", OLD_PLAN, COMPLETED_TASKS, true);
 
     assert.equal(
       showPlanlet({ repositoryRoot: root, slug: "valid-plan" }).part,

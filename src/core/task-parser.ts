@@ -7,7 +7,7 @@ const TASK_ID_SOURCE = String.raw`T\d+`;
 export const TASK_ID_PATTERN = new RegExp(`^${TASK_ID_SOURCE}$`);
 
 const TASK_LINE_PATTERN = new RegExp(
-  String.raw`^- \[([ xX])\] (${TASK_ID_SOURCE}) (\S(?:.*\S)?)$`,
+  String.raw`^- \[([ xX])\] (${TASK_ID_SOURCE}) (\S(?:.*?\S)?)[ \t]*$`,
 );
 
 /**
@@ -15,7 +15,8 @@ const TASK_LINE_PATTERN = new RegExp(
  * Used to distinguish malformed task lines (missing ID, bad marker, missing
  * space) from ordinary free-form Markdown notes such as `- [see docs] ...`.
  */
-const TASK_LIKE_LINE_PATTERN = /^- \[[^\]]\]/;
+const TASK_LIKE_LINE_PATTERN =
+  /^(?:- \[[^\]]\]|\s+- \[[ xX]\] T\d+(?:\s|$)|\s*- \[\](?:\s|$))/;
 
 export interface ParsedTasks {
   readonly tasks: readonly PlanletTask[];

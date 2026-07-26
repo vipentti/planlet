@@ -87,9 +87,19 @@ function extractGlobalArguments(
   const remaining: string[] = [];
   let explicitRoot: string | undefined;
   let full = false;
+  const valueOptions = new Set(["--state", "--title", "--part", "--reason"]);
 
   for (let index = 0; index < arguments_.length; index += 1) {
     const argument = arguments_[index];
+    if (argument !== undefined && valueOptions.has(argument)) {
+      remaining.push(argument);
+      const value = arguments_[index + 1];
+      if (value !== undefined) {
+        remaining.push(value);
+        index += 1;
+      }
+      continue;
+    }
     if (argument === "--root") {
       if (explicitRoot !== undefined) usage("--root may only be supplied once");
       const value = arguments_[index + 1];
@@ -114,6 +124,19 @@ function extractGlobalArguments(
     ...(explicitRoot === undefined ? {} : { explicitRoot }),
     full,
   };
+}
+
+function hasHelpFlag(arguments_: readonly string[]): boolean {
+  const valueOptions = new Set(["--state", "--title", "--part", "--reason"]);
+  for (let index = 0; index < arguments_.length; index += 1) {
+    const argument = arguments_[index];
+    if (argument !== undefined && valueOptions.has(argument)) {
+      index += 1;
+      continue;
+    }
+    if (argument === "--help") return true;
+  }
+  return false;
 }
 
 function parse<const Options extends ParseArgsOptionsConfig>(
@@ -289,7 +312,7 @@ export function dispatchCommand(
   arguments_: readonly string[],
   context: ExecutionContext,
 ): ExitCode {
-  if (arguments_.includes("--help")) {
+  if (hasHelpFlag(arguments_)) {
     context.stdout(helpFor(command));
     return EXIT_CODES.success;
   }
@@ -322,7 +345,7 @@ export function main(
       runtime.stdout(helpFor(commandArguments[0]));
       return EXIT_CODES.success;
     }
-    if (command !== undefined && commandArguments.includes("--help")) {
+    if (command !== undefined && hasHelpFlag(commandArguments)) {
       runtime.stdout(helpFor(command));
       return EXIT_CODES.success;
     }

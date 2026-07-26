@@ -17,6 +17,9 @@ import { complete } from "../../src/commands/complete.js";
 import { validatePlanletStructure } from "../../src/core/validation.js";
 import { PlanletError } from "../../src/errors/planlet-error.js";
 
+const PLAN =
+  "# Fixture Plan\n\n## Summary\nFixture.\n\n## Scope\nFixture.\n\n## Approach\nFixture.\n\n## Acceptance Criteria\n- Works.\n\n## Verification\nTests.\n";
+
 function withRepository(
   tasksMarkdown: string,
   run: (root: string, source: string) => void,
@@ -25,7 +28,7 @@ function withRepository(
   const source = join(root, "plans", "fixture-plan");
   mkdirSync(join(root, ".git"));
   mkdirSync(source, { recursive: true });
-  writeFileSync(join(source, "plan.md"), "# Fixture Plan\n");
+  writeFileSync(join(source, "plan.md"), PLAN);
   writeFileSync(join(source, "tasks.md"), tasksMarkdown);
   try {
     run(root, source);
@@ -234,7 +237,7 @@ test("completion refuses destination and logical-slug collisions without touchin
   });
 });
 
-test("a movement failure leaves both source files recoverable with the audit recorded", () => {
+test("a movement failure rolls back the audit so completion can be retried", () => {
   withRepository(COMPLETE_TASKS, (root, source) => {
     assert.throws(
       () =>
@@ -251,18 +254,52 @@ test("a movement failure leaves both source files recoverable with the audit rec
       (error) => {
         assert.ok(error instanceof PlanletError);
         assert.equal(error.code, "write_conflict");
-        assert.equal(error.details.auditRecorded, true);
+        assert.equal(error.details.auditRecorded, false);
+        assert.equal(error.details.auditRolledBack, true);
         return true;
       },
     );
 
+    assert.equal(readFileSync(join(source, "plan.md"), "utf8"), PLAN);
     assert.equal(
-      readFileSync(join(source, "plan.md"), "utf8"),
-      "# Fixture Plan\n",
-    );
-    assert.match(
       readFileSync(join(source, "tasks.md"), "utf8"),
-      /- Completed at: 2026-07-22T12:00:00\.000Z\n- Mode: normal\n$/,
+      COMPLETE_TASKS,
+    );
+
+    const retried = complete({
+      repositoryRoot: root,
+      slug: "fixture-plan",
+      dependencies: { now: () => new Date("2026-07-22T12:00:00Z") },
+    });
+    assert.equal(existsSync(retried.destination), true);
+  });
+});
+
+test("completion resumes a valid audit left by process interruption", () => {
+  const interrupted =
+    `${COMPLETE_TASKS}\n## Completion\n\n` +
+    "- Completed at: 2026-07-22T12:00:00.000Z\n" +
+    "- Mode: normal\n";
+  withRepository(interrupted, (root, source) => {
+    let clockReads = 0;
+    const result = complete({
+      repositoryRoot: root,
+      slug: "fixture-plan",
+      dependencies: {
+        now: () => {
+          clockReads += 1;
+          return new Date("2030-01-01T00:00:00Z");
+        },
+      },
+    });
+
+    assert.equal(clockReads, 0);
+    assert.equal(result.archiveName, "2026-07-22-fixture-plan");
+    assert.equal(result.completedAt, "2026-07-22T12:00:00.000Z");
+    assert.equal(existsSync(source), false);
+    assert.equal(
+      readFileSync(join(result.destination, "tasks.md"), "utf8"),
+      interrupted,
     );
   });
 });

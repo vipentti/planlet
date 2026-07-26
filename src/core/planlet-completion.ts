@@ -178,6 +178,94 @@ function asWriteConflict(
   );
 }
 
+function resumeRecordedCompletion(
+  options: CompletePlanletOptions,
+  dependencies: CompletePlanletDependencies,
+  source: string,
+  planMarkdown: string,
+  tasksMarkdown: string,
+): CompletePlanletResult {
+  const slug = options.slug;
+  const active = validatePlanletStructure({
+    directoryName: slug,
+    location: "active",
+    planMarkdown,
+    tasksMarkdown,
+  });
+  const completion = active.completion;
+  if (completion === null) {
+    throw new TypeError("Recorded completion is required");
+  }
+
+  const remainingTaskIds = Object.freeze(
+    active.tasks.filter((task) => !task.completed).map((task) => task.id),
+  );
+  if (completion.mode === "normal" && remainingTaskIds.length > 0) {
+    throw new PlanletError(
+      "invalid_plan",
+      "Normal completion record cannot contain unchecked tasks",
+      { details: { slug, remaining: remainingTaskIds } },
+    );
+  }
+
+  const instant = new Date(completion.completedAt);
+  const archiveName = createArchiveName(slug, instant);
+  const completedValidation = validatePlanletStructure({
+    directoryName: archiveName,
+    location: "completed",
+    planMarkdown,
+    tasksMarkdown,
+  });
+
+  let completedPath: string;
+  let destination: string;
+  try {
+    completedPath = resolveSafePath(
+      options.repositoryRoot,
+      "plans",
+      "completed",
+    );
+    destination = resolveSafePath(
+      options.repositoryRoot,
+      "plans",
+      "completed",
+      archiveName,
+    );
+    assertNoCompletionCollision(completedPath, slug, destination);
+    mkdirSync(completedPath, { recursive: true });
+    assertNoCompletionCollision(completedPath, slug, destination);
+    assertActivePlanletDirectory(source, slug);
+    dependencies.moveDirectory(source, destination);
+  } catch (error) {
+    throw asWriteConflict(error, slug, {
+      source,
+      auditRecorded: true,
+      resumeAttempted: true,
+    });
+  }
+
+  const completedTasks = active.tasks.length - remainingTaskIds.length;
+  return Object.freeze({
+    slug,
+    archiveName,
+    destination,
+    completedAt: completion.completedAt,
+    mode: completion.mode,
+    remainingTaskIds,
+    summary: createPlanSummary({
+      slug,
+      archiveName,
+      completedAt: completion.completedAt,
+      title: active.title,
+      state: "completed",
+      completedTasks,
+      totalTasks: active.tasks.length,
+      path: destination,
+      warnings: completedValidation.warnings,
+    }),
+  });
+}
+
 /**
  * Records completion with an atomic tasks.md replacement, then moves the whole
  * planlet. The clock is read exactly once and that instant determines both the
@@ -205,10 +293,12 @@ export function completePlanlet(
     tasksMarkdown,
   });
   if (validated.completion !== null) {
-    throw new PlanletError(
-      "invalid_plan",
-      "Active planlet already contains a completion record",
-      { details: { slug } },
+    return resumeRecordedCompletion(
+      options,
+      dependencies,
+      source,
+      planMarkdown,
+      tasksMarkdown,
     );
   }
 
@@ -341,10 +431,48 @@ export function completePlanlet(
     assertActivePlanletDirectory(source, slug);
     dependencies.moveDirectory(source, destination);
   } catch (error) {
+    let rollbackCreated = false;
+    let rollbackPublished = false;
+    let rollbackFailure: unknown;
+    let rollbackPath: string | undefined;
+    try {
+      rollbackPath = resolveSafePath(source, dependencies.temporaryName(slug));
+      const mode = statSync(tasksPath).mode & 0o777;
+      dependencies.writeFile(rollbackPath, tasksMarkdown, mode);
+      rollbackCreated = true;
+      dependencies.replaceFile(rollbackPath, tasksPath);
+      rollbackPublished = true;
+    } catch (rollbackError) {
+      rollbackFailure = rollbackError;
+    }
+
+    if (rollbackCreated && !rollbackPublished && rollbackPath !== undefined) {
+      try {
+        dependencies.remove(rollbackPath);
+      } catch (cleanupError) {
+        rollbackFailure = new AggregateError(
+          rollbackFailure === undefined
+            ? [cleanupError]
+            : [rollbackFailure, cleanupError],
+          `Completion movement and rollback cleanup failed: ${slug}`,
+        );
+      }
+    }
+
+    if (rollbackPublished) {
+      throw asWriteConflict(error, slug, {
+        source,
+        destination,
+        auditRecorded: false,
+        auditRolledBack: true,
+      });
+    }
     throw asWriteConflict(error, slug, {
       source,
       destination,
       auditRecorded: true,
+      auditRollbackFailed: true,
+      ...(rollbackFailure === undefined ? {} : { rollbackFailure: true }),
     });
   }
 
@@ -366,10 +494,12 @@ export function completePlanlet(
       completedTasks,
       totalTasks: validated.tasks.length,
       path: destination,
-      warnings:
-        mode === "incomplete override"
+      warnings: [
+        ...validated.warnings,
+        ...(mode === "incomplete override"
           ? ["Completed planlet contains an incomplete-task override"]
-          : [],
+          : []),
+      ],
     }),
   });
 }

@@ -16,7 +16,11 @@ test("task parsing recognizes only exact top-level checklist lines", () => {
     completed: true,
   });
   assert.equal(parseTaskLine("  - [ ] T3 Nested task"), null);
-  assert.equal(parseTaskLine("- [ ] T4 Missing trailing space "), null);
+  assert.deepEqual(parseTaskLine("- [ ] T4 Trailing space accepted "), {
+    id: "T4",
+    description: "Trailing space accepted",
+    completed: false,
+  });
   assert.equal(parseTaskLine("ordinary Markdown"), null);
 });
 
@@ -41,6 +45,8 @@ test("malformed top-level checklist lines are structural errors", () => {
     "- [y] T1 Work",
     "- [ ] no-id",
     "- [ ]T3 Missing space after checkbox",
+    "  - [ ] T4 Indented recognized task",
+    "- [] T5 Empty checkbox",
   ]) {
     assert.throws(
       () => parseTasks(`# Tasks\n\n${line}`),

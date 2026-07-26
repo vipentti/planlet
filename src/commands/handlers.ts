@@ -177,8 +177,8 @@ export function handleTasks(
   arguments_: TasksCommandArguments,
   context: ExecutionContext,
 ): ExitCode {
-  return emit(context, () => ({
-    data: getPlanletTasks({
+  return emit(context, () => {
+    const { warnings, ...result } = getPlanletTasks({
       repositoryRoot: context.root,
       slug: arguments_.slug,
       ...(arguments_.remaining === undefined
@@ -187,8 +187,9 @@ export function handleTasks(
       ...(arguments_.completed === undefined
         ? {}
         : { completed: arguments_.completed }),
-    }),
-  }));
+    });
+    return { data: result, warnings };
+  });
 }
 
 export function handleValidate(
@@ -221,8 +222,8 @@ export function handleTaskUpdate(
   },
   context: ExecutionContext,
 ): ExitCode {
-  return emit(context, () => ({
-    data:
+  return emit(context, () => {
+    const { warnings, ...result } =
       arguments_.operation === "check"
         ? checkTask({
             repositoryRoot: context.root,
@@ -233,8 +234,9 @@ export function handleTaskUpdate(
             repositoryRoot: context.root,
             slug: arguments_.slug,
             taskId: arguments_.taskId,
-          }),
-  }));
+          });
+    return { data: result, warnings };
+  });
 }
 
 export function handleComplete(
@@ -245,8 +247,8 @@ export function handleComplete(
   },
   context: ExecutionContext,
 ): ExitCode {
-  return emit(context, () => ({
-    data: complete({
+  return emit(context, () => {
+    const result = complete({
       repositoryRoot: context.root,
       slug: arguments_.slug,
       ...(arguments_.allowIncomplete === undefined
@@ -254,6 +256,11 @@ export function handleComplete(
         : { allowIncomplete: arguments_.allowIncomplete }),
       ...(arguments_.reason === undefined ? {} : { reason: arguments_.reason }),
       dependencies: { now: context.clock },
-    }),
-  }));
+    });
+    const { warnings, ...summary } = result.summary;
+    return {
+      data: { ...result, summary },
+      warnings,
+    };
+  });
 }
