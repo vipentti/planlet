@@ -12,3 +12,8 @@
 - [x] T10 Add integration tests for commands, legacy adoption, stale files, cross-destination conflicts, forced recovery, idempotency, and compiled-bundle source resolution
 - [x] T11 Dogfood legacy adoption and repeat-update idempotency, remove `sync-skills.ps1`, and update npm scripts and documentation
 - [x] T12 Run the full verification suite and inspect intended diffs plus pre-run versus post-run Git status
+
+## Completion
+
+- Completed at: 2026-07-26T05:18:20.544Z
+- Mode: normal
