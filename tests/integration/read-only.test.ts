@@ -157,11 +157,16 @@ test("show, status, and tasks expose valid active and completed planlets", () =>
     );
     assert.deepEqual(
       showPlanlet({ repositoryRoot: root, slug: "valid-plan", part: "plan" }),
-      { slug: "valid-plan", part: "plan", content: PLAN },
+      { slug: "valid-plan", part: "plan", content: PLAN, warnings: [] },
     );
     assert.deepEqual(
       showPlanlet({ repositoryRoot: root, slug: "valid-plan", part: "tasks" }),
-      { slug: "valid-plan", part: "tasks", content: ACTIVE_TASKS },
+      {
+        slug: "valid-plan",
+        part: "tasks",
+        content: ACTIVE_TASKS,
+        warnings: [],
+      },
     );
     assert.equal(
       getPlanletStatus({ repositoryRoot: root, slug: "valid-plan" }).state,

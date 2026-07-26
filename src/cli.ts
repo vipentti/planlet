@@ -150,14 +150,7 @@ function prepareCommand(
   command: string,
   arguments_: readonly string[],
 ): PreparedCommand {
-  if (arguments_.includes("--help")) {
-    const help = helpFor(command);
-    return (context) => {
-      context.stdout(help);
-      return EXIT_CODES.success;
-    };
-  }
-
+  // `--help` is intercepted by `main` before this point.
   switch (command) {
     case "list": {
       const { values, positionals } = parse(arguments_, {
@@ -286,12 +279,20 @@ function prepareCommand(
   }
 }
 
-/** Parse and dispatch one command against an already selected repository root. */
+/**
+ * Parse and dispatch one command against an already selected repository root.
+ * `main` intercepts `--help` before repository discovery; this entry point is
+ * reachable on its own, so it repeats that interception here.
+ */
 export function dispatchCommand(
   command: string,
   arguments_: readonly string[],
   context: ExecutionContext,
 ): ExitCode {
+  if (arguments_.includes("--help")) {
+    context.stdout(helpFor(command));
+    return EXIT_CODES.success;
+  }
   return prepareCommand(command, arguments_)(context);
 }
 

@@ -176,6 +176,19 @@ test("content-only show parts preserve advisory warnings", () => {
   });
 });
 
+test("dispatch handles --help without reaching option parsing", () => {
+  withRepository((root) => {
+    const { capture } = captureRuntime(root);
+
+    assert.equal(
+      dispatchCommand("list", ["--help"], executionContext(root, capture)),
+      0,
+    );
+    assert.match(capture.stdout.join(""), /^Usage: planlet list /);
+    assert.deepEqual(capture.stderr, []);
+  });
+});
+
 test("dispatch passes the injected clock to completion", () => {
   withRepository((root) => {
     writePlanlet(

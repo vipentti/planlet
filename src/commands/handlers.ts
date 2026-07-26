@@ -144,17 +144,12 @@ export function handleShow(
   context: ExecutionContext,
 ): ExitCode {
   return emit(context, () => {
-    const result = showPlanlet({
+    // Warnings travel as diagnostics, not as part of the rendered payload.
+    const { warnings, ...result } = showPlanlet({
       repositoryRoot: context.root,
       slug: arguments_.slug,
       ...(arguments_.part === undefined ? {} : { part: arguments_.part }),
     });
-    const warnings =
-      result.summary?.warnings ??
-      getPlanletStatus({
-        repositoryRoot: context.root,
-        slug: arguments_.slug,
-      }).warnings;
     return {
       data: result,
       warnings,

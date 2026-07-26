@@ -47,6 +47,8 @@ export interface ShowPlanletResult {
   readonly part: ShowPart;
   readonly summary?: PlanSummary;
   readonly content?: string;
+  /** Advisory warnings from the single load backing this result. */
+  readonly warnings: readonly string[];
 }
 
 export interface TasksOptions {
@@ -319,6 +321,7 @@ export function showPlanlet(options: ShowPlanletOptions): ShowPlanletResult {
       slug: loaded.summary.slug,
       part,
       summary: loaded.summary,
+      warnings: loaded.summary.warnings,
     });
   }
   if (part === "plan") {
@@ -326,6 +329,7 @@ export function showPlanlet(options: ShowPlanletOptions): ShowPlanletResult {
       slug: loaded.summary.slug,
       part,
       content: loaded.planMarkdown,
+      warnings: loaded.summary.warnings,
     });
   }
   if (part === "tasks") {
@@ -333,6 +337,7 @@ export function showPlanlet(options: ShowPlanletOptions): ShowPlanletResult {
       slug: loaded.summary.slug,
       part,
       content: loaded.tasksMarkdown,
+      warnings: loaded.summary.warnings,
     });
   }
   throw new TypeError(`Unknown show part: ${String(part)}`);

@@ -34,7 +34,6 @@ export function isValidUtcTimestamp(value: string): boolean {
 function parseRemainingTaskIds(value: string): readonly PlanletTask["id"][] {
   const ids = value.split(",").map((item) => item.trim());
   if (
-    ids.length === 0 ||
     ids.some((id) => !TASK_ID_PATTERN.test(id)) ||
     new Set(ids).size !== ids.length
   ) {
