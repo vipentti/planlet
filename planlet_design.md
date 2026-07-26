@@ -739,7 +739,9 @@ Suggested initial tool IDs and project-local skill destinations:
 |---|---|---|---|
 | `agents` | Generic Agent Skills | `.agents/skills/planlet-*/SKILL.md` | None |
 | `claude` | Claude Code | `.claude/skills/planlet-*/SKILL.md` | Optional `.claude/commands/planlet/<id>.md` |
-| `codex` | Codex | `.codex/skills/planlet-*/SKILL.md` | None; skills-first |
+| `codex` | Codex | `.agents/skills/planlet-*/SKILL.md` | None; skills-first |
+
+Codex discovers repository-local skills from `.agents/skills` between the current working directory and repository root. It does not require a separate `.codex/skills` copy. The `agents` and `codex` tool IDs therefore target the same project-local directory; the installer must coalesce them when both are requested. `.codex/` remains available for Codex-specific configuration, but is not a Planlet skill destination.
 
 Likely later additions, following the same data-driven registry pattern:
 
@@ -759,7 +761,7 @@ Suggested commands:
 
 ```bash
 # Install for specific harnesses
-planlet init --tools claude,codex,agents
+planlet init --tools claude,codex
 
 # Install all currently supported adapters
 planlet init --tools all
@@ -768,7 +770,7 @@ planlet init --tools all
 planlet init --tools none
 
 # Refresh generated skills after upgrading Planlet
-planlet update --tools claude,codex,agents
+planlet update --tools claude,codex
 
 # Detect supported harness directories without modifying them
 planlet tools
@@ -796,7 +798,7 @@ Installer behavior should:
 
 1. Validate requested tool IDs.
 2. Resolve destinations inside the repository root.
-3. Copy or render all selected Planlet skills.
+3. Coalesce tool IDs that resolve to the same destination, then copy or render each selected Planlet skill once.
 4. Generate optional command adapters only for harnesses that support them.
 5. Avoid symlinks by default for Windows and repository portability.
 6. Mark generated files clearly.
@@ -1029,7 +1031,7 @@ The CLI should distinguish structural errors from advisory hygiene warnings.
 - Refusing logical-slug conflicts and date-prefixed archive collisions.
 - Reporting malformed archive names and archive dates that disagree with recorded completion timestamps.
 - Preventing path traversal and symlink escape.
-- Installing and updating generic, Claude, and Codex skills.
+- Installing and updating `.agents` and Claude skills, including the `agents` and `codex` tool IDs sharing one `.agents/skills` destination.
 - Detecting modified generated skill files before overwrite.
 - Verifying stdout, stderr, and exit codes separately.
 
@@ -1045,7 +1047,7 @@ Skills need scenario-based evaluation in addition to CLI tests:
 - Failing verification that must leave a task unchecked.
 - Several active planlets requiring explicit selection.
 - Completion with unfinished work requiring a warning and confirmation.
-- The same workflow under generic Agent Skills, Claude Code, and Codex installations.
+- The same workflow under `.agents/skills` (including Codex discovery) and Claude Code installations.
 
 ## 21. MVP Scope
 
@@ -1081,9 +1083,9 @@ Phase 0 is temporary scaffolding for dogfooding, not a second implementation of 
 
 ### Phase 3: Harness installation
 
-- Generic `.agents/skills` adapter.
+- Shared `.agents/skills` adapter for generic Agent Skills consumers and Codex.
 - Claude Code `.claude/skills` adapter.
-- Codex `.codex/skills` adapter.
+- Codex tool-ID support through the shared `.agents/skills` adapter, including duplicate-target coalescing.
 - `planlet init --tools ...` and `planlet update --tools ...`.
 - Generated-file protection and adapter tests.
 
@@ -1127,7 +1129,7 @@ The initial product should be considered useful when:
 8. The CLI refuses normal completion while tasks remain unchecked.
 9. The Complete skill warns the user and obtains confirmation before an incomplete override.
 10. Completion records one full UTC timestamp and moves both files into the matching `plans/completed/<YYYY-MM-DD>-<slug>` archive without data loss or changing the logical slug.
-11. The same canonical skills can be installed for generic Agent Skills, Claude Code, and Codex.
+11. The same canonical skills can be installed for generic Agent Skills consumers, Claude Code, and Codex, with Codex using the shared `.agents/skills` destination.
 12. CLI behavior is deterministic and useful in both interactive sessions and CI.
 
 ## 24. Open Design Questions
@@ -1148,6 +1150,7 @@ None of these questions blocks the central product contract.
 - [OpenSpec Explore](https://github.com/Fission-AI/OpenSpec/blob/main/docs/explore.md) — conversational investigation before artifact creation.
 - [OpenSpec Supported Tools](https://github.com/Fission-AI/OpenSpec/blob/main/docs/supported-tools.md) — reference for tool IDs, skill destinations, and thin harness adapters.
 - [Agent Skills specification](https://agentskills.io/specification) — canonical portable `SKILL.md` format.
+- [OpenAI Build skills](https://learn.chatgpt.com/docs/build-skills) — Codex skill discovery locations and invocation behavior.
 - [AXI](https://github.com/kunchenguid/axi) — agent-ergonomic CLI principles including compact output, minimal schemas, structured errors, and contextual disclosure.
 - [SpecOps](https://github.com/JarvusInnovations/specops) — adjacent example of a deterministic TypeScript/Node CLI over repository-local planning files.
 - [PlanKit](https://github.com/FlineDev/PlanKit) — adjacent conversational planning and archival workflow, with more roadmap structure than Planlet intends to require.
