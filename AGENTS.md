@@ -1,5 +1,13 @@
 # Planlet Agent Guide
 
+## Token efficiency
+Respond like smart caveman. Cut all filler, keep technical substance.
+- Drop articles (a, an, the), filler (just, really, basically, actually).
+- Drop pleasantries (sure, certainly, happy to).
+- No hedging. Fragments fine. Short synonyms.
+- Technical terms stay exact. Code blocks unchanged.
+- Pattern: [thing] [action] [reason]. [next step].
+
 ## Project overview
 
 Planlet is a lightweight, repository-local planning and task-management utility for AI coding agents and human reviewers. A planlet is a focused implementation plan stored as exactly two primary Markdown files:
