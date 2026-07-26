@@ -7,3 +7,8 @@
 - [x] T6 Add a GitHub Actions matrix workflow for ubuntu, macos, and windows on Node 22 and 24 that passes on every combination, including the Linux-only generated-skill drift guard, and cover workflow files with Prettier
 - [x] T8 Rewrite README installation, quickstart, and command reference, and update `AGENTS.md` where commands or structure changed
 - [x] T9 Run the full verification suite plus `npm publish --dry-run`, and record the published file list and per-combination CI results
+
+## Completion
+
+- Completed at: 2026-07-26T06:54:09.410Z
+- Mode: normal
