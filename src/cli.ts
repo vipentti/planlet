@@ -1,3 +1,4 @@
+import { createRequire } from "node:module";
 import { resolve } from "node:path";
 import { parseArgs, type ParseArgsOptionsConfig } from "node:util";
 
@@ -22,7 +23,13 @@ import { EXIT_CODES, type ExitCode } from "./errors/codes.js";
 import { isPlanletError } from "./errors/planlet-error.js";
 import { renderToonError } from "./output/toon.js";
 
-const HELP = `Usage: planlet [--root <path>] [--full] <command> [options]
+// Both src/cli.ts under tsx and the bundled dist/planlet.mjs sit one directory
+// below package.json, so one relative require works without a build-time define.
+const VERSION = (
+  createRequire(import.meta.url)("../package.json") as { version: string }
+).version;
+
+const HELP = `Usage: planlet [--root <path>] [--full] [--version] <command> [options]
 
 Commands:
   init [--tools <ids>] [--force]
@@ -37,6 +44,9 @@ Commands:
   task check|uncheck <slug> <task-id>
   complete <slug> [--allow-incomplete --reason <text>]
   help [command]
+
+Global options:
+  --version   Print the Planlet version and exit.
 
 Running planlet without a command displays the active-plan dashboard.
 `;
@@ -268,6 +278,7 @@ export function main(
       root: { type: "string" },
       full: { type: "boolean" },
       help: { type: "boolean" },
+      version: { type: "boolean" },
     } as const;
     const loose = parseArgs({
       args: [...arguments_],
@@ -285,6 +296,10 @@ export function main(
       globalOptions,
     );
     requirePositionals(globalPositionals, 0, "global");
+    if (global.version) {
+      runtime.stdout(`${VERSION}\n`);
+      return EXIT_CODES.success;
+    }
     const command = commandToken?.value;
     const commandArguments = arguments_.slice(commandIndex + 1);
     if (

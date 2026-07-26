@@ -1,7 +1,25 @@
 {
   "name": "planlet",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Small plans. Clear handoffs.",
+  "license": "MIT",
+  "author": "Ville Penttinen",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vipentti/planlet.git"
+  },
+  "homepage": "https://github.com/vipentti/planlet#readme",
+  "bugs": {
+    "url": "https://github.com/vipentti/planlet/issues"
+  },
+  "keywords": [
+    "planning",
+    "tasks",
+    "cli",
+    "agents",
+    "ai",
+    "markdown"
+  ],
   "type": "module",
   "bin": {
     "planlet": "dist/planlet.mjs"
@@ -17,16 +35,15 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "skills:update": "npm run build && node dist/planlet.mjs update --tools all",
-    "format": "prettier --write package.json tsconfig.json eslint.config.js README.md \"src/**/*.ts\" \"tests/**/*.ts\" \"scripts/**/*.mjs\"",
-    "format:check": "prettier --check package.json tsconfig.json eslint.config.js README.md \"src/**/*.ts\" \"tests/**/*.ts\" \"scripts/**/*.mjs\"",
+    "format": "prettier --write package.json tsconfig.json eslint.config.js \".github/workflows/*.yml\" README.md \"src/**/*.ts\" \"tests/**/*.ts\" \"scripts/**/*.mjs\"",
+    "format:check": "prettier --check package.json tsconfig.json eslint.config.js \".github/workflows/*.yml\" README.md \"src/**/*.ts\" \"tests/**/*.ts\" \"scripts/**/*.mjs\"",
     "lint": "eslint \"src/**/*.ts\" \"tests/**/*.ts\"",
     "test": "tsx --test \"tests/**/*.test.ts\"",
-    "type-check": "tsc --noEmit"
-  },
-  "dependencies": {
-    "@toon-format/toon": "4.0.0"
+    "type-check": "tsc --noEmit",
+    "prepack": "npm run build"
   },
   "devDependencies": {
+    "@toon-format/toon": "4.0.0",
     "@types/node": "22.20.1",
     "esbuild": "0.28.1",
     "eslint": "10.7.0",

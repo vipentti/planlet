@@ -122,6 +122,10 @@ git status --porcelain   # expect empty; build output is gitignored
 
 The built CLI runs as `node dist/planlet.mjs <command>`.
 
+`.github/workflows/ci.yml` runs this same suite on ubuntu, macos, and windows
+against Node 22 and 24, plus a ubuntu/Node-22-only step that regenerates
+installed skill copies and fails on drift. Workflow files are covered by `format:check`.
+
 ## Maintaining this guide
 
 Update `AGENTS.md` when the repository gains stable commands, important top-level structure, or agent-specific constraints. Prefer links to authoritative files over duplicating material that can drift.

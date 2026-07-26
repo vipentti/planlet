@@ -79,6 +79,23 @@ function writePlanlet(
   writeFileSync(join(directory, "tasks.md"), tasks);
 }
 
+test("--version prints the package version identically from tsx and the bundle", () => {
+  const expected = `${(JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8")) as { version: string }).version}\n`;
+
+  const bundled = runCli(["--version"], packageRoot);
+  assert.equal(bundled.exitCode, EXIT_CODES.success);
+  assert.equal(bundled.stdout, expected);
+  assert.equal(bundled.stderr, "");
+
+  const fromSource = spawnSync(
+    process.execPath,
+    ["--import", "tsx", join(packageRoot, "src", "index.ts"), "--version"],
+    { cwd: packageRoot, encoding: "utf8" },
+  );
+  assert.equal(fromSource.status, 0, fromSource.stderr);
+  assert.equal(fromSource.stdout, expected);
+});
+
 test("help is written to stdout and exits successfully", () => {
   withRepository((root) => {
     const result = runCli(["help"], root);
