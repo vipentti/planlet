@@ -66,6 +66,14 @@ When a described CLI capability is not yet present, do not invent commands or re
 - Active planlets live directly under `plans/`; completed planlets use `<YYYY-MM-DD>-<slug>` archive names under `plans/completed/`.
 - Never overwrite an existing active or completed planlet silently.
 
+## Installed skill copies are committed on purpose
+
+`skills/` holds the canonical skill sources. `.claude/skills/planlet-*`, `.agents/skills/planlet-*`, and their `.planlet-manifest.json` files are copies that `planlet init` and `planlet update` generate from it, and they are **intentionally tracked in git**.
+
+Yes, this duplicates content. Do not gitignore or delete these copies to remove the duplication. The repository dogfoods its own skills: a fresh clone must have working skills before anyone can run `npm install`, build the CLI, and regenerate them. Ignoring them creates a bootstrap gap.
+
+Regenerate them with `node dist/planlet.mjs update` after changing anything under `skills/`, and commit the result. `planlet tools` reporting every destination as `installed` means the tracked copies match the canonical sources.
+
 ## Architecture and implementation direction
 
 Follow the design's recommended TypeScript and Node.js architecture unless an approved planlet changes it. Keep domain logic independent from CLI argument parsing and output rendering. Prefer Node built-ins, minimal runtime dependencies, deterministic output, structured errors, safe path resolution, and atomic writes.
