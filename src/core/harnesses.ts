@@ -53,8 +53,8 @@ export function normalizeToolSelector(
       unsupported("The all and none selectors must be used alone", normalized);
     }
     return unique[0] === "none"
-      ? Object.freeze([])
-      : Object.freeze(HARNESS_ADAPTERS.map((adapter) => adapter.id));
+      ? []
+      : HARNESS_ADAPTERS.map((adapter) => adapter.id);
   }
 
   const supported = new Set<string>(
@@ -76,10 +76,8 @@ export function normalizeToolSelector(
   }
 
   const selected = new Set(unique);
-  return Object.freeze(
-    HARNESS_ADAPTERS.filter((adapter) => selected.has(adapter.id)).map(
-      (adapter) => adapter.id,
-    ),
+  return HARNESS_ADAPTERS.filter((adapter) => selected.has(adapter.id)).map(
+    (adapter) => adapter.id,
   );
 }
 
@@ -88,40 +86,27 @@ export function resolveHarnessDestinations(
   selectedToolIds: readonly HarnessToolId[],
 ): readonly HarnessDestination[] {
   const selected = new Set<HarnessToolId>(selectedToolIds);
-  const destinations = new Map<
-    string,
-    {
-      relativePath: string;
-      selectedToolIds: HarnessToolId[];
-      aliases: HarnessToolId[];
-    }
-  >();
-
+  // Group by resolved path, not directory name: codex and agents share a
+  // directory, and a symlinked .claude/skills must coalesce the same way.
+  const aliasesByPath = new Map<string, HarnessToolId[]>();
+  const relativeByPath = new Map<string, string>();
   for (const adapter of HARNESS_ADAPTERS) {
     const path = resolveSafePath(repositoryRoot, adapter.skillDirectory);
-    let destination = destinations.get(path);
-    if (destination === undefined) {
-      destination = {
-        relativePath: adapter.skillDirectory,
-        selectedToolIds: [],
-        aliases: [],
-      };
-      destinations.set(path, destination);
+    const aliases = aliasesByPath.get(path);
+    if (aliases === undefined) {
+      aliasesByPath.set(path, [adapter.id]);
+      relativeByPath.set(path, adapter.skillDirectory);
+    } else {
+      aliases.push(adapter.id);
     }
-    destination.aliases.push(adapter.id);
-    if (selected.has(adapter.id)) destination.selectedToolIds.push(adapter.id);
   }
 
-  return Object.freeze(
-    [...destinations.entries()]
-      .filter(([, destination]) => destination.selectedToolIds.length > 0)
-      .map(([path, destination]) =>
-        Object.freeze({
-          path,
-          relativePath: destination.relativePath,
-          selectedToolIds: Object.freeze(destination.selectedToolIds),
-          aliases: Object.freeze(destination.aliases),
-        }),
-      ),
-  );
+  return [...aliasesByPath]
+    .map(([path, aliases]) => ({
+      path,
+      relativePath: relativeByPath.get(path)!,
+      selectedToolIds: aliases.filter((id) => selected.has(id)),
+      aliases,
+    }))
+    .filter((destination) => destination.selectedToolIds.length > 0);
 }

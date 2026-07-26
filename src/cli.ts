@@ -42,7 +42,7 @@ Commands:
 Running planlet without a command displays the active-plan dashboard.
 `;
 
-const COMMAND_HELP: Readonly<Record<string, string>> = Object.freeze({
+const COMMAND_HELP: Readonly<Record<string, string>> = {
   init: "Usage: planlet init [--tools <ids>] [--force]\n",
   update: "Usage: planlet update [--tools <ids>] [--force]\n",
   tools: "Usage: planlet tools\n",
@@ -55,7 +55,7 @@ const COMMAND_HELP: Readonly<Record<string, string>> = Object.freeze({
   task: "Usage: planlet task check|uncheck <slug> <task-id>\n",
   complete:
     "Usage: planlet complete <slug> [--allow-incomplete --reason <text>]\n",
-});
+};
 
 export interface CliRuntime {
   readonly cwd: string;
@@ -66,11 +66,20 @@ export interface CliRuntime {
 
 interface GlobalArguments {
   readonly arguments: readonly string[];
-  readonly explicitRoot?: string;
+  readonly explicitRoot?: string | undefined;
   readonly full: boolean;
 }
 
 class UsageError extends Error {}
+
+/** Options whose following argument is a value, not a flag. */
+const VALUE_OPTIONS = new Set([
+  "--state",
+  "--title",
+  "--part",
+  "--reason",
+  "--tools",
+]);
 
 const PARSE_ARGS_ERROR_CODES = new Set([
   "ERR_PARSE_ARGS_INVALID_OPTION_VALUE",
@@ -96,17 +105,10 @@ function extractGlobalArguments(
   const remaining: string[] = [];
   let explicitRoot: string | undefined;
   let full = false;
-  const valueOptions = new Set([
-    "--state",
-    "--title",
-    "--part",
-    "--reason",
-    "--tools",
-  ]);
 
   for (let index = 0; index < arguments_.length; index += 1) {
     const argument = arguments_[index];
-    if (argument !== undefined && valueOptions.has(argument)) {
+    if (argument !== undefined && VALUE_OPTIONS.has(argument)) {
       remaining.push(argument);
       const value = arguments_[index + 1];
       if (value !== undefined) {
@@ -134,24 +136,14 @@ function extractGlobalArguments(
     }
   }
 
-  return {
-    arguments: remaining,
-    ...(explicitRoot === undefined ? {} : { explicitRoot }),
-    full,
-  };
+  return { arguments: remaining, explicitRoot, full };
 }
 
+/** Skips option values so `--title --help` stays a (bad) title, not a help request. */
 function hasHelpFlag(arguments_: readonly string[]): boolean {
-  const valueOptions = new Set([
-    "--state",
-    "--title",
-    "--part",
-    "--reason",
-    "--tools",
-  ]);
   for (let index = 0; index < arguments_.length; index += 1) {
     const argument = arguments_[index];
-    if (argument !== undefined && valueOptions.has(argument)) {
+    if (argument !== undefined && VALUE_OPTIONS.has(argument)) {
       index += 1;
       continue;
     }
@@ -203,10 +195,7 @@ function prepareCommand(
         force: { type: "boolean" },
       });
       requirePositionals(positionals, 0, command);
-      const commandArguments = {
-        ...(values.tools === undefined ? {} : { tools: values.tools }),
-        ...(values.force === undefined ? {} : { force: values.force }),
-      };
+      const commandArguments = { tools: values.tools, force: values.force };
       return command === "init"
         ? (context) => handleHarnessInit(commandArguments, context)
         : (context) => handleHarnessUpdate(commandArguments, context);
@@ -230,10 +219,8 @@ function prepareCommand(
         usage(`Unknown planlet state: ${state}`);
       }
       const commandArguments = {
-        ...(state === undefined ? {} : { state: state as PlanletState }),
-        ...(values.completed === undefined
-          ? {}
-          : { completed: values.completed }),
+        state: state as PlanletState | undefined,
+        completed: values.completed,
       };
       return (context) => handleList(commandArguments, context);
     }
@@ -242,10 +229,7 @@ function prepareCommand(
         title: { type: "string" },
       });
       requirePositionals(positionals, 1, command);
-      const commandArguments = {
-        slug: positionals[0]!,
-        ...(values.title === undefined ? {} : { title: values.title }),
-      };
+      const commandArguments = { slug: positionals[0]!, title: values.title };
       return (context) => handleCreate(commandArguments, context);
     }
     case "show": {
@@ -261,9 +245,7 @@ function prepareCommand(
       }
       const commandArguments = {
         slug: positionals[0]!,
-        ...(values.part === undefined
-          ? {}
-          : { part: values.part as "plan" | "tasks" | "summary" }),
+        part: values.part as "plan" | "tasks" | "summary" | undefined,
       };
       return (context) => handleShow(commandArguments, context);
     }
@@ -280,10 +262,7 @@ function prepareCommand(
       if (positionals.length > 1 || (positionals.length === 1 && values.all)) {
         usage(COMMAND_HELP.validate!.trimEnd());
       }
-      const commandArguments = {
-        ...(positionals[0] === undefined ? {} : { slug: positionals[0] }),
-        ...(values.all === undefined ? {} : { all: values.all }),
-      };
+      const commandArguments = { slug: positionals[0], all: values.all };
       return (context) => handleValidate(commandArguments, context);
     }
     case "tasks": {
@@ -297,12 +276,8 @@ function prepareCommand(
       }
       const commandArguments = {
         slug: positionals[0]!,
-        ...(values.remaining === undefined
-          ? {}
-          : { remaining: values.remaining }),
-        ...(values.completed === undefined
-          ? {}
-          : { completed: values.completed }),
+        remaining: values.remaining,
+        completed: values.completed,
       };
       return (context) => handleTasks(commandArguments, context);
     }
@@ -331,10 +306,8 @@ function prepareCommand(
       }
       const commandArguments = {
         slug: positionals[0]!,
-        ...(values["allow-incomplete"] === undefined
-          ? {}
-          : { allowIncomplete: values["allow-incomplete"] }),
-        ...(values.reason === undefined ? {} : { reason: values.reason }),
+        allowIncomplete: values["allow-incomplete"],
+        reason: values.reason,
       };
       return (context) => handleComplete(commandArguments, context);
     }
@@ -346,7 +319,10 @@ function prepareCommand(
 /**
  * Parse and dispatch one command against an already selected repository root.
  * `main` intercepts `--help` before repository discovery; this entry point is
- * reachable on its own, so it repeats that interception here.
+ * reachable on its own, so it repeats that interception here. Both are needed:
+ * `main` must answer `--help` without discovering a repository, and this
+ * exported entry point must answer it without going through `main`. Do not
+ * "deduplicate" one of them away.
  */
 export function dispatchCommand(
   command: string,
@@ -403,17 +379,15 @@ export function main(
         : resolve(runtime.cwd, global.explicitRoot);
     const root = discoverRepositoryRoot({
       startPath: runtime.cwd,
-      ...(explicitRoot === undefined ? {} : { explicitRoot }),
-      ...(command === "create" || command === "init"
-        ? { allowUnmarkedStart: true }
-        : {}),
+      explicitRoot,
+      allowUnmarkedStart: command === "create" || command === "init",
     });
     const context: ExecutionContext = {
       root,
       stdout: runtime.stdout,
       stderr: runtime.stderr,
       clock: runtime.clock,
-      ...(global.full ? { full: true } : {}),
+      full: global.full,
     };
 
     return preparedCommand === undefined

@@ -26,28 +26,16 @@ export type StructuredResult<T = unknown> = SuccessfulResult<T> | FailedResult;
 export function warningsAsDiagnostics(
   warnings: readonly string[],
 ): readonly OutputDiagnostic[] {
-  return Object.freeze(
-    warnings.map((message) =>
-      Object.freeze({ level: "warning" as const, message }),
-    ),
-  );
+  return warnings.map((message) => ({ level: "warning" as const, message }));
 }
 
 export function successfulResult<T>(
   data: T,
   warnings: readonly string[] = [],
 ): SuccessfulResult<T> {
-  return Object.freeze({
-    ok: true,
-    data,
-    diagnostics: warningsAsDiagnostics(warnings),
-  });
+  return { ok: true, data, diagnostics: warningsAsDiagnostics(warnings) };
 }
 
 export function failedResult(error: StructuredError): FailedResult {
-  return Object.freeze({
-    ok: false,
-    error,
-    diagnostics: Object.freeze([]),
-  });
+  return { ok: false, error, diagnostics: [] };
 }

@@ -4,7 +4,8 @@ import {
   installHarnessSkills,
 } from "../core/harness-installer.js";
 import type { PlanletState, PlanSummary } from "../core/models.js";
-import { complete } from "./complete.js";
+import { completePlanlet } from "../core/planlet-completion.js";
+import { updateTask } from "../core/task-update.js";
 import {
   getPlanletStatus,
   getPlanletTasks,
@@ -13,7 +14,6 @@ import {
   validatePlanlets,
   type ShowPart,
 } from "./read-only.js";
-import { checkTask, uncheckTask } from "./task-update.js";
 import { EXIT_CODES, type ExitCode } from "../errors/codes.js";
 import { isPlanletError } from "../errors/planlet-error.js";
 import { failedResult, successfulResult } from "../output/model.js";
@@ -24,28 +24,50 @@ export interface ExecutionContext {
   readonly stdout: (value: string) => void;
   readonly stderr: (value: string) => void;
   readonly clock: () => Date;
-  readonly full?: boolean;
+  readonly full?: boolean | undefined;
+}
+
+export interface HarnessCommandArguments {
+  readonly tools?: string | undefined;
+  readonly force?: boolean | undefined;
 }
 
 export interface ListCommandArguments {
-  readonly state?: PlanletState;
-  readonly completed?: boolean;
+  readonly state?: PlanletState | undefined;
+  readonly completed?: boolean | undefined;
+}
+
+export interface CreateCommandArguments {
+  readonly slug: string;
+  readonly title?: string | undefined;
 }
 
 export interface ShowCommandArguments {
   readonly slug: string;
-  readonly part?: ShowPart;
+  readonly part?: ShowPart | undefined;
 }
 
 export interface TasksCommandArguments {
   readonly slug: string;
-  readonly remaining?: boolean;
-  readonly completed?: boolean;
+  readonly remaining?: boolean | undefined;
+  readonly completed?: boolean | undefined;
 }
 
 export interface ValidateCommandArguments {
-  readonly slug?: string;
-  readonly all?: boolean;
+  readonly slug?: string | undefined;
+  readonly all?: boolean | undefined;
+}
+
+export interface TaskUpdateCommandArguments {
+  readonly operation: "check" | "uncheck";
+  readonly slug: string;
+  readonly taskId: string;
+}
+
+export interface CompleteCommandArguments {
+  readonly slug: string;
+  readonly allowIncomplete?: boolean | undefined;
+  readonly reason?: string | undefined;
 }
 
 function warningsFromSummaries(summaries: readonly PlanSummary[]): string[] {
@@ -55,12 +77,12 @@ function warningsFromSummaries(summaries: readonly PlanSummary[]): string[] {
 function compactSummary(
   summary: PlanSummary,
 ): Readonly<Record<string, unknown>> {
-  return Object.freeze({
+  return {
     slug: summary.slug,
     state: summary.state,
     done: summary.completedTasks,
     total: summary.totalTasks,
-  });
+  };
 }
 
 function emit(
@@ -74,7 +96,7 @@ function emit(
     const outcome = operation();
     const rendered = renderToon(
       successfulResult(outcome.data, outcome.warnings ?? []),
-      context.full === undefined ? {} : { full: context.full },
+      { full: context.full },
     );
     context.stdout(rendered.stdout);
     if (rendered.stderr.length > 0) context.stderr(rendered.stderr);
@@ -88,29 +110,27 @@ function emit(
 }
 
 export function handleHarnessInit(
-  arguments_: { readonly tools?: string; readonly force?: boolean },
+  arguments_: HarnessCommandArguments,
   context: ExecutionContext,
 ): ExitCode {
   return emit(context, () => ({
     data: installHarnessSkills({
       repositoryRoot: context.root,
       operation: "init",
-      ...(arguments_.tools === undefined ? {} : { tools: arguments_.tools }),
-      ...(arguments_.force === undefined ? {} : { force: arguments_.force }),
+      ...arguments_,
     }),
   }));
 }
 
 export function handleHarnessUpdate(
-  arguments_: { readonly tools?: string; readonly force?: boolean },
+  arguments_: HarnessCommandArguments,
   context: ExecutionContext,
 ): ExitCode {
   return emit(context, () => ({
     data: installHarnessSkills({
       repositoryRoot: context.root,
       operation: "update",
-      ...(arguments_.tools === undefined ? {} : { tools: arguments_.tools }),
-      ...(arguments_.force === undefined ? {} : { force: arguments_.force }),
+      ...arguments_,
     }),
   }));
 }
@@ -148,10 +168,7 @@ export function handleList(
   return emit(context, () => {
     const summaries = listPlanlets({
       repositoryRoot: context.root,
-      ...(arguments_.state === undefined ? {} : { state: arguments_.state }),
-      ...(arguments_.completed === undefined
-        ? {}
-        : { completed: arguments_.completed }),
+      ...arguments_,
     });
     return {
       data: { plans: summaries.map(compactSummary) },
@@ -161,14 +178,13 @@ export function handleList(
 }
 
 export function handleCreate(
-  arguments_: { readonly slug: string; readonly title?: string },
+  arguments_: CreateCommandArguments,
   context: ExecutionContext,
 ): ExitCode {
   return emit(context, () => {
     const summary = createPlanlet({
       repositoryRoot: context.root,
-      slug: arguments_.slug,
-      ...(arguments_.title === undefined ? {} : { title: arguments_.title }),
+      ...arguments_,
     });
     return {
       data: { plan: compactSummary(summary) },
@@ -185,8 +201,7 @@ export function handleShow(
     // Warnings travel as diagnostics, not as part of the rendered payload.
     const { warnings, ...result } = showPlanlet({
       repositoryRoot: context.root,
-      slug: arguments_.slug,
-      ...(arguments_.part === undefined ? {} : { part: arguments_.part }),
+      ...arguments_,
     });
     return {
       data: result,
@@ -218,13 +233,7 @@ export function handleTasks(
   return emit(context, () => {
     const { warnings, ...result } = getPlanletTasks({
       repositoryRoot: context.root,
-      slug: arguments_.slug,
-      ...(arguments_.remaining === undefined
-        ? {}
-        : { remaining: arguments_.remaining }),
-      ...(arguments_.completed === undefined
-        ? {}
-        : { completed: arguments_.completed }),
+      ...arguments_,
     });
     return { data: result, warnings };
   });
@@ -238,8 +247,7 @@ export function handleValidate(
   const exitCode = emit(context, () => {
     const result = validatePlanlets({
       repositoryRoot: context.root,
-      ...(arguments_.slug === undefined ? {} : { slug: arguments_.slug }),
-      ...(arguments_.all === undefined ? {} : { all: arguments_.all }),
+      ...arguments_,
     });
     valid = result.valid;
     return {
@@ -253,46 +261,26 @@ export function handleValidate(
 }
 
 export function handleTaskUpdate(
-  arguments_: {
-    readonly operation: "check" | "uncheck";
-    readonly slug: string;
-    readonly taskId: string;
-  },
+  arguments_: TaskUpdateCommandArguments,
   context: ExecutionContext,
 ): ExitCode {
   return emit(context, () => {
-    const { warnings, ...result } =
-      arguments_.operation === "check"
-        ? checkTask({
-            repositoryRoot: context.root,
-            slug: arguments_.slug,
-            taskId: arguments_.taskId,
-          })
-        : uncheckTask({
-            repositoryRoot: context.root,
-            slug: arguments_.slug,
-            taskId: arguments_.taskId,
-          });
+    const { warnings, ...result } = updateTask({
+      repositoryRoot: context.root,
+      ...arguments_,
+    });
     return { data: result, warnings };
   });
 }
 
 export function handleComplete(
-  arguments_: {
-    readonly slug: string;
-    readonly allowIncomplete?: boolean;
-    readonly reason?: string;
-  },
+  arguments_: CompleteCommandArguments,
   context: ExecutionContext,
 ): ExitCode {
   return emit(context, () => {
-    const result = complete({
+    const result = completePlanlet({
       repositoryRoot: context.root,
-      slug: arguments_.slug,
-      ...(arguments_.allowIncomplete === undefined
-        ? {}
-        : { allowIncomplete: arguments_.allowIncomplete }),
-      ...(arguments_.reason === undefined ? {} : { reason: arguments_.reason }),
+      ...arguments_,
       dependencies: { now: context.clock },
     });
     const { warnings, ...summary } = result.summary;

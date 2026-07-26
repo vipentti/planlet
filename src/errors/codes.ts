@@ -45,7 +45,3 @@ export const ERROR_EXIT_CODES: Readonly<Record<ErrorCode, ExitCode>> =
     unsafe_path: EXIT_CODES.filesystemConflict,
     write_conflict: EXIT_CODES.filesystemConflict,
   });
-
-export function exitCodeForError(code: ErrorCode): ExitCode {
-  return ERROR_EXIT_CODES[code];
-}

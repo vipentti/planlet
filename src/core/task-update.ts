@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import {
-  lstatSync,
   readFileSync,
   renameSync,
   rmSync,
@@ -10,7 +9,7 @@ import {
 import { resolve } from "node:path";
 
 import type { PlanletTask } from "./models.js";
-import { resolveSafePath } from "./paths.js";
+import { resolveSafePath, tryLstat } from "./paths.js";
 import { assertValidSlug } from "./slugs.js";
 import { parseTaskLine } from "./task-parser.js";
 import { validatePlanletStructure } from "./validation.js";
@@ -26,6 +25,7 @@ export interface UpdateTaskOptions {
   readonly dependencies?: Partial<UpdateTaskDependencies>;
 }
 
+/** Fault-injection seam for the rollback tests; see CreatePlanletDependencies. */
 export interface UpdateTaskDependencies {
   readonly writeFile: (path: string, content: string, mode: number) => void;
   readonly rename: (source: string, destination: string) => void;
@@ -53,19 +53,7 @@ const DEFAULT_DEPENDENCIES: UpdateTaskDependencies = {
 };
 
 function assertActivePlanletDirectory(path: string, slug: string): void {
-  let status: ReturnType<typeof lstatSync> | null;
-  try {
-    status = lstatSync(path);
-  } catch (error) {
-    if (!(
-      error instanceof Error &&
-      "code" in error &&
-      error.code === "ENOENT"
-    )) {
-      throw error;
-    }
-    status = null;
-  }
+  const status = tryLstat(path);
   if (status?.isSymbolicLink()) {
     throw new PlanletError(
       "unsafe_path",
@@ -97,19 +85,11 @@ function replaceTaskMarker(
   completed: boolean,
 ): string {
   let matched = false;
-  const chunks = markdown.match(/[^\n]*(?:\n|$)/g) ?? [];
-  const updated = chunks.map((chunk) => {
-    if (chunk === "") {
-      return chunk;
-    }
-
-    const ending = chunk.endsWith("\r\n")
-      ? "\r\n"
-      : chunk.endsWith("\n")
-        ? "\n"
-        : "";
-    const line = ending === "" ? chunk : chunk.slice(0, -ending.length);
-    const task = parseTaskLine(line);
+  // The lookbehind split keeps each line's terminator attached, so CR/LF and a
+  // missing final newline all round-trip without reassembly.
+  const updated = markdown.split(/(?<=\n)/).map((chunk) => {
+    const ending = /\r?\n$/.exec(chunk)?.[0] ?? "";
+    const task = parseTaskLine(chunk.slice(0, chunk.length - ending.length));
     if (task?.id !== taskId) {
       return chunk;
     }
@@ -179,12 +159,7 @@ export function updateTask(options: UpdateTaskOptions): UpdateTaskResult {
 
   const completed = options.operation === "check";
   if (task.completed === completed) {
-    return Object.freeze({
-      slug,
-      task,
-      changed: false,
-      warnings: validated.warnings,
-    });
+    return { slug, task, changed: false, warnings: validated.warnings };
   }
 
   if (validated.completion !== null) {
@@ -254,10 +229,10 @@ export function updateTask(options: UpdateTaskOptions): UpdateTaskResult {
     throw updateFailure;
   }
 
-  return Object.freeze({
+  return {
     slug,
-    task: Object.freeze({ ...task, completed }),
+    task: { ...task, completed },
     changed: true,
     warnings: validated.warnings,
-  });
+  };
 }

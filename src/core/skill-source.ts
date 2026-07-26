@@ -103,14 +103,12 @@ function enumerateDirectory(
     if (!stats.isFile()) continue;
 
     const content = readFileSync(path);
-    files.push(
-      Object.freeze({
-        skill,
-        relativePath: relative(sourceRoot, path).split(sep).join("/"),
-        content,
-        digest: sha256(content),
-      }),
-    );
+    files.push({
+      skill,
+      relativePath: relative(sourceRoot, path).split(sep).join("/"),
+      content,
+      digest: sha256(content),
+    });
   }
 }
 
@@ -143,8 +141,5 @@ export function enumerateCanonicalSkills(
     }
   }
 
-  return Object.freeze({
-    skills: Object.freeze(skills),
-    files: Object.freeze(files),
-  });
+  return { skills, files };
 }

@@ -1,5 +1,4 @@
 import {
-  lstatSync,
   mkdirSync,
   readdirSync,
   renameSync,
@@ -9,17 +8,21 @@ import {
 import { randomUUID } from "node:crypto";
 
 import { createPlanSummary, type PlanSummary } from "./models.js";
-import { resolveSafePath } from "./paths.js";
+import { resolveSafePath, tryLstat } from "./paths.js";
 import { assertValidSlug, parseArchiveName } from "./slugs.js";
 import { PlanletError, isPlanletError } from "../errors/planlet-error.js";
 
 export interface CreatePlanletOptions {
   readonly repositoryRoot: string;
   readonly slug: string;
-  readonly title?: string;
-  readonly dependencies?: Partial<CreatePlanletDependencies>;
+  readonly title?: string | undefined;
+  readonly dependencies?: Partial<CreatePlanletDependencies> | undefined;
 }
 
+/**
+ * Injected purely so tests can force each individual filesystem step to fail
+ * and assert the rollback path. Production always uses DEFAULT_DEPENDENCIES.
+ */
 export interface CreatePlanletDependencies {
   readonly writeFile: (path: string, content: string) => void;
   readonly rename: (source: string, destination: string) => void;
@@ -36,15 +39,7 @@ const DEFAULT_DEPENDENCIES: CreatePlanletDependencies = {
 };
 
 function pathExists(path: string): boolean {
-  try {
-    lstatSync(path);
-    return true;
-  } catch (error) {
-    if (error instanceof Error && "code" in error && error.code === "ENOENT") {
-      return false;
-    }
-    throw error;
-  }
+  return tryLstat(path) !== null;
 }
 
 export function deriveTitleFromSlug(slug: string): string {
@@ -96,11 +91,6 @@ function assertNoCompletedCollision(plansPath: string, slug: string): void {
   }
 }
 
-function assertNoLogicalSlugCollision(plansPath: string, slug: string): void {
-  assertNoActiveCollision(plansPath, slug);
-  assertNoCompletedCollision(plansPath, slug);
-}
-
 function asWriteConflict(error: unknown, slug: string): PlanletError {
   if (isPlanletError(error)) {
     return error;
@@ -131,8 +121,8 @@ export function createPlanlet(options: CreatePlanletOptions): PlanSummary {
   try {
     plansPath = resolveSafePath(options.repositoryRoot, "plans");
     mkdirSync(plansPath, { recursive: true });
-    plansPath = resolveSafePath(options.repositoryRoot, "plans");
-    assertNoLogicalSlugCollision(plansPath, slug);
+    assertNoActiveCollision(plansPath, slug);
+    assertNoCompletedCollision(plansPath, slug);
   } catch (error) {
     throw asWriteConflict(error, slug);
   }
@@ -159,7 +149,8 @@ export function createPlanlet(options: CreatePlanletOptions): PlanSummary {
     );
 
     // Recheck immediately before publication to narrow the collision race.
-    assertNoLogicalSlugCollision(plansPath, slug);
+    assertNoActiveCollision(plansPath, slug);
+    assertNoCompletedCollision(plansPath, slug);
     dependencies.rename(temporaryPath, targetPath);
     published = true;
   } catch (error) {

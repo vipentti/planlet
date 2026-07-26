@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import {
-  lstatSync,
   mkdirSync,
   readFileSync,
   readdirSync,
@@ -19,7 +18,7 @@ import {
   type HarnessDestination,
   type HarnessToolId,
 } from "./harnesses.js";
-import { resolveSafePath } from "./paths.js";
+import { resolveSafePath, tryLstat } from "./paths.js";
 import {
   enumerateCanonicalSkills,
   sha256,
@@ -70,26 +69,17 @@ interface DestinationInspection {
 }
 
 function pathKind(path: string): "missing" | "directory" | "file" | "symlink" {
-  try {
-    const stats = lstatSync(path);
-    if (stats.isSymbolicLink()) return "symlink";
-    if (stats.isDirectory()) return "directory";
-    return "file";
-  } catch (error) {
-    if (error instanceof Error && "code" in error && error.code === "ENOENT") {
-      return "missing";
-    }
-    throw error;
-  }
+  const stats = tryLstat(path);
+  if (stats === null) return "missing";
+  if (stats.isSymbolicLink()) return "symlink";
+  return stats.isDirectory() ? "directory" : "file";
 }
 
 function sortedRecord(
   entries: readonly (readonly [string, string])[],
 ): Readonly<Record<string, string>> {
-  return Object.freeze(
-    Object.fromEntries(
-      [...entries].sort(([left], [right]) => left.localeCompare(right)),
-    ),
+  return Object.fromEntries(
+    [...entries].sort(([left], [right]) => left.localeCompare(right)),
   );
 }
 
@@ -97,13 +87,13 @@ export function createInstallationManifest(
   aliases: readonly HarnessToolId[],
   source: CanonicalSkillSource,
 ): InstallationManifest {
-  return Object.freeze({
+  return {
     schemaVersion: INSTALLATION_MANIFEST_VERSION,
-    tools: Object.freeze([...aliases].sort()),
+    tools: [...aliases].sort(),
     files: sortedRecord(
       source.files.map((file) => [file.relativePath, file.digest] as const),
     ),
-  });
+  };
 }
 
 export function serializeInstallationManifest(
@@ -159,21 +149,11 @@ export function parseInstallationManifest(
         typeof tool === "string" &&
         HARNESS_ADAPTERS.some((adapter) => adapter.id === tool),
     ) &&
-    new Set(tools).size === tools.length &&
-    tools.every((tool, index) => index === 0 || tools[index - 1]! < tool);
-  const validFiles =
-    isStringRecord(files) &&
-    Object.keys(files).every(
-      (file) =>
-        /^planlet-[^/]+\/.+/.test(file) &&
-        !file.includes("\\") &&
-        !file.split("/").includes("..") &&
-        /^[a-f0-9]{64}$/.test(files[file]!),
-    );
+    new Set(tools).size === tools.length;
   if (
     candidate.schemaVersion !== INSTALLATION_MANIFEST_VERSION ||
     !validTools ||
-    !validFiles
+    !isStringRecord(files)
   ) {
     throw new PlanletError(
       "write_conflict",
@@ -184,17 +164,17 @@ export function parseInstallationManifest(
     );
   }
 
-  return Object.freeze({
+  return {
     schemaVersion: INSTALLATION_MANIFEST_VERSION,
-    tools: Object.freeze([...(tools as HarnessToolId[])]),
-    files: sortedRecord(Object.entries(files as Record<string, string>)),
-  });
+    tools: [...(tools as HarnessToolId[])],
+    files: sortedRecord(Object.entries(files)),
+  };
 }
 
 function collectPlanletFiles(
   destinationPath: string,
 ): Readonly<Record<string, string>> {
-  if (pathKind(destinationPath) === "missing") return Object.freeze({});
+  if (pathKind(destinationPath) === "missing") return {};
   if (pathKind(destinationPath) !== "directory") {
     throw new PlanletError(
       "write_conflict",
@@ -292,32 +272,18 @@ function inspectDestination(
   );
   const desiredManifestText = serializeInstallationManifest(desiredManifest);
   const actualEntries = Object.entries(actualFiles);
+  // Without a manifest, an empty destination is a clean install, not a conflict.
+  const expected =
+    manifest?.files ??
+    (actualEntries.length === 0 ? {} : desiredManifest.files);
   const conflicts = new Set<string>();
-
-  if (manifest === undefined) {
-    if (
-      actualEntries.length > 0 &&
-      !sameRecord(actualFiles, desiredManifest.files)
-    ) {
-      for (const [path, digest] of actualEntries) {
-        if (desiredManifest.files[path] !== digest) conflicts.add(path);
-      }
-      for (const path of Object.keys(desiredManifest.files)) {
-        if (actualFiles[path] === undefined) conflicts.add(path);
-      }
-    }
-  } else {
-    for (const [path, recordedDigest] of Object.entries(manifest.files)) {
-      if (actualFiles[path] !== recordedDigest) conflicts.add(path);
-    }
-    for (const [path, digest] of actualEntries) {
-      if (
-        manifest.files[path] === undefined &&
-        desiredManifest.files[path] !== digest
-      ) {
-        conflicts.add(path);
-      }
-    }
+  for (const path of new Set([
+    ...Object.keys(expected),
+    ...Object.keys(actualFiles),
+  ])) {
+    // Unrecorded extras that already match the desired content are not conflicts.
+    const permitted = expected[path] ?? desiredManifest.files[path];
+    if (actualFiles[path] !== permitted) conflicts.add(path);
   }
 
   const hasFiles = actualEntries.length > 0;
@@ -326,9 +292,8 @@ function inspectDestination(
     manifest !== undefined &&
     sameRecord(manifest.files, desiredManifest.files) &&
     manifest.tools.length === desiredManifest.tools.length &&
-    manifest.tools.every(
-      (tool, index) => tool === desiredManifest.tools[index],
-    );
+    new Set(manifest.tools).size === new Set(desiredManifest.tools).size &&
+    desiredManifest.tools.every((tool) => manifest.tools.includes(tool));
   const state: HarnessState =
     manifest === undefined
       ? hasFiles
@@ -343,7 +308,7 @@ function inspectDestination(
     state,
     actualFiles,
     desiredManifestText,
-    conflicts: Object.freeze([...conflicts].sort()),
+    conflicts: [...conflicts].sort(),
     publishSkills: !currentSkillsMatch,
     writeManifest: manifestText !== desiredManifestText,
   };
@@ -358,24 +323,22 @@ function asWriteConflict(error: unknown, destination: string): PlanletError {
   );
 }
 
-function publishSkill(
+/**
+ * Builds `name` beside its destination and swaps it in with one rename, keeping
+ * the previous copy as a backup that is restored if any step fails.
+ */
+function atomicReplace(
   destinationPath: string,
-  skill: string,
-  source: CanonicalSkillSource,
+  name: string,
+  write: (staging: string) => void,
 ): void {
-  const target = join(destinationPath, skill);
+  const target = join(destinationPath, name);
   const token = randomUUID();
-  const staging = join(destinationPath, `.${skill}.stage-${token}`);
-  const backup = join(destinationPath, `.${skill}.backup-${token}`);
+  const staging = join(destinationPath, `.${name}.stage-${token}`);
+  const backup = join(destinationPath, `.${name}.backup-${token}`);
   let backedUp = false;
   try {
-    mkdirSync(staging);
-    for (const file of source.files.filter((entry) => entry.skill === skill)) {
-      const relativePath = file.relativePath.slice(skill.length + 1);
-      const targetFile = resolveSafePath(staging, ...relativePath.split("/"));
-      mkdirSync(dirname(targetFile), { recursive: true });
-      writeFileSync(targetFile, file.content, { flag: "wx" });
-    }
+    write(staging);
     if (pathKind(target) !== "missing") {
       renameSync(target, backup);
       backedUp = true;
@@ -389,39 +352,34 @@ function publishSkill(
   }
 }
 
-function publishManifest(destinationPath: string, content: string): void {
-  const target = join(destinationPath, INSTALLATION_MANIFEST);
-  const token = randomUUID();
-  const staging = join(
-    destinationPath,
-    `${INSTALLATION_MANIFEST}.stage-${token}`,
-  );
-  const backup = join(
-    destinationPath,
-    `${INSTALLATION_MANIFEST}.backup-${token}`,
-  );
-  let backedUp = false;
-  try {
-    writeFileSync(staging, content, { encoding: "utf8", flag: "wx" });
-    if (pathKind(target) !== "missing") {
-      renameSync(target, backup);
-      backedUp = true;
+function publishSkill(
+  destinationPath: string,
+  skill: string,
+  source: CanonicalSkillSource,
+): void {
+  atomicReplace(destinationPath, skill, (staging) => {
+    mkdirSync(staging);
+    for (const file of source.files.filter((entry) => entry.skill === skill)) {
+      const relativePath = file.relativePath.slice(skill.length + 1);
+      const targetFile = resolveSafePath(staging, ...relativePath.split("/"));
+      mkdirSync(dirname(targetFile), { recursive: true });
+      writeFileSync(targetFile, file.content, { flag: "wx" });
     }
-    renameSync(staging, target);
-    if (backedUp) rmSync(backup, { force: true });
-  } catch (error) {
-    rmSync(staging, { force: true });
-    if (backedUp && pathKind(target) === "missing") renameSync(backup, target);
-    throw asWriteConflict(error, destinationPath);
-  }
+  });
+}
+
+function publishManifest(destinationPath: string, content: string): void {
+  atomicReplace(destinationPath, INSTALLATION_MANIFEST, (staging) => {
+    writeFileSync(staging, content, { encoding: "utf8", flag: "wx" });
+  });
 }
 
 export function installHarnessSkills(options: {
   readonly repositoryRoot: string;
   readonly operation: "init" | "update";
-  readonly tools?: string;
-  readonly force?: boolean;
-  readonly source?: CanonicalSkillSource;
+  readonly tools?: string | undefined;
+  readonly force?: boolean | undefined;
+  readonly source?: CanonicalSkillSource | undefined;
 }): InstallationSummary {
   const selectedToolIds = normalizeToolSelector(options.tools);
   const destinations = resolveHarnessDestinations(
@@ -444,16 +402,22 @@ export function installHarnessSkills(options: {
     );
   }
 
-  const source =
-    destinations.length === 0
-      ? undefined
-      : (options.source ?? enumerateCanonicalSkills());
-  const inspections =
-    source === undefined
-      ? []
-      : destinations.map((destination) =>
-          inspectDestination(destination, source),
-        );
+  if (destinations.length === 0) {
+    const plansInitialized =
+      options.operation === "init" && plansKind === "missing";
+    if (plansInitialized) mkdirSync(plansPath, { recursive: true });
+    return {
+      operation: options.operation,
+      changed: plansInitialized,
+      plansInitialized,
+      destinations: [],
+    };
+  }
+
+  const source = options.source ?? enumerateCanonicalSkills();
+  const inspections = destinations.map((destination) =>
+    inspectDestination(destination, source),
+  );
   const actionable = inspections.filter(
     (inspection) =>
       options.operation === "init" || inspection.state !== "missing",
@@ -475,31 +439,24 @@ export function installHarnessSkills(options: {
   const plansInitialized =
     options.operation === "init" && plansKind === "missing";
   if (plansInitialized) mkdirSync(plansPath, { recursive: true });
-  const summaries =
-    source === undefined
-      ? []
-      : inspections.map((inspection) => {
-          if (
-            options.operation === "update" &&
-            inspection.state === "missing"
-          ) {
-            return Object.freeze({
-              destination: inspection.destination.relativePath,
-              tools: inspection.destination.selectedToolIds,
-              state: "missing" as const,
-              changed: false,
-              files: 0,
-            });
-          }
-          return applyInspectionWithSource(inspection, source);
-        });
+  const summaries = inspections.map((inspection) =>
+    options.operation === "update" && inspection.state === "missing"
+      ? {
+          destination: inspection.destination.relativePath,
+          tools: inspection.destination.selectedToolIds,
+          state: "missing" as const,
+          changed: false,
+          files: 0,
+        }
+      : applyInspectionWithSource(inspection, source),
+  );
 
-  return Object.freeze({
+  return {
     operation: options.operation,
     changed: plansInitialized || summaries.some((summary) => summary.changed),
     plansInitialized,
-    destinations: Object.freeze(summaries),
-  });
+    destinations: summaries,
+  };
 }
 
 function applyInspectionWithSource(
@@ -534,13 +491,13 @@ function applyInspectionWithSource(
     }
   }
 
-  return Object.freeze({
+  return {
     destination: inspection.destination.relativePath,
     tools: inspection.destination.selectedToolIds,
     state: "installed" as const,
     changed,
     files: source.files.length,
-  });
+  };
 }
 
 export function detectHarnesses(options: {
@@ -548,12 +505,11 @@ export function detectHarnesses(options: {
   readonly source?: CanonicalSkillSource;
 }): readonly DetectedHarness[] {
   const source = options.source ?? enumerateCanonicalSkills();
-  const destinations = resolveHarnessDestinations(
-    options.repositoryRoot,
-    normalizeToolSelector("all"),
-  );
-  const stateByDestination = new Map(
-    destinations.map((destination) => {
+  const stateByPath = new Map(
+    resolveHarnessDestinations(
+      options.repositoryRoot,
+      normalizeToolSelector("all"),
+    ).map((destination) => {
       let state: HarnessState;
       try {
         state = inspectDestination(destination, source).state;
@@ -561,22 +517,19 @@ export function detectHarnesses(options: {
         if (!isPlanletError(error) || error.code !== "write_conflict") {
           throw error;
         }
+        // A destination we cannot parse is reported as modified, not fatal.
         state = "modified";
       }
       return [destination.path, state] as const;
     }),
   );
 
-  return Object.freeze(
-    HARNESS_ADAPTERS.map((adapter) =>
-      Object.freeze({
-        id: adapter.id,
-        name: adapter.displayName,
-        destination: adapter.skillDirectory,
-        state: stateByDestination.get(
-          resolveSafePath(options.repositoryRoot, adapter.skillDirectory),
-        )!,
-      }),
-    ),
-  );
+  return HARNESS_ADAPTERS.map((adapter) => ({
+    id: adapter.id,
+    name: adapter.displayName,
+    destination: adapter.skillDirectory,
+    state: stateByPath.get(
+      resolveSafePath(options.repositoryRoot, adapter.skillDirectory),
+    )!,
+  }));
 }

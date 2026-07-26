@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import {
-  lstatSync,
   mkdirSync,
   readFileSync,
   readdirSync,
@@ -13,7 +12,7 @@ import {
 import { resolve } from "node:path";
 
 import { createPlanSummary, type PlanSummary } from "./models.js";
-import { resolveSafePath } from "./paths.js";
+import { resolveSafePath, tryLstat } from "./paths.js";
 import {
   assertValidSlug,
   createArchiveName,
@@ -25,9 +24,9 @@ import { isPlanletError, PlanletError } from "../errors/planlet-error.js";
 export interface CompletePlanletOptions {
   readonly repositoryRoot: string;
   readonly slug: string;
-  readonly allowIncomplete?: boolean;
-  readonly reason?: string;
-  readonly dependencies?: Partial<CompletePlanletDependencies>;
+  readonly allowIncomplete?: boolean | undefined;
+  readonly reason?: string | undefined;
+  readonly dependencies?: Partial<CompletePlanletDependencies> | undefined;
 }
 
 export interface CompletePlanletDependencies {
@@ -58,17 +57,6 @@ const DEFAULT_DEPENDENCIES: CompletePlanletDependencies = {
   remove: (path) => rmSync(path, { force: true }),
   temporaryName: (slug) => `.${slug}.completion-${randomUUID()}.tmp`,
 };
-
-function tryLstat(path: string): ReturnType<typeof lstatSync> | null {
-  try {
-    return lstatSync(path);
-  } catch (error) {
-    if (error instanceof Error && "code" in error && error.code === "ENOENT") {
-      return null;
-    }
-    throw error;
-  }
-}
 
 function readMarkdown(path: string, filename: string): string {
   try {
@@ -197,9 +185,9 @@ function resumeRecordedCompletion(
     throw new TypeError("Recorded completion is required");
   }
 
-  const remainingTaskIds = Object.freeze(
-    active.tasks.filter((task) => !task.completed).map((task) => task.id),
-  );
+  const remainingTaskIds = active.tasks
+    .filter((task) => !task.completed)
+    .map((task) => task.id);
   if (completion.mode === "normal" && remainingTaskIds.length > 0) {
     throw new PlanletError(
       "invalid_plan",
@@ -245,7 +233,7 @@ function resumeRecordedCompletion(
   }
 
   const completedTasks = active.tasks.length - remainingTaskIds.length;
-  return Object.freeze({
+  return {
     slug,
     archiveName,
     destination,
@@ -263,7 +251,7 @@ function resumeRecordedCompletion(
       path: destination,
       warnings: completedValidation.warnings,
     }),
-  });
+  };
 }
 
 /**
@@ -302,9 +290,9 @@ export function completePlanlet(
     );
   }
 
-  const remainingTaskIds = Object.freeze(
-    validated.tasks.filter((task) => !task.completed).map((task) => task.id),
-  );
+  const remainingTaskIds = validated.tasks
+    .filter((task) => !task.completed)
+    .map((task) => task.id);
   if (validated.state !== "ready_to_complete") {
     const completed = validated.tasks.length - remainingTaskIds.length;
     if (remainingTaskIds.length === 0 || options.allowIncomplete !== true) {
@@ -362,17 +350,6 @@ export function completePlanlet(
     );
     assertNoCompletionCollision(completedPath, slug, destination);
     mkdirSync(completedPath, { recursive: true });
-    completedPath = resolveSafePath(
-      options.repositoryRoot,
-      "plans",
-      "completed",
-    );
-    destination = resolveSafePath(
-      options.repositoryRoot,
-      "plans",
-      "completed",
-      archiveName,
-    );
     assertNoCompletionCollision(completedPath, slug, destination);
   } catch (error) {
     throw asWriteConflict(error, slug);
@@ -478,7 +455,7 @@ export function completePlanlet(
 
   const completedTasks = validated.tasks.length - remainingTaskIds.length;
   const mode = reason === undefined ? "normal" : "incomplete override";
-  return Object.freeze({
+  return {
     slug,
     archiveName,
     destination,
@@ -501,5 +478,5 @@ export function completePlanlet(
           : []),
       ],
     }),
-  });
+  };
 }

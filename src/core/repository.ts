@@ -1,23 +1,13 @@
-import { lstatSync, realpathSync, type Stats } from "node:fs";
+import { realpathSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 
 import { PlanletError } from "../errors/planlet-error.js";
+import { tryLstat } from "./paths.js";
 
 export interface DiscoverRepositoryOptions {
   readonly startPath: string;
-  readonly explicitRoot?: string;
-  readonly allowUnmarkedStart?: boolean;
-}
-
-function tryLstat(path: string): Stats | null {
-  try {
-    return lstatSync(path);
-  } catch (error) {
-    if (error instanceof Error && "code" in error && error.code === "ENOENT") {
-      return null;
-    }
-    throw error;
-  }
+  readonly explicitRoot?: string | undefined;
+  readonly allowUnmarkedStart?: boolean | undefined;
 }
 
 function canonicalDirectory(path: string): string | null {

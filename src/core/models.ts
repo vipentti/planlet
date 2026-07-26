@@ -81,6 +81,11 @@ function validateStateCounts(
 /**
  * Creates an immutable summary while enforcing the count invariants shared by
  * all status and output consumers.
+ *
+ * These checks look redundant with the callers that just derived the counts
+ * from a task list, but this is the one place every summary is constructed,
+ * including from parsed on-disk state and from tests. Keep the guard here
+ * rather than trusting each caller. The freeze is asserted by models.test.ts.
  */
 export function createPlanSummary(input: PlanSummaryInput): PlanSummary {
   requireTaskCount("completedTasks", input.completedTasks);

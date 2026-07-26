@@ -1,10 +1,20 @@
-import { lstatSync, realpathSync } from "node:fs";
+import { lstatSync, realpathSync, type Stats } from "node:fs";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 
 import { PlanletError } from "../errors/planlet-error.js";
 
 function isMissingPathError(error: unknown): boolean {
   return error instanceof Error && "code" in error && error.code === "ENOENT";
+}
+
+/** `lstatSync` that reports a missing path as `null` and rethrows anything else. */
+export function tryLstat(path: string): Stats | null {
+  try {
+    return lstatSync(path);
+  } catch (error) {
+    if (isMissingPathError(error)) return null;
+    throw error;
+  }
 }
 
 export function isPathWithinRoot(root: string, target: string): boolean {

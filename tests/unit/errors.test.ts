@@ -5,7 +5,6 @@ import {
   ERROR_CODES,
   ERROR_EXIT_CODES,
   EXIT_CODES,
-  exitCodeForError,
 } from "../../src/errors/codes.js";
 import {
   PlanletError,
@@ -38,7 +37,7 @@ test("each error code is locked to its exact exit-code category", () => {
   };
 
   for (const code of ERROR_CODES) {
-    assert.equal(exitCodeForError(code), expected[code], code);
+    assert.equal(ERROR_EXIT_CODES[code], expected[code], code);
   }
 });
 

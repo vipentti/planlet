@@ -13,7 +13,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { complete } from "../../src/commands/complete.js";
+import { completePlanlet } from "../../src/core/planlet-completion.js";
 import { validatePlanletStructure } from "../../src/core/validation.js";
 import { PlanletError } from "../../src/errors/planlet-error.js";
 
@@ -45,7 +45,7 @@ const INCOMPLETE_TASKS =
 test("normal completion uses one UTC instant for its audit and archive date", () => {
   withRepository(COMPLETE_TASKS, (root, source) => {
     let clockReads = 0;
-    const result = complete({
+    const result = completePlanlet({
       repositoryRoot: root,
       slug: "fixture-plan",
       dependencies: {
@@ -89,7 +89,7 @@ test("normal completion uses one UTC instant for its audit and archive date", ()
 
 test("incomplete override records remaining IDs and the approved reason", () => {
   withRepository(INCOMPLETE_TASKS, (root, source) => {
-    const result = complete({
+    const result = completePlanlet({
       repositoryRoot: root,
       slug: "fixture-plan",
       allowIncomplete: true,
@@ -117,7 +117,7 @@ test("normal completion refuses an empty draft without changing the source", () 
   const draftTasks = "# Tasks: Fixture Plan\n";
   withRepository(draftTasks, (root, source) => {
     assert.throws(
-      () => complete({ repositoryRoot: root, slug: "fixture-plan" }),
+      () => completePlanlet({ repositoryRoot: root, slug: "fixture-plan" }),
       (error) => {
         assert.ok(error instanceof PlanletError);
         assert.equal(error.code, "incomplete_tasks");
@@ -132,7 +132,7 @@ test("normal completion refuses an empty draft without changing the source", () 
 test("normal completion refuses incomplete tasks without changing the source", () => {
   withRepository(INCOMPLETE_TASKS, (root, source) => {
     assert.throws(
-      () => complete({ repositoryRoot: root, slug: "fixture-plan" }),
+      () => completePlanlet({ repositoryRoot: root, slug: "fixture-plan" }),
       (error) => {
         assert.ok(error instanceof PlanletError);
         assert.equal(error.code, "incomplete_tasks");
@@ -152,7 +152,7 @@ test("incomplete override rejects invalid reasons with a structured error", () =
     withRepository(INCOMPLETE_TASKS, (root, source) => {
       assert.throws(
         () =>
-          complete({
+          completePlanlet({
             repositoryRoot: root,
             slug: "fixture-plan",
             allowIncomplete: true,
@@ -183,7 +183,7 @@ test("completion rejects an internal symlink without moving its target", () => {
     symlinkSync(target, source, "dir");
 
     assert.throws(
-      () => complete({ repositoryRoot: root, slug: "fixture-plan" }),
+      () => completePlanlet({ repositoryRoot: root, slug: "fixture-plan" }),
       (error) => error instanceof PlanletError && error.code === "unsafe_path",
     );
     assert.equal(existsSync(source), true);
@@ -202,7 +202,7 @@ test("completion refuses destination and logical-slug collisions without touchin
     });
     assert.throws(
       () =>
-        complete({
+        completePlanlet({
           repositoryRoot: root,
           slug: "fixture-plan",
           dependencies: { now: () => new Date("2026-07-22T12:00:00Z") },
@@ -222,7 +222,7 @@ test("completion refuses destination and logical-slug collisions without touchin
     });
     assert.throws(
       () =>
-        complete({
+        completePlanlet({
           repositoryRoot: root,
           slug: "fixture-plan",
           dependencies: { now: () => new Date("2026-07-22T12:00:00Z") },
@@ -241,7 +241,7 @@ test("a movement failure rolls back the audit so completion can be retried", () 
   withRepository(COMPLETE_TASKS, (root, source) => {
     assert.throws(
       () =>
-        complete({
+        completePlanlet({
           repositoryRoot: root,
           slug: "fixture-plan",
           dependencies: {
@@ -266,7 +266,7 @@ test("a movement failure rolls back the audit so completion can be retried", () 
       COMPLETE_TASKS,
     );
 
-    const retried = complete({
+    const retried = completePlanlet({
       repositoryRoot: root,
       slug: "fixture-plan",
       dependencies: { now: () => new Date("2026-07-22T12:00:00Z") },
@@ -282,7 +282,7 @@ test("completion resumes a valid audit left by process interruption", () => {
     "- Mode: normal\n";
   withRepository(interrupted, (root, source) => {
     let clockReads = 0;
-    const result = complete({
+    const result = completePlanlet({
       repositoryRoot: root,
       slug: "fixture-plan",
       dependencies: {

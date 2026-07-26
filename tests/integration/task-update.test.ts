@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { checkTask, uncheckTask } from "../../src/commands/task-update.js";
+import { updateTask } from "../../src/core/task-update.js";
 import { PlanletError } from "../../src/errors/planlet-error.js";
 
 function withPlanlet(
@@ -48,7 +48,8 @@ const MARKDOWN =
 
 test("check is idempotent and preserves every unrelated Markdown byte", () => {
   withPlanlet(MARKDOWN, (root, tasksPath) => {
-    const first = checkTask({
+    const first = updateTask({
+      operation: "check",
       repositoryRoot: root,
       slug: "fixture-plan",
       taskId: "T1",
@@ -62,7 +63,8 @@ test("check is idempotent and preserves every unrelated Markdown byte", () => {
     assert.equal(first.task.completed, true);
     assert.equal(readFileSync(tasksPath, "utf8"), expected);
 
-    const second = checkTask({
+    const second = updateTask({
+      operation: "check",
       repositoryRoot: root,
       slug: "fixture-plan",
       taskId: "T1",
@@ -74,7 +76,8 @@ test("check is idempotent and preserves every unrelated Markdown byte", () => {
 
 test("uncheck is idempotent and changes only the selected marker", () => {
   withPlanlet(MARKDOWN, (root, tasksPath) => {
-    const first = uncheckTask({
+    const first = updateTask({
+      operation: "uncheck",
       repositoryRoot: root,
       slug: "fixture-plan",
       taskId: "T2",
@@ -88,7 +91,8 @@ test("uncheck is idempotent and changes only the selected marker", () => {
     assert.equal(first.task.completed, false);
     assert.equal(readFileSync(tasksPath, "utf8"), expected);
 
-    const second = uncheckTask({
+    const second = updateTask({
+      operation: "uncheck",
       repositoryRoot: root,
       slug: "fixture-plan",
       taskId: "T2",
@@ -103,7 +107,8 @@ test("a failed atomic publication preserves tasks.md and removes its sibling tem
     const temporaryName = ".fixture-plan.tasks-fixture.tmp";
     assert.throws(
       () =>
-        checkTask({
+        updateTask({
+          operation: "check",
           repositoryRoot: root,
           slug: "fixture-plan",
           taskId: "T1",
@@ -136,7 +141,8 @@ test("an existing temporary-path collision preserves the unowned file", () => {
 
     assert.throws(
       () =>
-        checkTask({
+        updateTask({
+          operation: "check",
           repositoryRoot: root,
           slug: "fixture-plan",
           taskId: "T1",
@@ -157,7 +163,8 @@ test("missing tasks and malformed planlets fail without modifying Markdown", () 
   withPlanlet(MARKDOWN, (root, tasksPath) => {
     assert.throws(
       () =>
-        checkTask({
+        updateTask({
+          operation: "check",
           repositoryRoot: root,
           slug: "fixture-plan",
           taskId: "T99",
@@ -173,7 +180,8 @@ test("missing tasks and malformed planlets fail without modifying Markdown", () 
   withPlanlet(malformed, (root, tasksPath) => {
     assert.throws(
       () =>
-        checkTask({
+        updateTask({
+          operation: "check",
           repositoryRoot: root,
           slug: "fixture-plan",
           taskId: "T1",
@@ -197,7 +205,8 @@ test("task updates refuse planlet directory symlinks", () => {
   try {
     assert.throws(
       () =>
-        checkTask({
+        updateTask({
+          operation: "check",
           repositoryRoot: root,
           slug: "fixture-plan",
           taskId: "T1",
@@ -219,7 +228,8 @@ test("task mutations cannot diverge from an active completion record", () => {
   withPlanlet(incompleteOverride, (root, tasksPath) => {
     assert.throws(
       () =>
-        checkTask({
+        updateTask({
+          operation: "check",
           repositoryRoot: root,
           slug: "fixture-plan",
           taskId: "T1",
@@ -237,7 +247,8 @@ test("task mutations cannot diverge from an active completion record", () => {
   withPlanlet(normal, (root, tasksPath) => {
     assert.throws(
       () =>
-        uncheckTask({
+        updateTask({
+          operation: "uncheck",
           repositoryRoot: root,
           slug: "fixture-plan",
           taskId: "T1",

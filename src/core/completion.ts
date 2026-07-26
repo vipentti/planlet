@@ -20,15 +20,14 @@ export function isValidUtcTimestamp(value: string): boolean {
     return false;
   }
 
+  // The pattern already fixed the shape, so the only remaining question is
+  // whether the fields are in range. Compare against the canonical form,
+  // allowing the optional milliseconds to be omitted.
   const instant = new Date(value);
-  if (Number.isNaN(instant.valueOf())) {
-    return false;
-  }
-
-  const normalized = instant.toISOString();
-  return value.includes(".")
-    ? normalized === value
-    : normalized.replace(".000Z", "Z") === value;
+  return (
+    !Number.isNaN(instant.valueOf()) &&
+    instant.toISOString().replace(".000Z", "Z") === value.replace(".000Z", "Z")
+  );
 }
 
 function parseRemainingTaskIds(value: string): readonly PlanletTask["id"][] {
@@ -40,7 +39,7 @@ function parseRemainingTaskIds(value: string): readonly PlanletTask["id"][] {
     invalidCompletion("Completion record has invalid remaining task IDs");
   }
 
-  return Object.freeze(ids as PlanletTask["id"][]);
+  return ids as PlanletTask["id"][];
 }
 
 export function parseCompletionRecord(
@@ -106,11 +105,7 @@ export function parseCompletionRecord(
     if (remaining !== undefined || reason !== undefined) {
       invalidCompletion("Normal completion record has unexpected fields");
     }
-    return Object.freeze({
-      completedAt,
-      mode,
-      remainingTaskIds: Object.freeze([]),
-    });
+    return { completedAt, mode, remainingTaskIds: [] };
   }
 
   if (
@@ -123,10 +118,10 @@ export function parseCompletionRecord(
     );
   }
 
-  return Object.freeze({
+  return {
     completedAt,
     mode,
     remainingTaskIds: parseRemainingTaskIds(remaining),
     reason,
-  });
+  };
 }

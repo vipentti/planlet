@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { decode, encode } from "@toon-format/toon";
 
-import { ERROR_CODES, exitCodeForError } from "../../src/errors/codes.js";
+import { ERROR_CODES, ERROR_EXIT_CODES } from "../../src/errors/codes.js";
 import { PlanletError } from "../../src/errors/planlet-error.js";
 import { failedResult, successfulResult } from "../../src/output/model.js";
 import { renderToon } from "../../src/output/toon.js";
@@ -85,7 +85,7 @@ test("renders every stable error on stderr with its mapped exit code", () => {
     const rendered = renderToon(failedResult(error.toStructuredError()));
 
     assert.equal(rendered.stdout, "", code);
-    assert.equal(rendered.exitCode, exitCodeForError(code), code);
+    assert.equal(rendered.exitCode, ERROR_EXIT_CODES[code], code);
     assert.deepEqual(decode(rendered.stderr.trimEnd()), {
       error: {
         code,

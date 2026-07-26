@@ -1,10 +1,4 @@
-import {
-  lstatSync,
-  readFileSync,
-  readdirSync,
-  type Dirent,
-  type Stats,
-} from "node:fs";
+import { readFileSync, readdirSync, type Dirent } from "node:fs";
 import { resolve } from "node:path";
 
 import {
@@ -14,7 +8,7 @@ import {
   type PlanletTask,
   type PlanSummary,
 } from "../core/models.js";
-import { resolveSafePath } from "../core/paths.js";
+import { resolveSafePath, tryLstat } from "../core/paths.js";
 import {
   assertValidSlug,
   isValidSlug,
@@ -32,15 +26,15 @@ export type ShowPart = "plan" | "tasks" | "summary";
 
 export interface ListPlanletsOptions {
   readonly repositoryRoot: string;
-  readonly state?: PlanletState;
+  readonly state?: PlanletState | undefined;
   /** Include completed planlets in addition to active planlets. */
-  readonly completed?: boolean;
+  readonly completed?: boolean | undefined;
 }
 
 export interface ShowPlanletOptions {
   readonly repositoryRoot: string;
   readonly slug: string;
-  readonly part?: ShowPart;
+  readonly part?: ShowPart | undefined;
 }
 
 export interface ShowPlanletResult {
@@ -55,8 +49,8 @@ export interface ShowPlanletResult {
 export interface TasksOptions {
   readonly repositoryRoot: string;
   readonly slug: string;
-  readonly remaining?: boolean;
-  readonly completed?: boolean;
+  readonly remaining?: boolean | undefined;
+  readonly completed?: boolean | undefined;
 }
 
 export interface TasksResult {
@@ -69,9 +63,9 @@ export interface TasksResult {
 
 export interface ValidatePlanletsOptions {
   readonly repositoryRoot: string;
-  readonly slug?: string;
+  readonly slug?: string | undefined;
   /** Validate active and completed storage. Without --all, validate active storage. */
-  readonly all?: boolean;
+  readonly all?: boolean | undefined;
 }
 
 export interface ValidationEntry {
@@ -101,17 +95,6 @@ interface LoadedPlanlet {
   readonly tasksMarkdown: string;
   readonly validated: ValidatedPlanletStructure;
   readonly summary: PlanSummary;
-}
-
-function tryLstat(path: string): Stats | null {
-  try {
-    return lstatSync(path);
-  } catch (error) {
-    if (error instanceof Error && "code" in error && error.code === "ENOENT") {
-      return null;
-    }
-    throw error;
-  }
 }
 
 function plansPath(repositoryRoot: string): string {
@@ -319,11 +302,7 @@ function findCandidate(repositoryRoot: string, slug: string): PlanletCandidate {
     );
   }
 
-  const candidate = matches[0];
-  if (candidate === undefined) {
-    throw new PlanletError("plan_not_found", `Planlet not found: ${slug}`);
-  }
-  return candidate;
+  return matches[0]!;
 }
 
 export function listPlanlets(
@@ -333,23 +312,21 @@ export function listPlanlets(
     throw new TypeError(`Unknown planlet state: ${options.state}`);
   }
 
-  return Object.freeze(
-    discoverCandidates(options.repositoryRoot, options.completed === true)
-      .map((candidate) => {
-        try {
-          return loadCandidate(candidate).summary;
-        } catch (error) {
-          if (isPlanletError(error)) {
-            return invalidSummary(candidate);
-          }
-          throw error;
+  return discoverCandidates(options.repositoryRoot, options.completed === true)
+    .map((candidate) => {
+      try {
+        return loadCandidate(candidate).summary;
+      } catch (error) {
+        if (isPlanletError(error)) {
+          return invalidSummary(candidate);
         }
-      })
-      .filter(
-        (summary) =>
-          options.state === undefined || summary.state === options.state,
-      ),
-  );
+        throw error;
+      }
+    })
+    .filter(
+      (summary) =>
+        options.state === undefined || summary.state === options.state,
+    );
 }
 
 export function showPlanlet(options: ShowPlanletOptions): ShowPlanletResult {
@@ -358,31 +335,16 @@ export function showPlanlet(options: ShowPlanletOptions): ShowPlanletResult {
   );
   const part = options.part ?? "summary";
 
-  if (part === "summary") {
-    return Object.freeze({
-      slug: loaded.summary.slug,
-      part,
-      summary: loaded.summary,
-      warnings: loaded.summary.warnings,
-    });
-  }
-  if (part === "plan") {
-    return Object.freeze({
-      slug: loaded.summary.slug,
-      part,
-      content: loaded.planMarkdown,
-      warnings: loaded.summary.warnings,
-    });
-  }
-  if (part === "tasks") {
-    return Object.freeze({
-      slug: loaded.summary.slug,
-      part,
-      content: loaded.tasksMarkdown,
-      warnings: loaded.summary.warnings,
-    });
-  }
-  throw new TypeError(`Unknown show part: ${String(part)}`);
+  return {
+    slug: loaded.summary.slug,
+    part,
+    ...(part === "summary"
+      ? { summary: loaded.summary }
+      : {
+          content: part === "plan" ? loaded.planMarkdown : loaded.tasksMarkdown,
+        }),
+    warnings: loaded.summary.warnings,
+  };
 }
 
 export function getPlanletStatus(
@@ -410,36 +372,36 @@ export function getPlanletTasks(options: TasksOptions): TasksResult {
         : true,
   );
 
-  return Object.freeze({
+  return {
     slug: loaded.summary.slug,
-    tasks: Object.freeze(tasks),
+    tasks,
     completedTasks: loaded.summary.completedTasks,
     totalTasks: loaded.summary.totalTasks,
     warnings: loaded.summary.warnings,
-  });
+  };
 }
 
 function validationEntry(candidate: PlanletCandidate): ValidationEntry {
   try {
     const loaded = loadCandidate(candidate);
-    return Object.freeze({
+    return {
       slug: loaded.summary.slug,
       path: candidate.path,
       valid: true,
       summary: loaded.summary,
-    });
+    };
   } catch (error) {
     if (!isPlanletError(error)) {
       throw error;
     }
     const summary = invalidSummary(candidate);
-    return Object.freeze({
+    return {
       slug: summary.slug,
       path: candidate.path,
       valid: false,
       summary,
       error: error.toStructuredError(),
-    });
+    };
   }
 }
 
@@ -471,37 +433,35 @@ export function validatePlanlets(
     }
   }
 
-  const entries = Object.freeze(
-    candidates.map((candidate) => {
-      const entry = validationEntry(candidate);
-      const conflicts = candidatesBySlug.get(entry.slug);
-      if (conflicts === undefined || conflicts.length < 2) {
-        return entry;
-      }
+  const entries = candidates.map((candidate) => {
+    const entry = validationEntry(candidate);
+    const conflicts = candidatesBySlug.get(entry.slug);
+    if (conflicts === undefined || conflicts.length < 2) {
+      return entry;
+    }
 
-      const summary = invalidSummary(candidate);
-      const error = new PlanletError(
-        "invalid_plan",
-        `Planlet logical slug is not unique: ${entry.slug}`,
-        {
-          details: {
-            slug: entry.slug,
-            paths: conflicts.map((conflict) => conflict.path),
-          },
+    const summary = invalidSummary(candidate);
+    const error = new PlanletError(
+      "invalid_plan",
+      `Planlet logical slug is not unique: ${entry.slug}`,
+      {
+        details: {
+          slug: entry.slug,
+          paths: conflicts.map((conflict) => conflict.path),
         },
-      );
-      return Object.freeze({
-        slug: entry.slug,
-        path: candidate.path,
-        valid: false,
-        summary,
-        error: error.toStructuredError(),
-      });
-    }),
-  );
-  return Object.freeze({
+      },
+    );
+    return {
+      slug: entry.slug,
+      path: candidate.path,
+      valid: false,
+      summary,
+      error: error.toStructuredError(),
+    };
+  });
+  return {
     valid: entries.every((entry) => entry.valid),
     checked: entries.length,
     entries,
-  });
+  };
 }

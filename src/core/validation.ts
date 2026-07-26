@@ -44,6 +44,11 @@ function parseInitialH1(markdown: string, filename: string): string {
   return title;
 }
 
+/**
+ * Cross-checks two independent sources: the IDs recorded in the completion
+ * record and the IDs actually left unchecked in tasks.md. Neither derives from
+ * the other, so this is not a duplicate of any other check.
+ */
 function sameTaskIds(
   left: readonly string[],
   right: readonly string[],
@@ -158,7 +163,7 @@ export function validatePlanletStructure(
     }
   }
 
-  return Object.freeze({
+  return {
     slug,
     title,
     state: deriveLifecycleState({
@@ -168,6 +173,6 @@ export function validatePlanletStructure(
     }),
     tasks: parsedTasks.tasks,
     completion,
-    warnings: Object.freeze(warnings),
-  });
+    warnings,
+  };
 }

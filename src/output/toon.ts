@@ -1,8 +1,8 @@
 import { encode } from "@toon-format/toon";
 
 import {
+  ERROR_EXIT_CODES,
   EXIT_CODES,
-  exitCodeForError,
   type ExitCode,
 } from "../errors/codes.js";
 import type { FailedResult, StructuredResult } from "./model.js";
@@ -11,9 +11,9 @@ export const DEFAULT_MAX_STRING_CHARACTERS = 4_096;
 
 export interface ToonRenderOptions {
   /** Disable the normal compact-content limit. */
-  readonly full?: boolean;
+  readonly full?: boolean | undefined;
   /** Primarily injectable so the truncation boundary can be tested cheaply. */
-  readonly maxStringCharacters?: number;
+  readonly maxStringCharacters?: number | undefined;
 }
 
 export interface RenderedOutput {
@@ -84,11 +84,11 @@ function renderFailure(result: FailedResult): RenderedOutput {
       ? {}
       : { diagnostics: result.diagnostics }),
   };
-  return Object.freeze({
+  return {
     stdout: "",
     stderr: withTrailingNewline(diagnostic),
-    exitCode: exitCodeForError(result.error.code),
-  });
+    exitCode: ERROR_EXIT_CODES[result.error.code],
+  };
 }
 
 /** Serialize one command result without touching process I/O. */
@@ -109,12 +109,12 @@ export function renderToon(
     options.full === true
       ? result.data
       : truncateLargeStrings(result.data, maximum);
-  return Object.freeze({
+  return {
     stdout: withTrailingNewline(data),
     stderr:
       result.diagnostics.length === 0
         ? ""
         : withTrailingNewline({ diagnostics: result.diagnostics }),
     exitCode: EXIT_CODES.success,
-  });
+  };
 }
