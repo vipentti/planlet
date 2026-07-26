@@ -320,17 +320,25 @@ test("targeted reads ignore unrelated escaping planlet symlinks", () => {
   });
 });
 
-test("directory enumeration failures become structured plan errors", () => {
-  withRepository((root) => {
-    const plans = join(root, "plans");
-    chmodSync(plans, 0o000);
-    try {
-      const outcome = run(root, (context) => handleValidate({}, context));
-      assert.equal(outcome.exitCode, 3);
-      assert.equal(errorCode(outcome), "invalid_plan");
-      assert.match(outcome.stderr, /Cannot read planlet directory/);
-    } finally {
-      chmodSync(plans, 0o700);
-    }
-  });
-});
+test(
+  "directory enumeration failures become structured plan errors",
+  {
+    // Windows ignores chmod 0o000 on directories, so the read still succeeds.
+    skip:
+      process.platform === "win32" ? "POSIX-only permission semantics" : false,
+  },
+  () => {
+    withRepository((root) => {
+      const plans = join(root, "plans");
+      chmodSync(plans, 0o000);
+      try {
+        const outcome = run(root, (context) => handleValidate({}, context));
+        assert.equal(outcome.exitCode, 3);
+        assert.equal(errorCode(outcome), "invalid_plan");
+        assert.match(outcome.stderr, /Cannot read planlet directory/);
+      } finally {
+        chmodSync(plans, 0o700);
+      }
+    });
+  },
+);
