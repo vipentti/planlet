@@ -5,8 +5,7 @@ import { decode, encode } from "@toon-format/toon";
 
 import { ERROR_CODES, ERROR_EXIT_CODES } from "../../src/errors/codes.js";
 import { PlanletError } from "../../src/errors/planlet-error.js";
-import { failedResult, successfulResult } from "../../src/output/model.js";
-import { renderToon } from "../../src/output/toon.js";
+import { renderToon, renderToonError } from "../../src/output/toon.js";
 
 test("renders successful structured data with the official TOON encoder", () => {
   const data = {
@@ -20,7 +19,7 @@ test("renders successful structured data with the official TOON encoder", () => 
     ],
   };
 
-  const rendered = renderToon(successfulResult(data));
+  const rendered = renderToon(data);
 
   assert.equal(rendered.stdout, `${encode(data)}\n`);
   assert.equal(rendered.stderr, "");
@@ -28,11 +27,9 @@ test("renders successful structured data with the official TOON encoder", () => 
 });
 
 test("surfaces warnings as diagnostics on stderr without mixing them into data", () => {
-  const rendered = renderToon(
-    successfulResult({ slug: "cli-core", state: "in_progress" }, [
-      "Missing recommended Verification section",
-    ]),
-  );
+  const rendered = renderToon({ slug: "cli-core", state: "in_progress" }, [
+    "Missing recommended Verification section",
+  ]);
 
   assert.deepEqual(decode(rendered.stdout.trimEnd()), {
     slug: "cli-core",
@@ -52,9 +49,9 @@ test("surfaces warnings as diagnostics on stderr without mixing them into data",
 
 test("truncates large strings with a size hint unless --full is active", () => {
   const content = "0123456789🙂abcdef";
-  const result = successfulResult({ slug: "cli-core", content });
+  const result = { slug: "cli-core", content };
 
-  const compact = renderToon(result, { maxStringCharacters: 10 });
+  const compact = renderToon(result, [], { maxStringCharacters: 10 });
   assert.deepEqual(decode(compact.stdout.trimEnd()), {
     slug: "cli-core",
     content: {
@@ -66,7 +63,7 @@ test("truncates large strings with a size hint unless --full is active", () => {
     },
   });
 
-  const full = renderToon(result, {
+  const full = renderToon(result, [], {
     full: true,
     maxStringCharacters: 10,
   });
@@ -82,7 +79,7 @@ test("renders every stable error on stderr with its mapped exit code", () => {
       details: { slug: "cli-core" },
       next: "Inspect the planlet",
     });
-    const rendered = renderToon(failedResult(error.toStructuredError()));
+    const rendered = renderToonError(error.toStructuredError());
 
     assert.equal(rendered.stdout, "", code);
     assert.equal(rendered.exitCode, ERROR_EXIT_CODES[code], code);

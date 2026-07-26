@@ -5,7 +5,7 @@ import {
   EXIT_CODES,
   type ExitCode,
 } from "../errors/codes.js";
-import type { FailedResult, StructuredResult } from "./model.js";
+import type { StructuredError } from "../errors/planlet-error.js";
 
 export const DEFAULT_MAX_STRING_CHARACTERS = 4_096;
 
@@ -70,51 +70,47 @@ function withTrailingNewline(value: unknown): string {
   return `${encode(value)}\n`;
 }
 
-function renderFailure(result: FailedResult): RenderedOutput {
-  const { code, message, details, next } = result.error;
+export function renderToonError(error: StructuredError): RenderedOutput {
+  const { code, message, details, next } = error;
   const contextualDetails = Object.fromEntries(
     Object.entries(details).filter(
       ([key]) => key !== "code" && key !== "message" && key !== "next",
     ),
   );
-  const diagnostic = {
-    error: { code, message, ...contextualDetails },
-    ...(next === undefined ? {} : { next }),
-    ...(result.diagnostics.length === 0
-      ? {}
-      : { diagnostics: result.diagnostics }),
-  };
   return {
     stdout: "",
-    stderr: withTrailingNewline(diagnostic),
-    exitCode: ERROR_EXIT_CODES[result.error.code],
+    stderr: withTrailingNewline({
+      error: { code, message, ...contextualDetails },
+      ...(next === undefined ? {} : { next }),
+    }),
+    exitCode: ERROR_EXIT_CODES[code],
   };
 }
 
 /** Serialize one command result without touching process I/O. */
 export function renderToon(
-  result: StructuredResult,
+  data: unknown,
+  warnings: readonly string[] = [],
   options: ToonRenderOptions = {},
 ): RenderedOutput {
-  if (!result.ok) {
-    return renderFailure(result);
-  }
-
   const maximum = options.maxStringCharacters ?? DEFAULT_MAX_STRING_CHARACTERS;
   if (!Number.isSafeInteger(maximum) || maximum < 1) {
     throw new RangeError("maxStringCharacters must be a positive safe integer");
   }
 
-  const data =
-    options.full === true
-      ? result.data
-      : truncateLargeStrings(result.data, maximum);
+  const output =
+    options.full === true ? data : truncateLargeStrings(data, maximum);
   return {
-    stdout: withTrailingNewline(data),
+    stdout: withTrailingNewline(output),
     stderr:
-      result.diagnostics.length === 0
+      warnings.length === 0
         ? ""
-        : withTrailingNewline({ diagnostics: result.diagnostics }),
+        : withTrailingNewline({
+            diagnostics: warnings.map((message) => ({
+              level: "warning",
+              message,
+            })),
+          }),
     exitCode: EXIT_CODES.success,
   };
 }

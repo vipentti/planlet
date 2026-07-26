@@ -7,7 +7,7 @@ import {
 } from "node:fs";
 import { randomUUID } from "node:crypto";
 
-import { createPlanSummary, type PlanSummary } from "./models.js";
+import type { PlanSummary } from "./models.js";
 import { resolveSafePath, tryLstat } from "./paths.js";
 import { assertValidSlug, parseArchiveName } from "./slugs.js";
 import { PlanletError, isPlanletError } from "../errors/planlet-error.js";
@@ -183,7 +183,7 @@ export function createPlanlet(options: CreatePlanletOptions): PlanSummary {
     throw creationFailure;
   }
 
-  return createPlanSummary({
+  return {
     slug,
     title,
     state: "draft",
@@ -191,5 +191,5 @@ export function createPlanlet(options: CreatePlanletOptions): PlanSummary {
     totalTasks: 0,
     path: targetPath,
     warnings: [],
-  });
+  };
 }

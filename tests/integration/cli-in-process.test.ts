@@ -12,7 +12,7 @@ import test from "node:test";
 
 import { decode } from "@toon-format/toon";
 
-import { dispatchCommand, main, type CliRuntime } from "../../src/cli.js";
+import { main, type CliRuntime } from "../../src/cli.js";
 import {
   handleList,
   type ExecutionContext,
@@ -93,7 +93,7 @@ test("command handlers are directly callable with an injected execution context"
   });
 });
 
-test("in-process parsing honors --root and dispatches task commands", () => {
+test("in-process parsing requires globals before task commands", () => {
   withRepository((root) => {
     const tasksPath = join(root, "plans", "dispatch-plan", "tasks.md");
     writePlanlet(
@@ -105,6 +105,10 @@ test("in-process parsing honors --root and dispatches task commands", () => {
 
     assert.equal(
       main(["task", "check", "dispatch-plan", "T1", "--root", root], runtime),
+      2,
+    );
+    assert.equal(
+      main(["--root", root, "task", "check", "dispatch-plan", "T1"], runtime),
       0,
     );
     assert.match(readFileSync(tasksPath, "utf8"), /- \[x\] T1 Dispatch this/);
@@ -176,17 +180,14 @@ test("content-only show parts preserve advisory warnings", () => {
   });
 });
 
-test("dispatch handles --help without reaching option parsing", () => {
-  withRepository((root) => {
-    const { capture } = captureRuntime(root);
+test("public main handles command help without repository discovery", () => {
+  const { capture, runtime } = captureRuntime(
+    "/path/that/does/not/need/to/exist",
+  );
 
-    assert.equal(
-      dispatchCommand("list", ["--help"], executionContext(root, capture)),
-      0,
-    );
-    assert.match(capture.stdout.join(""), /^Usage: planlet list /);
-    assert.deepEqual(capture.stderr, []);
-  });
+  assert.equal(main(["list", "--help"], runtime), 0);
+  assert.match(capture.stdout.join(""), /^Usage: planlet list /);
+  assert.deepEqual(capture.stderr, []);
 });
 
 test("global-looking option values are not consumed as globals or help", () => {
@@ -203,7 +204,7 @@ test("global-looking option values are not consumed as globals or help", () => {
   });
 });
 
-test("dispatch passes the injected clock to completion", () => {
+test("main passes the injected clock to completion", () => {
   withRepository((root) => {
     writePlanlet(
       root,
@@ -216,15 +217,7 @@ test("dispatch passes the injected clock to completion", () => {
       return new Date("2028-03-04T05:06:07Z");
     });
 
-    assert.equal(
-      dispatchCommand("complete", ["clock-plan"], {
-        root,
-        stdout: runtime.stdout,
-        stderr: runtime.stderr,
-        clock: runtime.clock,
-      }),
-      0,
-    );
+    assert.equal(main(["--root", root, "complete", "clock-plan"], runtime), 0);
     assert.equal(clockReads, 1);
     const result = decoded(capture.stdout) as {
       archiveName: string;

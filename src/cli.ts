@@ -20,8 +20,7 @@ import { PLANLET_STATES, type PlanletState } from "./core/models.js";
 import { discoverRepositoryRoot } from "./core/repository.js";
 import { EXIT_CODES, type ExitCode } from "./errors/codes.js";
 import { isPlanletError } from "./errors/planlet-error.js";
-import { failedResult } from "./output/model.js";
-import { renderToon } from "./output/toon.js";
+import { renderToonError } from "./output/toon.js";
 
 const HELP = `Usage: planlet [--root <path>] [--full] <command> [options]
 
@@ -64,22 +63,7 @@ export interface CliRuntime {
   readonly clock: () => Date;
 }
 
-interface GlobalArguments {
-  readonly arguments: readonly string[];
-  readonly explicitRoot?: string | undefined;
-  readonly full: boolean;
-}
-
 class UsageError extends Error {}
-
-/** Options whose following argument is a value, not a flag. */
-const VALUE_OPTIONS = new Set([
-  "--state",
-  "--title",
-  "--part",
-  "--reason",
-  "--tools",
-]);
 
 const PARSE_ARGS_ERROR_CODES = new Set([
   "ERR_PARSE_ARGS_INVALID_OPTION_VALUE",
@@ -97,59 +81,6 @@ function isParseArgsError(error: unknown): error is Error & { code: string } {
 
 function usage(message: string): never {
   throw new UsageError(message);
-}
-
-function extractGlobalArguments(
-  arguments_: readonly string[],
-): GlobalArguments {
-  const remaining: string[] = [];
-  let explicitRoot: string | undefined;
-  let full = false;
-
-  for (let index = 0; index < arguments_.length; index += 1) {
-    const argument = arguments_[index];
-    if (argument !== undefined && VALUE_OPTIONS.has(argument)) {
-      remaining.push(argument);
-      const value = arguments_[index + 1];
-      if (value !== undefined) {
-        remaining.push(value);
-        index += 1;
-      }
-      continue;
-    }
-    if (argument === "--root") {
-      if (explicitRoot !== undefined) usage("--root may only be supplied once");
-      const value = arguments_[index + 1];
-      if (value === undefined || value.startsWith("--")) {
-        usage("--root requires a path");
-      }
-      explicitRoot = value;
-      index += 1;
-    } else if (argument?.startsWith("--root=")) {
-      if (explicitRoot !== undefined) usage("--root may only be supplied once");
-      explicitRoot = argument.slice("--root=".length);
-      if (explicitRoot.length === 0) usage("--root requires a path");
-    } else if (argument === "--full") {
-      full = true;
-    } else if (argument !== undefined) {
-      remaining.push(argument);
-    }
-  }
-
-  return { arguments: remaining, explicitRoot, full };
-}
-
-/** Skips option values so `--title --help` stays a (bad) title, not a help request. */
-function hasHelpFlag(arguments_: readonly string[]): boolean {
-  for (let index = 0; index < arguments_.length; index += 1) {
-    const argument = arguments_[index];
-    if (argument !== undefined && VALUE_OPTIONS.has(argument)) {
-      index += 1;
-      continue;
-    }
-    if (argument === "--help") return true;
-  }
-  return false;
 }
 
 function parse<const Options extends ParseArgsOptionsConfig>(
@@ -180,13 +111,10 @@ function helpFor(command: string | undefined): string {
   return commandHelp;
 }
 
-type PreparedCommand = (context: ExecutionContext) => ExitCode;
-
 function prepareCommand(
   command: string,
   arguments_: readonly string[],
-): PreparedCommand {
-  // `--help` is intercepted by `main` before this point.
+): (context: ExecutionContext) => ExitCode {
   switch (command) {
     case "init":
     case "update": {
@@ -316,26 +244,6 @@ function prepareCommand(
   }
 }
 
-/**
- * Parse and dispatch one command against an already selected repository root.
- * `main` intercepts `--help` before repository discovery; this entry point is
- * reachable on its own, so it repeats that interception here. Both are needed:
- * `main` must answer `--help` without discovering a repository, and this
- * exported entry point must answer it without going through `main`. Do not
- * "deduplicate" one of them away.
- */
-export function dispatchCommand(
-  command: string,
-  arguments_: readonly string[],
-  context: ExecutionContext,
-): ExitCode {
-  if (hasHelpFlag(arguments_)) {
-    context.stdout(helpFor(command));
-    return EXIT_CODES.success;
-  }
-  return prepareCommand(command, arguments_)(context);
-}
-
 function writeUsage(runtime: CliRuntime, message: string): ExitCode {
   runtime.stderr(
     `usage: ${message}\nRun 'planlet help' for command reference.\n`,
@@ -356,27 +264,50 @@ export function main(
   };
 
   try {
-    const global = extractGlobalArguments(arguments_);
-    const [command, ...commandArguments] = global.arguments;
+    const globalOptions = {
+      root: { type: "string" },
+      full: { type: "boolean" },
+      help: { type: "boolean" },
+    } as const;
+    const loose = parseArgs({
+      args: [...arguments_],
+      options: globalOptions,
+      allowPositionals: true,
+      strict: false,
+      tokens: true,
+    });
+    const commandToken = loose.tokens.find(
+      (token) => token.kind === "positional",
+    );
+    const commandIndex = commandToken?.index ?? arguments_.length;
+    const { values: global, positionals: globalPositionals } = parse(
+      arguments_.slice(0, commandIndex),
+      globalOptions,
+    );
+    requirePositionals(globalPositionals, 0, "global");
+    const command = commandToken?.value;
+    const commandArguments = arguments_.slice(commandIndex + 1);
+    if (
+      global.help ||
+      (command !== undefined &&
+        commandArguments.length === 1 &&
+        commandArguments[0] === "--help")
+    ) {
+      runtime.stdout(helpFor(command));
+      return EXIT_CODES.success;
+    }
     if (command === "help" || command === "--help") {
       runtime.stdout(helpFor(commandArguments[0]));
       return EXIT_CODES.success;
     }
-    if (command !== undefined && hasHelpFlag(commandArguments)) {
-      runtime.stdout(helpFor(command));
-      return EXIT_CODES.success;
-    }
 
-    // Parse all command-specific usage before repository-dependent work.
     const preparedCommand =
       command === undefined
         ? undefined
         : prepareCommand(command, commandArguments);
 
     const explicitRoot =
-      global.explicitRoot === undefined
-        ? undefined
-        : resolve(runtime.cwd, global.explicitRoot);
+      global.root === undefined ? undefined : resolve(runtime.cwd, global.root);
     const root = discoverRepositoryRoot({
       startPath: runtime.cwd,
       explicitRoot,
@@ -400,7 +331,7 @@ export function main(
       return writeUsage(runtime, error.message);
     }
     if (isPlanletError(error)) {
-      const rendered = renderToon(failedResult(error.toStructuredError()));
+      const rendered = renderToonError(error.toStructuredError());
       runtime.stderr(rendered.stderr);
       return rendered.exitCode;
     }

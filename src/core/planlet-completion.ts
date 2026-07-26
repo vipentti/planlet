@@ -11,7 +11,7 @@ import {
 
 import { resolve } from "node:path";
 
-import { createPlanSummary, type PlanSummary } from "./models.js";
+import type { PlanSummary } from "./models.js";
 import { resolveSafePath, tryLstat } from "./paths.js";
 import {
   assertValidSlug,
@@ -240,7 +240,7 @@ function resumeRecordedCompletion(
     completedAt: completion.completedAt,
     mode: completion.mode,
     remainingTaskIds,
-    summary: createPlanSummary({
+    summary: {
       slug,
       archiveName,
       completedAt: completion.completedAt,
@@ -250,7 +250,7 @@ function resumeRecordedCompletion(
       totalTasks: active.tasks.length,
       path: destination,
       warnings: completedValidation.warnings,
-    }),
+    },
   };
 }
 
@@ -462,7 +462,7 @@ export function completePlanlet(
     completedAt,
     mode,
     remainingTaskIds,
-    summary: createPlanSummary({
+    summary: {
       slug,
       archiveName,
       completedAt,
@@ -477,6 +477,6 @@ export function completePlanlet(
           ? ["Completed planlet contains an incomplete-task override"]
           : []),
       ],
-    }),
+    },
   };
 }

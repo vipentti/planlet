@@ -16,8 +16,7 @@ import {
 } from "./read-only.js";
 import { EXIT_CODES, type ExitCode } from "../errors/codes.js";
 import { isPlanletError } from "../errors/planlet-error.js";
-import { failedResult, successfulResult } from "../output/model.js";
-import { renderToon } from "../output/toon.js";
+import { renderToon, renderToonError } from "../output/toon.js";
 
 export interface ExecutionContext {
   readonly root: string;
@@ -94,16 +93,15 @@ function emit(
 ): ExitCode {
   try {
     const outcome = operation();
-    const rendered = renderToon(
-      successfulResult(outcome.data, outcome.warnings ?? []),
-      { full: context.full },
-    );
+    const rendered = renderToon(outcome.data, outcome.warnings, {
+      full: context.full,
+    });
     context.stdout(rendered.stdout);
     if (rendered.stderr.length > 0) context.stderr(rendered.stderr);
     return rendered.exitCode;
   } catch (error) {
     if (!isPlanletError(error)) throw error;
-    const rendered = renderToon(failedResult(error.toStructuredError()));
+    const rendered = renderToonError(error.toStructuredError());
     if (rendered.stderr.length > 0) context.stderr(rendered.stderr);
     return rendered.exitCode;
   }

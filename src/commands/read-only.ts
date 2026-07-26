@@ -2,7 +2,6 @@ import { readFileSync, readdirSync, type Dirent } from "node:fs";
 import { resolve } from "node:path";
 
 import {
-  createPlanSummary,
   PLANLET_STATES,
   type PlanletState,
   type PlanletTask,
@@ -207,7 +206,7 @@ function summaryFromValidated(
     candidate.location === "completed" ? candidate.directoryName : undefined;
   const completedAt = validated.completion?.completedAt;
 
-  return createPlanSummary({
+  return {
     slug: validated.slug,
     ...(archiveName === undefined ? {} : { archiveName }),
     ...(completedAt === undefined ? {} : { completedAt }),
@@ -217,7 +216,7 @@ function summaryFromValidated(
     totalTasks: validated.tasks.length,
     path: candidate.path,
     warnings: validated.warnings,
-  });
+  };
 }
 
 function loadCandidate(candidate: PlanletCandidate): LoadedPlanlet {
@@ -243,7 +242,7 @@ function invalidSummary(candidate: PlanletCandidate): PlanSummary {
     candidate.location === "completed"
       ? parseArchiveName(candidate.directoryName)
       : null;
-  return createPlanSummary({
+  return {
     slug: parsedArchive?.slug ?? candidate.directoryName,
     ...(candidate.location === "completed"
       ? { archiveName: candidate.directoryName }
@@ -253,7 +252,7 @@ function invalidSummary(candidate: PlanletCandidate): PlanSummary {
     totalTasks: 0,
     path: candidate.path,
     warnings: [],
-  });
+  };
 }
 
 function findCandidate(repositoryRoot: string, slug: string): PlanletCandidate {
