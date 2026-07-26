@@ -13,4 +13,4 @@
 - [x] T11 Wire command parsing, explicit root selection, no-argument dashboard behavior, help, and command dispatch, implementing commands as directly callable handlers with an injected execution context (root, stdout/stderr sinks, clock), with fixtures exercising in-process command invocation, dispatch, and the no-argument dashboard
 - [x] T12 Add cross-cutting safety fixtures covering malformed structures, unsafe paths, symlink escape, and path traversal across the create, show, validate, and tasks commands
 - [x] T13 Add a smaller set of compiled-executable fixtures that spawn the built `planlet` binary to verify end-to-end argv parsing, stdout/stderr separation, and exit-code behavior
-- [ ] T14 Run the full verification suite and document the stable repository commands in `AGENTS.md`
+- [x] T14 Run the full verification suite and document the stable repository commands in `AGENTS.md`

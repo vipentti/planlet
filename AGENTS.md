@@ -81,7 +81,34 @@ For Markdown-only work:
 - Run `git diff --check`.
 - After writing or editing a planlet file, confirm the diff contains only the intended content — no leaked tool-output markup or other unintended trailing text.
 
-Once implementation tooling exists, use the build, test, lint, fixture, and skill-validation commands documented by the repository. Do not add guessed commands to this guide; update it when real commands are introduced.
+For code work, run the repository commands below. Do not add guessed commands to this guide; update it when real commands are introduced.
+
+## Repository commands
+
+Node.js 22 or newer. Install dependencies with `npm install`.
+
+| Command | Purpose |
+| --- | --- |
+| `npm run format` | Rewrite supported files with Prettier. |
+| `npm run format:check` | Fail on files that do not match Prettier style. |
+| `npm run lint` | Run ESLint over `src/` and `tests/`. |
+| `npm run type-check` | Run `tsc --noEmit`. |
+| `npm run build` | Bundle the CLI to `dist/planlet.mjs`. |
+| `npm test` | Run the TypeScript test suite via `tsx` atop `node:test`. |
+
+Full verification suite, in order:
+
+```sh
+npm run format:check
+npm run lint
+npm run type-check
+npm run build
+npm test
+git diff --check
+git status --porcelain   # expect empty; build output is gitignored
+```
+
+The built CLI runs as `node dist/planlet.mjs <command>`.
 
 ## Maintaining this guide
 
