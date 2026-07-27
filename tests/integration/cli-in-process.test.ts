@@ -23,12 +23,14 @@ interface Capture {
   readonly stderr: string[];
 }
 
-function withRepository(run: (root: string) => void): void {
+async function withRepository(
+  run: (root: string) => Promise<void>,
+): Promise<void> {
   const root = mkdtempSync(join(tmpdir(), "planlet-cli-"));
   mkdirSync(join(root, ".git"));
   mkdirSync(join(root, "plans"));
   try {
-    run(root);
+    await run(root);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -70,8 +72,8 @@ function decoded(output: readonly string[]): unknown {
   return decode(output.join("").trimEnd());
 }
 
-test("command handlers are directly callable with an injected execution context", () => {
-  withRepository((root) => {
+test("command handlers are directly callable with an injected execution context", async () => {
+  await withRepository(async (root) => {
     writePlanlet(
       root,
       "direct-call",
@@ -93,8 +95,8 @@ test("command handlers are directly callable with an injected execution context"
   });
 });
 
-test("in-process parsing requires globals before task commands", () => {
-  withRepository((root) => {
+test("in-process parsing requires globals before task commands", async () => {
+  await withRepository(async (root) => {
     const tasksPath = join(root, "plans", "dispatch-plan", "tasks.md");
     writePlanlet(
       root,
@@ -104,15 +106,24 @@ test("in-process parsing requires globals before task commands", () => {
     const { capture, runtime } = captureRuntime(tmpdir());
 
     assert.equal(
-      main(["task", "check", "dispatch-plan", "T1", "--root", root], runtime),
+      await main(
+        ["task", "check", "dispatch-plan", "T1", "--root", root],
+        runtime,
+      ),
       2,
     );
     assert.equal(
-      main(["--root", root, "task", "check", "dispatch-plan", "T1"], runtime),
+      await main(
+        ["--root", root, "task", "check", "dispatch-plan", "T1"],
+        runtime,
+      ),
       0,
     );
     assert.match(readFileSync(tasksPath, "utf8"), /- \[x\] T1 Dispatch this/);
-    assert.equal(main(["--root", root, "status", "dispatch-plan"], runtime), 0);
+    assert.equal(
+      await main(["--root", root, "status", "dispatch-plan"], runtime),
+      0,
+    );
 
     const outputs = capture.stdout.map((value) => decode(value.trimEnd()));
     assert.equal((outputs[0] as { changed: boolean }).changed, true);
@@ -127,22 +138,28 @@ test("in-process parsing requires globals before task commands", () => {
   });
 });
 
-test("in-process dispatch routes create and read-only command flags", () => {
-  withRepository((root) => {
+test("in-process dispatch routes create and read-only command flags", async () => {
+  await withRepository(async (root) => {
     const { capture, runtime } = captureRuntime(root);
 
     assert.equal(
-      main(["create", "routed-plan", "--title", "Routed Plan"], runtime),
+      await main(["create", "routed-plan", "--title", "Routed Plan"], runtime),
       0,
     );
     writeFileSync(
       join(root, "plans", "routed-plan", "tasks.md"),
       "# Tasks: Routed Plan\n\n- [ ] T1 Route this\n",
     );
-    assert.equal(main(["list", "--state", "planned"], runtime), 0);
-    assert.equal(main(["show", "routed-plan", "--part", "plan"], runtime), 0);
-    assert.equal(main(["validate", "routed-plan"], runtime), 0);
-    assert.equal(main(["tasks", "routed-plan", "--remaining"], runtime), 0);
+    assert.equal(await main(["list", "--state", "planned"], runtime), 0);
+    assert.equal(
+      await main(["show", "routed-plan", "--part", "plan"], runtime),
+      0,
+    );
+    assert.equal(await main(["validate", "routed-plan"], runtime), 0);
+    assert.equal(
+      await main(["tasks", "routed-plan", "--remaining"], runtime),
+      0,
+    );
 
     const outputs = capture.stdout.map((value) =>
       decode(value.trimEnd()),
@@ -160,8 +177,8 @@ test("in-process dispatch routes create and read-only command flags", () => {
   });
 });
 
-test("content-only show parts preserve advisory warnings", () => {
-  withRepository((root) => {
+test("content-only show parts preserve advisory warnings", async () => {
+  await withRepository(async (root) => {
     writePlanlet(
       root,
       "warning-plan",
@@ -171,7 +188,10 @@ test("content-only show parts preserve advisory warnings", () => {
     for (const part of ["plan", "tasks"] as const) {
       const { capture, runtime } = captureRuntime(root);
 
-      assert.equal(main(["show", "warning-plan", "--part", part], runtime), 0);
+      assert.equal(
+        await main(["show", "warning-plan", "--part", part], runtime),
+        0,
+      );
       assert.match(
         capture.stderr.join(""),
         /Active planlet contains a completion record/,
@@ -180,32 +200,32 @@ test("content-only show parts preserve advisory warnings", () => {
   });
 });
 
-test("public main handles command help without repository discovery", () => {
+test("public main handles command help without repository discovery", async () => {
   const { capture, runtime } = captureRuntime(
     "/path/that/does/not/need/to/exist",
   );
 
-  assert.equal(main(["list", "--help"], runtime), 0);
+  assert.equal(await main(["list", "--help"], runtime), 0);
   assert.match(capture.stdout.join(""), /^Usage: planlet list /);
   assert.deepEqual(capture.stderr, []);
 });
 
-test("global-looking option values are not consumed as globals or help", () => {
-  withRepository((root) => {
+test("global-looking option values are not consumed as globals or help", async () => {
+  await withRepository(async (root) => {
     for (const arguments_ of [
       ["create", "root-value", "--title", "--root", root],
       ["create", "help-value", "--title", "--help"],
     ]) {
       const { capture, runtime } = captureRuntime(root);
-      assert.equal(main(arguments_, runtime), 2);
+      assert.equal(await main(arguments_, runtime), 2);
       assert.equal(capture.stdout.join(""), "");
       assert.match(capture.stderr.join(""), /^usage: /);
     }
   });
 });
 
-test("main passes the injected clock to completion", () => {
-  withRepository((root) => {
+test("main passes the injected clock to completion", async () => {
+  await withRepository(async (root) => {
     writePlanlet(
       root,
       "clock-plan",
@@ -217,7 +237,10 @@ test("main passes the injected clock to completion", () => {
       return new Date("2028-03-04T05:06:07Z");
     });
 
-    assert.equal(main(["--root", root, "complete", "clock-plan"], runtime), 0);
+    assert.equal(
+      await main(["--root", root, "complete", "clock-plan"], runtime),
+      0,
+    );
     assert.equal(clockReads, 1);
     const result = decoded(capture.stdout) as {
       archiveName: string;
@@ -228,8 +251,8 @@ test("main passes the injected clock to completion", () => {
   });
 });
 
-test("no arguments render the compact active-plan dashboard", () => {
-  withRepository((root) => {
+test("no arguments render the compact active-plan dashboard", async () => {
+  await withRepository(async (root) => {
     writePlanlet(
       root,
       "active-plan",
@@ -238,7 +261,7 @@ test("no arguments render the compact active-plan dashboard", () => {
     writePlanlet(root, "ready-plan", "# Tasks: Ready Plan\n\n- [x] T1 Done\n");
     const { capture, runtime } = captureRuntime(root);
 
-    assert.equal(main([], runtime), 0);
+    assert.equal(await main([], runtime), 0);
     assert.deepEqual(decoded(capture.stdout), {
       plans: [
         { slug: "active-plan", state: "in_progress", done: 1, total: 2 },
@@ -254,11 +277,11 @@ test("no arguments render the compact active-plan dashboard", () => {
   });
 });
 
-test("help is explicit and does not require repository discovery", () => {
+test("help is explicit and does not require repository discovery", async () => {
   const empty = mkdtempSync(join(tmpdir(), "planlet-help-"));
   try {
     const { capture, runtime } = captureRuntime(empty);
-    assert.equal(main(["help"], runtime), 0);
+    assert.equal(await main(["help"], runtime), 0);
     assert.match(capture.stdout.join(""), /^Usage: planlet/);
     assert.equal(capture.stderr.join(""), "");
   } finally {

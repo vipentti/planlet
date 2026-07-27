@@ -511,7 +511,7 @@ The CLI should follow agent-ergonomic principles:
 - Precomputed progress totals and status.
 - Explicit empty states.
 - Structured errors and stable exit codes.
-- No interactive prompts in operational commands.
+- No interactive prompts in operational commands. `planlet init` is the sole exception permitted by section 15.3: it asks which harness destinations to install only when `--tools` is absent and both stdin and stdout are TTYs, so agent and CI invocations never see a prompt and `--tools` remains the full non-interactive equivalent.
 - Idempotent operations where practical.
 - Clear next-action hints without verbose prose.
 - A concise, consistent help surface.
@@ -777,6 +777,8 @@ planlet tools
 ```
 
 The CLI should avoid interactive prompts in agent and CI use. If a future human-friendly wizard is added, every choice must have a non-interactive flag equivalent.
+
+`planlet init` implements exactly that allowance. On an interactive terminal without `--tools` it asks which destinations to install, defaulting to those that already contain something, and `--tools` expresses every possible answer non-interactively.
 
 ### 15.4 Adapter architecture
 

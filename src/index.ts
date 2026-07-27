@@ -1,3 +1,3 @@
 import { main } from "./cli.js";
 
-process.exitCode = main();
+process.exitCode = await main();

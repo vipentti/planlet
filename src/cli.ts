@@ -1,5 +1,8 @@
+import { once } from "node:events";
+import { readdirSync } from "node:fs";
 import { createRequire } from "node:module";
 import { resolve } from "node:path";
+import { createInterface } from "node:readline/promises";
 import { parseArgs, type ParseArgsOptionsConfig } from "node:util";
 
 import {
@@ -17,6 +20,11 @@ import {
   handleValidate,
   type ExecutionContext,
 } from "./commands/handlers.js";
+import { detectHarnesses } from "./core/harness-installer.js";
+import {
+  normalizeToolSelector,
+  resolveHarnessDestinations,
+} from "./core/harnesses.js";
 import { PLANLET_STATES, type PlanletState } from "./core/models.js";
 import { discoverRepositoryRoot } from "./core/repository.js";
 import { EXIT_CODES, type ExitCode } from "./errors/codes.js";
@@ -52,8 +60,14 @@ Running planlet without a command displays the active-plan dashboard.
 `;
 
 const COMMAND_HELP: Readonly<Record<string, string>> = {
-  init: "Usage: planlet init [--tools <ids>] [--force]\n",
-  update: "Usage: planlet update [--tools <ids>] [--force]\n",
+  init:
+    "Usage: planlet init [--tools <ids>] [--force]\n\n" +
+    "--tools takes all, none, or comma-separated agents, claude, codex.\n" +
+    "Without it, an interactive terminal is asked which destinations to\n" +
+    "install; anything else installs all of them.\n",
+  update:
+    "Usage: planlet update [--tools <ids>] [--force]\n\n" +
+    "--tools takes all, none, or comma-separated agents, claude, codex.\n",
   tools: "Usage: planlet tools\n",
   list: "Usage: planlet list [--state <state>] [--completed]\n",
   create: "Usage: planlet create <slug> [--title <title>]\n",
@@ -121,10 +135,153 @@ function helpFor(command: string | undefined): string {
   return commandHelp;
 }
 
+export interface ToolChoice {
+  readonly selector: string;
+  readonly destination: string;
+  readonly names: string;
+  readonly state: string;
+  readonly preselected: boolean;
+}
+
+function hasEntries(path: string): boolean {
+  try {
+    return readdirSync(path).length > 0;
+  } catch (error) {
+    // A missing directory has nothing in it, and a non-directory is reported as
+    // a modified destination that the installer rejects with write_conflict.
+    if (
+      error instanceof Error &&
+      "code" in error &&
+      (error.code === "ENOENT" || error.code === "ENOTDIR")
+    ) {
+      return false;
+    }
+    throw error;
+  }
+}
+
+/**
+ * One choice per resolved destination directory, so the `.agents/skills`
+ * directory that the agents and codex adapters share is offered once under both
+ * names.
+ */
+export function buildToolChoices(
+  repositoryRoot: string,
+): readonly ToolChoice[] {
+  const detected = new Map(
+    detectHarnesses({ repositoryRoot }).map((harness) => [harness.id, harness]),
+  );
+  const choices = resolveHarnessDestinations(
+    repositoryRoot,
+    normalizeToolSelector("all"),
+  ).map((destination) => ({
+    selector: destination.aliases.join(","),
+    destination: destination.relativePath,
+    names: destination.aliases.map((id) => detected.get(id)!.name).join(", "),
+    state: detected.get(destination.aliases[0]!)!.state,
+    // Any existing content counts, including unrelated skills: the directory
+    // existing at all is the signal that this harness is in use here.
+    preselected: hasEntries(destination.path),
+  }));
+  return choices.some((choice) => choice.preselected)
+    ? choices
+    : choices.map((choice) => ({ ...choice, preselected: true }));
+}
+
+/**
+ * Maps one prompt answer to a `--tools` selector, or to `undefined` when the
+ * answer is unrecognized and the prompt should be repeated. Repeated numbers
+ * are harmless: the selector is deduplicated when it is normalized.
+ */
+export function resolveAnswer(
+  choices: readonly ToolChoice[],
+  answer: string,
+): string | undefined {
+  const trimmed = answer.trim();
+  if (trimmed === "") {
+    return choices
+      .filter((choice) => choice.preselected)
+      .map((choice) => choice.selector)
+      .join(",");
+  }
+  if (trimmed.toLowerCase() === "none") return "none";
+
+  const numbers = trimmed.split(",").map((value) => Number(value.trim()));
+  const valid = numbers.every(
+    (number) =>
+      Number.isInteger(number) && number >= 1 && number <= choices.length,
+  );
+  return valid
+    ? numbers.map((number) => choices[number - 1]!.selector).join(",")
+    : undefined;
+}
+
+/**
+ * Asks which destinations to install to, resolving to a `--tools` selector or
+ * to `undefined` when the user cancels with Ctrl-C or EOF. Reads the real TTY
+ * because the caller only reaches this when both stdin and stdout are TTYs.
+ */
+async function selectToolsInteractively(
+  repositoryRoot: string,
+): Promise<string | undefined> {
+  const choices = buildToolChoices(repositoryRoot);
+  const defaults = choices.flatMap((choice, index) =>
+    choice.preselected ? [index + 1] : [],
+  );
+  const interface_ = createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+  // Without this, readline re-raises SIGINT and kills the process instead of
+  // letting the caller treat Ctrl-C as a cancellation that writes nothing.
+  interface_.on("SIGINT", () => interface_.close());
+  const cancelled = once(interface_, "close").then(() => undefined);
+
+  try {
+    process.stdout.write(
+      `Install Planlet skills to:\n${choices
+        .map(
+          (choice, index) =>
+            `  ${index + 1}) ${choice.destination}   ${choice.names}  [${choice.state}]`,
+        )
+        .join("\n")}\n`,
+    );
+    for (;;) {
+      // A pending question never settles when stdin ends or Ctrl-C closes the
+      // interface, so the close event is what turns that into a cancellation.
+      const answer = await Promise.race([
+        interface_
+          .question(
+            `Enter numbers, comma-separated, or 'none' [${defaults.join(",")}]: `,
+          )
+          // Closing the interface can also reject the pending question instead
+          // of leaving it unsettled, which is the same cancellation.
+          .catch((error: unknown) => {
+            if (error instanceof Error && error.name === "AbortError") {
+              return undefined;
+            }
+            throw error;
+          }),
+        cancelled,
+      ]);
+      if (answer === undefined) {
+        process.stdout.write("\n");
+        return undefined;
+      }
+
+      const selector = resolveAnswer(choices, answer);
+      if (selector !== undefined) return selector;
+      process.stdout.write("Unrecognized selection.\n");
+    }
+  } finally {
+    interface_.close();
+  }
+}
+
 function prepareCommand(
   command: string,
   arguments_: readonly string[],
-): (context: ExecutionContext) => ExitCode {
+): (context: ExecutionContext) => ExitCode | Promise<ExitCode> {
   switch (command) {
     case "init":
     case "update": {
@@ -134,9 +291,20 @@ function prepareCommand(
       });
       requirePositionals(positionals, 0, command);
       const commandArguments = { tools: values.tools, force: values.force };
-      return command === "init"
-        ? (context) => handleHarnessInit(commandArguments, context)
-        : (context) => handleHarnessUpdate(commandArguments, context);
+      // An explicit --tools, a pipe, or a redirect keeps init non-interactive.
+      const interactive =
+        values.tools === undefined &&
+        process.stdin.isTTY === true &&
+        process.stdout.isTTY === true;
+      if (command === "update") {
+        return (context) => handleHarnessUpdate(commandArguments, context);
+      }
+      return async (context) => {
+        if (!interactive) return handleHarnessInit(commandArguments, context);
+        const tools = await selectToolsInteractively(context.root);
+        if (tools === undefined) return EXIT_CODES.usage;
+        return handleHarnessInit({ ...commandArguments, tools }, context);
+      };
     }
     case "tools": {
       const { positionals } = parse(arguments_, {});
@@ -262,10 +430,10 @@ function writeUsage(runtime: CliRuntime, message: string): ExitCode {
 }
 
 /** Process-independent CLI entry point with injectable argv, I/O, cwd, and clock. */
-export function main(
+export async function main(
   arguments_: readonly string[] = process.argv.slice(2),
   runtimeOverrides: Partial<CliRuntime> = {},
-): ExitCode {
+): Promise<ExitCode> {
   const runtime: CliRuntime = {
     cwd: runtimeOverrides.cwd ?? process.cwd(),
     stdout: runtimeOverrides.stdout ?? ((value) => process.stdout.write(value)),
@@ -336,9 +504,11 @@ export function main(
       full: global.full,
     };
 
+    // Awaited inside the try so asynchronous rejections still reach the
+    // structured-error translation below.
     return preparedCommand === undefined
       ? handleDashboard(context)
-      : preparedCommand(context);
+      : await preparedCommand(context);
   } catch (error) {
     // This boundary translates only intentional usage failures and stable
     // util.parseArgs input-error codes. Unexpected TypeErrors must propagate.

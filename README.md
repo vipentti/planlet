@@ -35,6 +35,7 @@ npx planlet <command>
 ```sh
 cd your-repository
 planlet init                 # create plans/ and install the agent skills
+                             # (asks which harnesses on an interactive terminal)
 planlet create my-feature    # scaffold plans/my-feature/{plan.md,tasks.md}
 # edit plan.md and tasks.md
 planlet validate my-feature
@@ -74,9 +75,15 @@ inspect installation state without mutation with `planlet tools`.
 
 `--tools` accepts comma-separated `agents`, `claude`, and `codex` IDs.
 `agents` and `codex` share `.agents/skills`; `claude` uses `.claude/skills`.
-Omitting `--tools` selects all adapters. `planlet init --tools none` creates
-only `plans/`. Locally modified generated files require explicit `--force`
-before replacement.
+`planlet init --tools none` creates only `plans/`. Locally modified generated
+files require explicit `--force` before replacement.
+
+Without `--tools`, `planlet init` asks which destinations to install to when
+run on an interactive terminal, defaulting to those that already contain
+something. Passing `--tools`, or running with stdin or stdout redirected, skips
+the question and installs every destination as before, so agents and CI are
+unaffected. `planlet update` never asks; it refreshes only destinations that
+already exist.
 
 ## Development
 

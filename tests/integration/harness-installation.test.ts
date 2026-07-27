@@ -5,6 +5,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   unlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -14,7 +15,12 @@ import test from "node:test";
 
 import { decode } from "@toon-format/toon";
 
-import { main, type CliRuntime } from "../../src/cli.js";
+import {
+  buildToolChoices,
+  main,
+  resolveAnswer,
+  type CliRuntime,
+} from "../../src/cli.js";
 import {
   INSTALLATION_MANIFEST,
   parseInstallationManifest,
@@ -31,7 +37,10 @@ interface Invocation {
   readonly stderr: string;
 }
 
-function invoke(root: string, arguments_: readonly string[]): Invocation {
+async function invoke(
+  root: string,
+  arguments_: readonly string[],
+): Promise<Invocation> {
   const stdout: string[] = [];
   const stderr: string[] = [];
   const runtime: CliRuntime = {
@@ -41,7 +50,7 @@ function invoke(root: string, arguments_: readonly string[]): Invocation {
     clock: () => new Date("2028-03-04T05:06:07Z"),
   };
   return {
-    exitCode: main(["--root", root, ...arguments_], runtime),
+    exitCode: await main(["--root", root, ...arguments_], runtime),
     stdout: stdout.join(""),
     stderr: stderr.join(""),
   };
@@ -57,25 +66,25 @@ function decodedRecord(output: string): Record<string, unknown> {
   return record(decode(output.trimEnd()));
 }
 
-function withRoot(run: (root: string) => void): void {
+async function withRoot(run: (root: string) => Promise<void>): Promise<void> {
   const root = mkdtempSync(join(tmpdir(), "planlet-install-command-"));
   mkdirSync(join(root, ".git"));
   try {
-    run(root);
+    await run(root);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
 }
 
-test("init parses selectors, preserves unrelated skills, and installs canonical bytes once", () => {
-  withRoot((root) => {
+test("init parses selectors, preserves unrelated skills, and installs canonical bytes once", async () => {
+  await withRoot(async (root) => {
     const unrelated = join(root, ".agents", "skills", "git-commit", "SKILL.md");
     mkdirSync(join(root, ".agents", "skills", "git-commit"), {
       recursive: true,
     });
     writeFileSync(unrelated, "# Keep\n");
 
-    const result = invoke(root, ["init", "--tools", "codex,agents"]);
+    const result = await invoke(root, ["init", "--tools", "codex,agents"]);
     assert.equal(result.exitCode, 0, result.stderr);
     const output = decodedRecord(result.stdout);
     assert.ok(Array.isArray(output.destinations));
@@ -95,16 +104,16 @@ test("init parses selectors, preserves unrelated skills, and installs canonical 
       );
     }
 
-    const repeated = invoke(root, ["init", "--tools", "agents,codex"]);
+    const repeated = await invoke(root, ["init", "--tools", "agents,codex"]);
     assert.equal(repeated.exitCode, 0, repeated.stderr);
     assert.equal(decodedRecord(repeated.stdout).changed, false);
   });
 });
 
-test("invalid selectors fail before plans or harness mutation", () => {
+test("invalid selectors fail before plans or harness mutation", async () => {
   for (const selector of ["", "agents,none", "gemini"]) {
-    withRoot((root) => {
-      const result = invoke(root, ["init", "--tools", selector]);
+    await withRoot(async (root) => {
+      const result = await invoke(root, ["init", "--tools", selector]);
       assert.equal(result.exitCode, 2, selector);
       assert.match(result.stderr, /code: unsupported_tool/);
       assert.equal(existsSync(join(root, "plans")), false);
@@ -114,14 +123,17 @@ test("invalid selectors fail before plans or harness mutation", () => {
   }
 });
 
-test("update adopts legacy files, skips missing destinations, and removes owned stale files", () => {
-  withRoot((root) => {
-    assert.equal(invoke(root, ["init", "--tools", "agents"]).exitCode, 0);
+test("update adopts legacy files, skips missing destinations, and removes owned stale files", async () => {
+  await withRoot(async (root) => {
+    assert.equal(
+      (await invoke(root, ["init", "--tools", "agents"])).exitCode,
+      0,
+    );
     const destination = join(root, ".agents", "skills");
     const manifestPath = join(destination, INSTALLATION_MANIFEST);
     unlinkSync(manifestPath);
 
-    const adopted = invoke(root, ["update", "--tools", "agents"]);
+    const adopted = await invoke(root, ["update", "--tools", "agents"]);
     assert.equal(adopted.exitCode, 0, adopted.stderr);
     assert.equal(existsSync(manifestPath), true);
 
@@ -140,11 +152,11 @@ test("update adopts legacy files, skips missing destinations, and removes owned 
     };
     writeFileSync(manifestPath, serializeInstallationManifest(staleManifest));
 
-    const refreshed = invoke(root, ["update", "--tools", "agents"]);
+    const refreshed = await invoke(root, ["update", "--tools", "agents"]);
     assert.equal(refreshed.exitCode, 0, refreshed.stderr);
     assert.equal(existsSync(stalePath), false);
 
-    const missing = invoke(root, ["update", "--tools", "claude"]);
+    const missing = await invoke(root, ["update", "--tools", "claude"]);
     assert.equal(missing.exitCode, 0, missing.stderr);
     assert.equal(existsSync(join(root, ".claude")), false);
     const missingOutput = decodedRecord(missing.stdout);
@@ -153,9 +165,9 @@ test("update adopts legacy files, skips missing destinations, and removes owned 
   });
 });
 
-test("cross-destination conflicts preflight all writes and force restores parity", () => {
-  withRoot((root) => {
-    assert.equal(invoke(root, ["init"]).exitCode, 0);
+test("cross-destination conflicts preflight all writes and force restores parity", async () => {
+  await withRoot(async (root) => {
+    assert.equal((await invoke(root, ["init"])).exitCode, 0);
     const agentsSkill = join(
       root,
       ".agents",
@@ -172,13 +184,13 @@ test("cross-destination conflicts preflight all writes and force restores parity
     const claudeBefore = readFileSync(claudeManifest);
     writeFileSync(agentsSkill, "Local edit\n");
 
-    const failed = invoke(root, ["update"]);
+    const failed = await invoke(root, ["update"]);
     assert.equal(failed.exitCode, 5);
     assert.match(failed.stderr, /code: write_conflict/);
     assert.match(failed.stderr, /planlet-implement\/SKILL.md/);
     assert.deepEqual(readFileSync(claudeManifest), claudeBefore);
 
-    const forced = invoke(root, ["update", "--force"]);
+    const forced = await invoke(root, ["update", "--force"]);
     assert.equal(forced.exitCode, 0, forced.stderr);
     const canonical = enumerateCanonicalSkills();
     const expected = canonical.files.find(
@@ -186,7 +198,7 @@ test("cross-destination conflicts preflight all writes and force restores parity
     )!;
     assert.deepEqual(readFileSync(agentsSkill), expected.content);
 
-    const tools = invoke(root, ["tools"]);
+    const tools = await invoke(root, ["tools"]);
     assert.equal(tools.exitCode, 0, tools.stderr);
     const toolsOutput = decodedRecord(tools.stdout);
     assert.ok(Array.isArray(toolsOutput.tools));
@@ -201,5 +213,117 @@ test("cross-destination conflicts preflight all writes and force restores parity
         { id: "codex", state: "installed" },
       ],
     );
+  });
+});
+
+test("prompt choices collapse shared destinations and default to populated ones", async () => {
+  await withRoot(async (root) => {
+    mkdirSync(join(root, ".claude", "skills", "unrelated"), {
+      recursive: true,
+    });
+    writeFileSync(
+      join(root, ".claude", "skills", "unrelated", "SKILL.md"),
+      "# Unrelated\n",
+    );
+    mkdirSync(join(root, ".agents", "skills"), { recursive: true });
+
+    const choices = buildToolChoices(root);
+    assert.deepEqual(
+      choices.map((choice) => ({
+        selector: choice.selector,
+        destination: choice.destination,
+        names: choice.names,
+        preselected: choice.preselected,
+      })),
+      [
+        {
+          selector: "agents,codex",
+          destination: ".agents/skills",
+          names: "Generic Agent Skills, Codex",
+          preselected: false,
+        },
+        {
+          selector: "claude",
+          destination: ".claude/skills",
+          names: "Claude Code",
+          preselected: true,
+        },
+      ],
+    );
+    assert.equal(resolveAnswer(choices, ""), "claude");
+  });
+});
+
+test("prompt choices preselect everything when no destination exists", async () => {
+  await withRoot(async (root) => {
+    const choices = buildToolChoices(root);
+    assert.deepEqual(
+      choices.map((choice) => choice.preselected),
+      [true, true],
+    );
+    assert.equal(resolveAnswer(choices, ""), "agents,codex,claude");
+  });
+});
+
+test("prompt choices coalesce symlinked destinations and survive a file destination", async () => {
+  await withRoot(async (root) => {
+    mkdirSync(join(root, ".agents", "skills"), { recursive: true });
+    mkdirSync(join(root, ".claude"));
+    symlinkSync(
+      join(root, ".agents", "skills"),
+      join(root, ".claude", "skills"),
+      "dir",
+    );
+    assert.deepEqual(
+      buildToolChoices(root).map((choice) => choice.selector),
+      ["agents,claude,codex"],
+    );
+  });
+
+  await withRoot(async (root) => {
+    mkdirSync(join(root, ".agents"));
+    writeFileSync(join(root, ".agents", "skills"), "not a directory\n");
+    assert.deepEqual(
+      buildToolChoices(root).map((choice) => choice.state),
+      ["modified", "missing"],
+    );
+    const result = await invoke(root, ["init", "--tools", "agents"]);
+    assert.equal(result.exitCode, 5);
+    assert.match(result.stderr, /code: write_conflict/);
+  });
+});
+
+test("prompt answers map to selectors and reject unrecognized input", async () => {
+  await withRoot(async (root) => {
+    const choices = buildToolChoices(root);
+    assert.equal(resolveAnswer(choices, "none"), "none");
+    assert.equal(resolveAnswer(choices, " 2 "), "claude");
+    assert.equal(resolveAnswer(choices, "1,2"), "agents,codex,claude");
+    for (const answer of ["0", "3", "y", "1,x", "1.5"]) {
+      assert.equal(resolveAnswer(choices, answer), undefined, answer);
+    }
+  });
+});
+
+test("an interactive init that cannot resolve a destination exits with unsafe_path", async () => {
+  await withRoot(async (root) => {
+    // A skill directory symlinked outside the repository must fail through the
+    // awaited dispatch as structured output, not as a rejected main promise.
+    mkdirSync(join(root, ".claude"));
+    const outside = mkdtempSync(join(tmpdir(), "planlet-outside-"));
+    symlinkSync(outside, join(root, ".claude", "skills"), "dir");
+    const previousIn = process.stdin.isTTY;
+    const previousOut = process.stdout.isTTY;
+    process.stdin.isTTY = true;
+    process.stdout.isTTY = true;
+    try {
+      const result = await invoke(root, ["init"]);
+      assert.equal(result.exitCode, 5);
+      assert.match(result.stderr, /code: unsafe_path/);
+    } finally {
+      process.stdin.isTTY = previousIn;
+      process.stdout.isTTY = previousOut;
+      rmSync(outside, { recursive: true, force: true });
+    }
   });
 });

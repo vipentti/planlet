@@ -12,7 +12,14 @@ export function tryLstat(path: string): Stats | null {
   try {
     return lstatSync(path);
   } catch (error) {
-    if (isMissingPathError(error)) return null;
+    // ENOTDIR means a parent component is a file, so this path does not exist
+    // either; callers classify the offending parent themselves.
+    if (
+      isMissingPathError(error) ||
+      (error instanceof Error && "code" in error && error.code === "ENOTDIR")
+    ) {
+      return null;
+    }
     throw error;
   }
 }

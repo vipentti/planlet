@@ -6,12 +6,12 @@ import { fileURLToPath } from "node:url";
 
 import { main } from "../../src/cli.js";
 
-test("help exits successfully without using process I/O or repository state", () => {
+test("help exits successfully without using process I/O or repository state", async () => {
   const stdout: string[] = [];
   const stderr: string[] = [];
 
   assert.equal(
-    main(["help"], {
+    await main(["help"], {
       cwd: "/path/that/does/not/need/to/exist",
       stdout: (value) => stdout.push(value),
       stderr: (value) => stderr.push(value),
@@ -21,9 +21,9 @@ test("help exits successfully without using process I/O or repository state", ()
   assert.match(stdout.join(""), /^Usage: planlet/);
   assert.equal(stderr.join(""), "");
 });
-test("the README command table lists exactly the commands help does", () => {
+test("the README command table lists exactly the commands help does", async () => {
   const stdout: string[] = [];
-  main(["help"], {
+  await main(["help"], {
     cwd: "/path/that/does/not/need/to/exist",
     stdout: (value) => stdout.push(value),
     stderr: () => {},
@@ -47,7 +47,7 @@ test("the README command table lists exactly the commands help does", () => {
   assert.deepEqual(documented, help);
 });
 
-test("installation command help documents selectors and force flags", () => {
+test("installation command help documents selectors and force flags", async () => {
   for (const [command, pattern] of [
     ["init", /init \[--tools <ids>\] \[--force\]/],
     ["update", /update \[--tools <ids>\] \[--force\]/],
@@ -56,7 +56,7 @@ test("installation command help documents selectors and force flags", () => {
     const stdout: string[] = [];
     const stderr: string[] = [];
     assert.equal(
-      main(["help", command], {
+      await main(["help", command], {
         cwd: "/path/that/does/not/need/to/exist",
         stdout: (value) => stdout.push(value),
         stderr: (value) => stderr.push(value),
@@ -68,13 +68,13 @@ test("installation command help documents selectors and force flags", () => {
   }
 });
 
-test("invalid commands and arguments fail with usage before repository discovery", () => {
+test("invalid commands and arguments fail with usage before repository discovery", async () => {
   for (const arguments_ of [["status"], ["bogus"], ["list", "--bogus"]]) {
     const stdout: string[] = [];
     const stderr: string[] = [];
 
     assert.equal(
-      main(arguments_, {
+      await main(arguments_, {
         cwd: "/path/that/does/not/need/to/exist",
         stdout: (value) => stdout.push(value),
         stderr: (value) => stderr.push(value),
@@ -87,11 +87,11 @@ test("invalid commands and arguments fail with usage before repository discovery
   }
 });
 
-test("unexpected TypeErrors from output sinks propagate", () => {
+test("unexpected TypeErrors from output sinks propagate", async () => {
   const failure = new TypeError("broken output sink");
 
-  assert.throws(
-    () =>
+  await assert.rejects(
+    async () =>
       main(["help"], {
         cwd: "/path/that/does/not/need/to/exist",
         stdout: () => {

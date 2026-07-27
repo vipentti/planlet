@@ -19,11 +19,13 @@ interface Capture {
   readonly stderr: string[];
 }
 
-function withRepository(run: (root: string) => void): void {
+async function withRepository(
+  run: (root: string) => Promise<void>,
+): Promise<void> {
   const root = mkdtempSync(join(tmpdir(), "planlet-skill-"));
   mkdirSync(join(root, ".git"));
   try {
-    run(root);
+    await run(root);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -46,11 +48,11 @@ function lastOutput(capture: Capture): Record<string, unknown> {
   return decode(capture.stdout.at(-1)!.trimEnd()) as Record<string, unknown>;
 }
 
-test("planning workflow creates stubs, populates them, validates, and inspects full content", () => {
-  withRepository((root) => {
+test("planning workflow creates stubs, populates them, validates, and inspects full content", async () => {
+  await withRepository(async (root) => {
     const captureRuntime = runtime(root);
     assert.equal(
-      main(
+      await main(
         ["--root", root, "create", "skill-plan", "--title", "Skill Plan"],
         captureRuntime.runtime,
       ),
@@ -66,11 +68,14 @@ test("planning workflow creates stubs, populates them, validates, and inspects f
     );
 
     assert.equal(
-      main(["--root", root, "validate", "skill-plan"], captureRuntime.runtime),
+      await main(
+        ["--root", root, "validate", "skill-plan"],
+        captureRuntime.runtime,
+      ),
       0,
     );
     assert.equal(
-      main(
+      await main(
         ["--root", root, "--full", "show", "skill-plan", "--part", "plan"],
         captureRuntime.runtime,
       ),
@@ -83,8 +88,8 @@ test("planning workflow creates stubs, populates them, validates, and inspects f
   });
 });
 
-test("implementation workflow checks verified task and reinspects canonical progress", () => {
-  withRepository((root) => {
+test("implementation workflow checks verified task and reinspects canonical progress", async () => {
+  await withRepository(async (root) => {
     mkdirSync(join(root, "plans", "implement-plan"), { recursive: true });
     writeFileSync(
       join(root, "plans", "implement-plan", "plan.md"),
@@ -97,14 +102,14 @@ test("implementation workflow checks verified task and reinspects canonical prog
     const captureRuntime = runtime(root);
 
     assert.equal(
-      main(
+      await main(
         ["--root", root, "task", "check", "implement-plan", "T1"],
         captureRuntime.runtime,
       ),
       0,
     );
     assert.equal(
-      main(
+      await main(
         ["--root", root, "tasks", "implement-plan", "--remaining"],
         captureRuntime.runtime,
       ),
@@ -123,8 +128,8 @@ test("implementation workflow checks verified task and reinspects canonical prog
   });
 });
 
-test("completion workflow refuses incomplete work then records approved override", () => {
-  withRepository((root) => {
+test("completion workflow refuses incomplete work then records approved override", async () => {
+  await withRepository(async (root) => {
     mkdirSync(join(root, "plans", "complete-plan"), { recursive: true });
     writeFileSync(
       join(root, "plans", "complete-plan", "plan.md"),
@@ -137,7 +142,7 @@ test("completion workflow refuses incomplete work then records approved override
     const captureRuntime = runtime(root);
 
     assert.equal(
-      main(
+      await main(
         ["--root", root, "complete", "complete-plan"],
         captureRuntime.runtime,
       ),
@@ -145,7 +150,7 @@ test("completion workflow refuses incomplete work then records approved override
     );
     assert.match(captureRuntime.capture.stderr.at(-1)!, /incomplete_tasks/);
     assert.equal(
-      main(
+      await main(
         [
           "--root",
           root,
