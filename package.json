@@ -1,7 +1,7 @@
 {
   "name": "planlet",
   "version": "0.1.0",
-  "description": "Small plans. Clear handoffs.",
+  "description": "Repository-local planning and task management for AI coding agents: focused Markdown planlets plus a deterministic CLI and portable agent skills. Small plans. Clear handoffs.",
   "license": "MIT",
   "author": "Ville Penttinen",
   "repository": {
@@ -14,11 +14,20 @@
   },
   "keywords": [
     "planning",
+    "plan",
     "tasks",
+    "task-management",
+    "checklist",
     "cli",
     "agents",
+    "agent-skills",
     "ai",
-    "markdown"
+    "ai-coding-agents",
+    "claude-code",
+    "codex",
+    "markdown",
+    "developer-tools",
+    "workflow"
   ],
   "type": "module",
   "bin": {
