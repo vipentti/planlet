@@ -25,7 +25,7 @@ Use reason exactly as approved except necessary surrounding-whitespace trimming.
 
 Capture one current UTC timestamp in ISO 8601 form with a `Z` suffix, such as `2026-07-22T12:34:56Z`. Derive `YYYY-MM-DD` from that exact value. Do not read the clock again for archive naming.
 
-Append one completion section to `tasks.md`:
+Append one completion section to `tasks.md`. When the harness exposes a dedicated file-reading capability, read the file with it before editing, because such a harness can reject an edit to a file it has not read and may not count a shell read.
 
 ```markdown
 ## Completion

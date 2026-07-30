@@ -29,10 +29,10 @@ Create or revise one focused planlet while keeping planning separate from implem
 For a new confirmed planlet:
 
 1. Run `planlet --root "<repository-root>" create <slug> --title "<title>"`. Treat non-zero exit as no authorization to write around a slug, path, or collision failure.
-2. Confirm CLI created only H1 stubs, then replace those two stubs with approved `plan.md` and `tasks.md` content. Never use `create` for revision or overwrite an existing planlet.
+2. Confirm CLI created only H1 stubs. When the harness exposes a dedicated file-reading capability, read each created file with it rather than through a shell command, because such a harness can reject a write to a file it has not read and may not count a shell read. Then replace those two stubs with approved `plan.md` and `tasks.md` content. Never use `create` for revision or overwrite an existing planlet.
 3. Run `planlet --root "<repository-root>" validate <slug>`, then re-read both files with `planlet --root "<repository-root>" --full show <slug> --part plan` and `planlet --root "<repository-root>" --full show <slug> --part tasks`; inspect exact persisted content.
 
-For a confirmed revision, edit both existing files directly because CLI has no semantic revision operation. Preserve IDs for unchanged tasks, assign new IDs above highest numeric suffix, and never silently remove completed work. Then run targeted `validate` and full `show` inspection as above.
+For a confirmed revision, edit both existing files directly because CLI has no semantic revision operation. When the harness exposes a dedicated file-reading capability, read each file with it before editing, because such a harness can reject an edit to a file it has not read and may not count a shell read. Preserve IDs for unchanged tasks, assign new IDs above highest numeric suffix, and never silently remove completed work. Then run targeted `validate` and full `show` inspection as above.
 
 Use manual creation only when `create` is unavailable: resolve paths beneath repository root, refuse invalid or conflicting slugs, and publish exactly both primary files without partial state or overwrite. Use manual structural validation only when `validate` is unavailable: require H1 headings, recognized top-level task lines, non-empty descriptions, and unique IDs. A missing `show` operation permits direct file reads, not manual validation. Report unavailable canonical collision checks, validation, structured errors, or atomic creation as applicable.
 
