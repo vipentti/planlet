@@ -16,6 +16,8 @@ Markdown is the source of truth. The CLI provides deterministic discovery,
 validation, progress, and lifecycle operations; the bundled agent skills provide
 the investigation and judgment around them.
 
+You normally drive Planlet through the skills and let your agent call the CLI.
+
 ## Installation
 
 Planlet requires Node.js 22 or newer.
@@ -30,12 +32,53 @@ Or run it without installing:
 npx planlet <command>
 ```
 
-## Quickstart
+## Set up a repository
 
 ```sh
 cd your-repository
-planlet init                 # create plans/ and install the agent skills
-                             # (asks which harnesses on an interactive terminal)
+planlet init
+```
+
+`init` creates `plans/` and installs the three agent skills. On an interactive
+terminal it asks which harnesses to install for; otherwise it installs all of
+them. Supported harnesses:
+
+| Harness                     | `--tools` ID | Skill destination |
+| --------------------------- | ------------ | ----------------- |
+| Claude Code                 | `claude`     | `.claude/skills`  |
+| Codex                       | `codex`      | `.agents/skills`  |
+| Other `AGENTS.md` harnesses | `agents`     | `.agents/skills`  |
+
+Commit the installed copies so everyone cloning the repository gets the same
+workflows. Refresh them after a Planlet upgrade with `planlet update`, and
+inspect installation state without mutating anything with `planlet tools`.
+
+## The skill-first flow
+
+Three skills cover the lifecycle. Invoke them by name in your agent (in Claude
+Code, `/planlet-plan` and friends); each one resolves a single planlet and calls
+the CLI for discovery, validation, progress, and archiving.
+
+1. **Plan** — `planlet-plan` explores the repository and persists one focused
+   planlet as `plans/<slug>/plan.md` and `tasks.md`. It does not implement
+   product changes, so the plan stays reviewable before any code moves.
+2. **Implement** — `planlet-implement` re-reads both files from disk, works
+   through the tasks in dependency order, verifies each one, and checks it off
+   only after its verification passes. It pauses instead of guessing when the
+   plan is stale or a task is ambiguous.
+3. **Complete** — `planlet-complete` validates the planlet and archives it to
+   `plans/completed/<YYYY-MM-DD>-<slug>/`. Unfinished tasks require an explicit
+   override with a recorded reason.
+
+A typical session: ask for a plan, review the two Markdown files yourself, then
+ask for implementation, then completion. Nothing is hidden from review — the
+plan, the task checkboxes, and the archive are all plain Markdown in git.
+
+## Driving the CLI directly
+
+Everything the skills do is available as commands:
+
+```sh
 planlet create my-feature    # scaffold plans/my-feature/{plan.md,tasks.md}
 # edit plan.md and tasks.md
 planlet validate my-feature
@@ -67,23 +110,20 @@ Running `planlet` with no command displays the active-plan dashboard.
 Global options: `--root <path>` selects the repository root, `--full` disables
 output truncation, and `--version` prints the version and exits.
 
-## Harness installation
+## Skill installation details
 
-Canonical workflows live under `skills/planlet-*`. Install project-local
-copies with `planlet init`, refresh existing copies with `planlet update`, and
-inspect installation state without mutation with `planlet tools`.
+Canonical workflows ship under `skills/planlet-*`; installed copies are
+generated from them.
 
 `--tools` accepts comma-separated `agents`, `claude`, and `codex` IDs.
-`agents` and `codex` share `.agents/skills`; `claude` uses `.claude/skills`.
 `planlet init --tools none` creates only `plans/`. Locally modified generated
 files require explicit `--force` before replacement.
 
 Without `--tools`, `planlet init` asks which destinations to install to when
 run on an interactive terminal, defaulting to those that already contain
 something. Passing `--tools`, or running with stdin or stdout redirected, skips
-the question and installs every destination as before, so agents and CI are
-unaffected. `planlet update` never asks; it refreshes only destinations that
-already exist.
+the question and installs every destination, so agents and CI are unaffected.
+`planlet update` never asks; it refreshes only destinations that already exist.
 
 ## Development
 
@@ -97,8 +137,14 @@ already exist.
 | `npm run skills:update` | Build CLI and refresh installed Planlet skills  |
 | `npm test`              | Run TypeScript tests with `tsx` and `node:test` |
 
-The design is documented in [`planlet_design.md`](planlet_design.md).
+## Links
+
+- [Source repository](https://github.com/vipentti/planlet)
+- [Product and technical design](https://github.com/vipentti/planlet/blob/main/planlet_design.md)
+- [Contributor guide](https://github.com/vipentti/planlet/blob/main/AGENTS.md)
+- [Issue tracker](https://github.com/vipentti/planlet/issues)
+- [npm package](https://www.npmjs.com/package/planlet)
 
 ## License
 
-[MIT](LICENSE)
+[MIT](https://github.com/vipentti/planlet/blob/main/LICENSE)
