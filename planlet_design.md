@@ -435,10 +435,10 @@ Verification records are divided as follows, without any new file, command, or s
 
 - `plan.md` `Verification` is the static strategy: stable commands or check categories, expected outcomes, external gates, and known limitations.
 - Task checkboxes are the progress gate. A failed, partial, or unavailable check leaves its task unchecked.
-- An optional `## Verification Evidence` section in `tasks.md` records material, failed, partial, unavailable, or externally governed outcomes as short lines, written before completion. Logs stay in the terminal or provider systems; anchor external evidence with immutable commit SHAs and full stable URLs, never moving branch, `latest`, or dashboard references.
+- An optional `## Verification Evidence` section in `tasks.md` is exceptional and absent by default. It exists only for a durable fact that ordinary Git, test, pull-request, or CI history cannot reconstruct adequately: external, irreversible, non-reproducible, failed, partial, or unavailable verification whose residual result affects a later decision. Routine tests, lint, type-checking, builds, review, and branch-protected CI stay in the systems that already hold them.
 - The CLI-generated `## Completion` record is a lifecycle audit only, and never carries verification results.
 
-The evidence section is free-form Markdown that the CLI treats as opaque. It is optional; routine planlets may rely on task state alone. Because the parser reads every top-level `- [ ]` or `- [x]` bullet as a task line, evidence lines must be plain bullets or prose; a checkbox-shaped evidence line is rejected as a malformed or duplicate task.
+The evidence section is free-form Markdown that the CLI treats as opaque, and it never gates completion. Whatever it records must be effectively write-once: no current-head or self-referential commit SHA, moving branch, `latest`, or dashboard link, bare run identifier, transient log, or local path — nothing that needs editing as later commits land. Prefer a final artifact version or digest, or a stable external record, and only when material; a provider record that already binds to its source needs no duplicate SHA. Because the parser reads every top-level `- [ ]` or `- [x]` bullet as a task line, evidence lines must be plain bullets or prose; a checkbox-shaped evidence line is rejected as a malformed or duplicate task.
 
 A completion record must be appended by the CLI before moving the planlet:
 
@@ -705,7 +705,7 @@ Responsibilities:
 - Implement tasks and verify outcomes.
 - Check off tasks incrementally through the CLI.
 - Surface plan drift and blockers.
-- Maintain the optional concise `## Verification Evidence` section in `tasks.md` when verification is material, failed, partial, unavailable, or externally governed.
+- Record an exceptional, write-once `## Verification Evidence` note in `tasks.md` only when ordinary history cannot reconstruct a durable verification fact.
 - Report completion readiness.
 
 Must not:

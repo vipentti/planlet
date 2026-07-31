@@ -5,15 +5,15 @@
   ],
   "files": {
     "planlet-complete/agents/openai.yaml": "f4df999b41feddee85f906ceddf84ced3a5ef60daf7467e7a37bec158cb8451e",
-    "planlet-complete/references/completion-guidance.md": "e0f16d79a25478659e0863134cad2ce02cf02f80058c1c4f0be44f5d7fa52da6",
-    "planlet-complete/SKILL.md": "9c82a1d1bd5c209ce06f483cc03ccfb2f0ad3fd79579823f26c3f25d6cd212d0",
+    "planlet-complete/references/completion-guidance.md": "41761a01f6591f7d637dbbcd90fef44edfa38e7f82e2c3e7adaecb9e214b1eb2",
+    "planlet-complete/SKILL.md": "265cac2c2380c9c3b02d47e3a4f96098eb3ed491bda894b486e119b284baaaf5",
     "planlet-implement/agents/openai.yaml": "1c7b5ff9f8b87f34c4395a3cf72d26e1d3878577dae0701488312910260be1c2",
-    "planlet-implement/references/implementation-guidance.md": "cb734e89de55a099e08bd6035ffe38892be7c7e7e958d1ec93ccf0ef016f4e33",
-    "planlet-implement/SKILL.md": "deaf5a81fbfe66968c9dbbaa2244cebe6feb779efa6f0708fc7e1fb67b5d7550",
+    "planlet-implement/references/implementation-guidance.md": "6872036ccf3f8165c31753773edfea39355faaedbff76c01137d2a9c7ba762d4",
+    "planlet-implement/SKILL.md": "55a1c337dbbddb3fab8d02b79f440140cd00b80ffe49129a011f0ded8c03f452",
     "planlet-plan/agents/openai.yaml": "44d12699d652017b382f38bfba32820f1f47cf4766e99b978d8949186e697fc3",
-    "planlet-plan/assets/plan-template.md": "66b8779f54f1d2e046f035b6c7685d1a95ac14197217a669435df1ecbe89f567",
+    "planlet-plan/assets/plan-template.md": "218390c4dd55c316fe66c66d759c42221055ed4fda44ee9951438d61b2a112f6",
     "planlet-plan/assets/tasks-template.md": "122e9b8f66d2a3eb3a7d61b09870bb6a3fea8af2fbef3c5a84dc207e71914e32",
-    "planlet-plan/references/planning-guidance.md": "90d7b20edc43f4704856a294588e4299565d31a4920beca8e270e163c6beadb1",
+    "planlet-plan/references/planning-guidance.md": "2ed5c583b87effbff97cd85f56846f9a43e6ce54913bc9ec041c3b0a4a4f5afb",
     "planlet-plan/SKILL.md": "7014084604f307f25e799df27ffc1c847e2b4cfb2a47c9d82d112a5029dc3fdf"
   }
 }

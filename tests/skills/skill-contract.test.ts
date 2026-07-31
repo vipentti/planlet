@@ -86,7 +86,7 @@ test("skills use supported rooted CLI forms and operation-specific fallback", ()
   }
 });
 
-test("skills separate strategy, concise evidence, and lifecycle audit", () => {
+test("skills keep evidence exceptional, write-once, and separate from the audit", () => {
   const planCorpus = filesUnder("skills/planlet-plan").map(read).join("\n");
   const implementCorpus = filesUnder("skills/planlet-implement")
     .map(read)
@@ -95,29 +95,39 @@ test("skills separate strategy, concise evidence, and lifecycle audit", () => {
     .map(read)
     .join("\n");
 
-  // plan.md owns static strategy only.
+  // plan.md owns static strategy only, and expects no routine results anywhere.
   assert.match(planCorpus, /`Verification` is strategy, not a run log/);
   assert.match(planCorpus, /never paste logs/);
   assert.match(
     planCorpus,
-    /immutable commit SHAs and full stable URLs rather than moving branch, `latest`, or dashboard references/,
+    /Committed verification evidence is exceptional and absent by default/,
   );
 
-  // implement maintains the optional concise note in tasks.md before completion.
+  // implement writes a note only for facts ordinary history cannot reconstruct.
+  assert.match(implementCorpus, /`## Verification Evidence` section/);
+  assert.match(implementCorpus, /absent by default|absence is the normal/);
+  assert.match(implementCorpus, /write-once/);
   assert.match(
     implementCorpus,
-    /## Verification Evidence` section in `tasks\.md`/,
+    /Never write a current-head or otherwise self-referential commit SHA/,
   );
-  assert.match(implementCorpus, /Before completion/);
-  assert.match(implementCorpus, /Never paste logs or secrets/);
   assert.match(implementCorpus, /leave failed or unverified tasks unchecked/);
 
-  // complete inspects without parsing, rerunning, or creating proof.
+  // complete inspects without parsing, rerunning, or creating proof, and never gates on evidence.
   assert.match(
     completeCorpus,
     /do not parse its semantics, rerun its checks, create missing proof/,
   );
+  assert.match(completeCorpus, /absence is normal and never blocks completion/);
   assert.match(completeCorpus, /lifecycle audit/);
+
+  // the superseded universal-anchor expectation must not return.
+  for (const corpus of [planCorpus, implementCorpus, completeCorpus]) {
+    assert.doesNotMatch(
+      corpus,
+      /anchored by immutable commit SHAs and full stable URLs/,
+    );
+  }
 
   // no skill invents an evidence command or schema.
   for (const corpus of [planCorpus, implementCorpus, completeCorpus]) {

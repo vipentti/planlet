@@ -65,9 +65,9 @@ the CLI for discovery, validation, progress, and archiving.
 2. **Implement** — `planlet-implement` re-reads both files from disk, works
    through the tasks in dependency order, verifies each one, and checks it off
    only after its verification passes. It pauses instead of guessing when the
-   plan is stale or a task is ambiguous, and records material verification
-   outcomes as a short optional `## Verification Evidence` section in
-   `tasks.md` — never a pasted log.
+   plan is stale or a task is ambiguous. Check results live in your test, review,
+   and CI systems, so a planlet records verification evidence only in the rare
+   case that ordinary history cannot reconstruct it.
 3. **Complete** — `planlet-complete` validates the planlet and archives it to
    `plans/completed/<YYYY-MM-DD>-<slug>/`. Unfinished tasks require an explicit
    override with a recorded reason.
