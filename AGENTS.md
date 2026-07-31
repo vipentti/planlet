@@ -22,7 +22,7 @@ plans/<slug>/
 └── tasks.md
 ```
 
-Completed planlets move to `plans/completed/<YYYY-MM-DD>-<slug>/`, using the UTC date of completion while retaining the original logical slug. Markdown files are the source of truth. Agent skills provide investigation and judgment; the future CLI provides deterministic discovery, validation, progress, and lifecycle operations.
+Completed planlets move to `plans/completed/<YYYY-MM-DD>-<slug>/`, using the UTC date of completion while retaining the original logical slug. Markdown files are the source of truth. Agent skills provide investigation and judgment; the CLI provides deterministic discovery, validation, progress, and lifecycle operations.
 
 Tagline: **Small plans. Clear handoffs.**
 

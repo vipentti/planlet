@@ -20,6 +20,9 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
+# Per-developer agent harness settings
+.claude/settings.local.json
+
 # Local environment files
 .env*
 !.env.example
