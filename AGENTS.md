@@ -126,6 +126,21 @@ The built CLI runs as `node dist/planlet.mjs <command>`.
 against Node 22 and 24, plus a ubuntu/Node-22-only step that regenerates
 installed skill copies and fails on drift. Workflow files are covered by `format:check`.
 
+## Changelog and release maintenance
+
+Add user-visible changes under `Unreleased` in [`CHANGELOG.md`](CHANGELOG.md).
+Release sections use `## [x.y.z] - YYYY-MM-DD`; standard Keep a Changelog
+headings contain bullet entries. `node scripts/changelog.mjs <version>` emits
+release notes and rejects absent or empty sections.
+
+Release tags must match `package.json` and point to commits reachable from
+`origin/main`. Before any public action, follow audit, governance, npm ownership,
+and exact-artifact gates in
+[`plans/release-automation/plan.md`](plans/release-automation/plan.md). Never
+rebuild an approved bootstrap tarball before publishing it. `.github/workflows/release.yml`
+serializes same-tag runs and verifies registry source and integrity before
+skipping an already-published version.
+
 ## Maintaining this guide
 
 Update `AGENTS.md` when the repository gains stable commands, important top-level structure, or agent-specific constraints. Prefer links to authoritative files over duplicating material that can drift.

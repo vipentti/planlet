@@ -2,223 +2,209 @@
 
 ## Summary
 
-Turn the publish-ready package produced by `packaging-and-polish` into a
-released one. Add a hand-maintained `CHANGELOG.md` in
-[Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/) format, a
-tag-triggered GitHub Actions workflow that verifies, publishes to npm with
-provenance through npm trusted publishing, and creates a GitHub release whose
-notes come from the changelog.
+Release Planlet through a hand-maintained Keep a Changelog file and a small,
+tag-triggered GitHub Actions workflow. Workflow verifies tagged source, publishes
+an exact packed artifact to npm through trusted publishing with provenance, and
+creates or updates GitHub release notes from changelog.
+
+Private, reversible work is T1-T6 only. Public visibility, npm publication,
+tags, GitHub releases, trusted-publisher configuration, protections, pushes,
+and merges remain blocked on recorded captain decisions and separately
+checkable external-action tasks.
 
 ## Scope
 
 In scope:
 
-- `CHANGELOG.md` at the repository root in Keep a Changelog 1.1.0 format:
-  `## [Unreleased]` on top, versioned sections with ISO dates, standard change
-  headings, and compare links at the bottom. Version 0.1.0 is backfilled from
-  the completed planlets.
-- `CHANGELOG.md` added to the `files` allowlist in `package.json` and to the
-  Prettier globs, so it ships in the tarball and is covered by `format:check`,
-  plus `CHANGELOG.md` added to the expected-files assertion in
-  `tests/integration/packaging.test.ts`.
-- `scripts/changelog.mjs`, which prints one version's release notes and exits
-  non-zero when the section is missing or empty.
-- A test that drives `scripts/changelog.mjs` as a subprocess against a fixture
-  changelog.
-- `.github/workflows/release.yml`, triggered by `v*` tags, running the full
-  verification suite, a tag-versus-`package.json` version guard, notes
-  extraction, `npm publish` with no long-lived token,
-  `gh release create`, and rerun-safe behavior after a partial release.
-- Release and changelog documentation in `AGENTS.md` and `README.md`.
-- Making the GitHub repository public, a hard prerequisite for npm provenance.
-- The manual bootstrap: publishing 0.1.0 by hand, creating its GitHub release,
-  and connecting trusted publishing on npmjs.com, all before `release.yml`
-  reaches the default branch.
-- One real workflow-driven release, 0.1.1, as the only honest proof the
-  workflow works.
+- Root `CHANGELOG.md` following Keep a Changelog 1.1.0, packaged and formatted.
+- Dependency-free `scripts/changelog.mjs` plus subprocess coverage.
+- `.github/workflows/release.yml`, triggered only by `v*` tags.
+- Exact release checks, npm provenance, changelog-derived notes, serialized
+  same-tag runs, and verified rerun recovery.
+- Accurate release, changelog, and pre-publication documentation.
+- Full-history secrets, licensing, and personal-data review before visibility.
+- Exact source/artifact and npm account/name/auth preconditions for bootstrap.
+- Explicit unresolved public-release and release-governance decisions.
 
 Out of scope:
 
-- Changesets, release-please, semantic-release, conventional-commit-derived
-  versioning, and any automated version bump. Versions are chosen by a human.
-- An `NPM_TOKEN` fallback path. Trusted publishing is the only authentication
-  method this planlet configures.
-- Prerelease channels, npm dist-tags other than `latest`, and yanking or
-  deprecating published versions.
-- Standalone Bun, Deno, or Go binaries, and signing beyond npm provenance.
-- A dedicated changelog skill in any form. Changelog upkeep is a documented
-  manual edit.
-- Changes to planlet file semantics, lifecycle behavior, CLI commands, or the
-  existing `ci.yml` workflow.
+- Release frameworks, generated changelogs, automated version selection,
+  prerelease channels, extra dist-tags, token fallback, or standalone binaries.
+- Semantic CLI or Planlet lifecycle changes.
+- Any external release mutation during private implementation.
 
 ## Approach
 
-Keep the changelog hand-written and make the machine check it. Generated
-changelogs derive release notes from commit subjects, which describe changes to
-the repository rather than changes users experience, and every generator brings
-either a new dependency or a commit-message contract. A hand-maintained file in
-a specified format costs one section edit per change, and
-`scripts/changelog.mjs` turns it into the single source for GitHub release
-notes, so a release with no changelog entry fails the workflow instead of
-shipping empty notes.
+### Changelog and extraction
 
-Extract notes with a small script rather than inline YAML. A shell one-liner
-buried in a workflow step cannot be tested and is only exercised during a
-release, which is the worst moment to discover it is wrong.
-`scripts/changelog.mjs` takes a version, prints that section's body without its
-heading, and exits non-zero when the section is absent or contains no entries.
-Test it by spawning it as a subprocess against a fixture, the way
-`tests/integration/compiled-cli.test.ts` drives the bundle: the script is
-JavaScript and the suite is TypeScript, and a subprocess boundary avoids
-teaching `tsc` about `scripts/` for one import.
+Keep changelog hand-written because user-visible changes do not map reliably to
+commit subjects. `scripts/changelog.mjs <version> [file]` prints body of one
+dated version section. It rejects missing, empty, and `Unreleased` sections.
+Optional file argument exists only to keep subprocess tests fixture-based.
 
-Trigger releases from `v*` tags. The tag is the human decision, and everything
-after it is deterministic. The workflow re-runs the full documented suite before
-publishing rather than trusting the CI run on the merge commit, because a tag
-can point at any commit. A guard compares the tag to the `version` field in
-`package.json` and fails on mismatch, which is the check that catches a
-mistyped or stale tag before anything reaches the registry.
+Backfill 0.1.0 from complete repository history and user-visible package
+behavior, not completed planlets alone. Keep `Unreleased` first and compare
+links last.
 
-A tag alone is not evidence that the code was reviewed. Anyone with write access
-— or anything holding a write token — can tag an arbitrary commit, and trusted
-publishing would then ship it. So the workflow checks out with full history,
-fetches the default branch explicitly, and fails unless the tagged commit is an
-ancestor of `origin/main`, before the publish step:
+### Release workflow
 
-```sh
-# checkout only guarantees the tag ref; origin/main may not exist
-git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
-git merge-base --is-ancestor "$GITHUB_SHA" origin/main
-```
+Tag is manual release decision. Workflow checks out full history, installs from
+lockfile, then performs these checks before publication:
 
-Authenticate with npm trusted publishing rather than a stored token. OIDC
-removes the long-lived credential entirely and produces a provenance
-attestation in the same step. It requires `id-token: write` permission and
-**npm ≥ 11.5.1**, which emits provenance automatically for OIDC publishes, so
-the workflow installs a pinned-floor npm rather than relying on the version
-bundled with `actions/setup-node`.
+1. tag is exactly `v<package.json version>`;
+2. tagged SHA is reachable from explicitly fetched `origin/main`;
+3. `format:check`, `lint`, `type-check`, `build`, and full tests pass;
+4. `git diff --check` passes;
+5. generated skill copies match canonical sources after `planlet update`;
+6. tagged source remains clean;
+7. requested changelog section exists and has an entry;
+8. `npm pack --json` succeeds and yields reviewed package metadata.
 
-Provenance also requires a public repository and a public package. The
-repository is private today, so it must be published before the bootstrap
-release — nothing downstream works until it is.
+Workflow pins its two external actions to reviewed commit SHAs. A workflow-level
+concurrency group serializes runs for same tag without cancelling an in-flight
+publication. npm 11.5.1 supplies trusted-publishing support; no `NPM_TOKEN`
+exists. Workflow publishes exact tarball produced by `npm pack` with public
+access and provenance.
 
-Accept a manual first release, and order the bootstrap so no tag ever meets a
-workflow that would republish it. Trusted publishing is configured on npmjs.com
-against a package that already exists, and the name `planlet` is unregistered,
-so 0.1.0 must be published by a human. The sequence is fixed:
+Rerun does not treat any registry hit as success. When exact version exists,
+workflow compares registry package name, version, repository, available
+`gitHead`, and integrity against tagged source and freshly packed artifact. Any mismatch
+fails before GitHub release mutation. Only a verified exact artifact skips npm
+publication. Non-404 lookup failures fail rather than falling through to
+publish. Existing GitHub release notes are replaced from changelog; missing
+release is created from same file.
 
-1. Make the GitHub repository public.
-2. Publish 0.1.0 from a workstation, tag `v0.1.0`, and create its GitHub
-   release by hand, while `release.yml` does not yet exist on the default
-   branch.
-3. Configure the trusted publisher on npmjs.com naming this repository and
-   `release.yml`.
-4. Land this planlet's changes, including `release.yml`, on the default branch,
-   and confirm CI is green on `main`.
-5. Prepare 0.1.1 on `main` — bump `package.json` and the lockfile, promote
-   `Unreleased` to a dated `0.1.1` section, update compare links, commit — then
-   tag that exact commit and push `v0.1.1`.
+### Publication gates and unresolved decisions
 
-Steps 2 and 4 must not be reordered. A `v0.1.0` tag pushed after `release.yml`
-is live would trigger a publish of a version already on the registry. The 0.1.1
-commit must reach `origin/main` before it is tagged, or the ancestry guard
-rejects the release.
+No external step proceeds until captain records all choices:
 
-Make the release workflow rerun-safe. `npm publish` and `gh release create` are
-separate steps, and a failure between them leaves a published version with no
-GitHub release; rerunning then dies on a duplicate-version error before ever
-reaching the release step. The publish step therefore skips publishing when the
-exact version is already on the registry
-(`if npm view planlet@<version> version >/dev/null 2>&1; then skip; fi`), and
-the release step creates the GitHub release or updates it when it exists. That
-is the whole recovery story: rerun the failed workflow.
+1. **Public release:** authorize exposing full repository history after T7 audit,
+   or keep repository private and defer publication/provenance.
+2. **Release governance:** accept solo-maintainer trust on unprotected `main`,
+   or require chosen branch protection, tag controls, and/or protected GitHub
+   environment before publisher setup. Ancestry proves reachability, not review.
+3. **Bootstrap:** approve npm owner/account, available package name, exact clean
+   source SHA, reviewed artifact hash/file list, and irreversible 0.1.0 publish.
 
-Completion of this planlet spans the merge. T8 requires this branch to land on
-`main`, and T9 tags from `main` afterwards, so archiving to `plans/completed/`
-is a separate post-merge commit. The completion workflow should expect T8 and
-T9 to be unchecked while this branch is open rather than treating that as
-incomplete work.
+README must retain source-checkout fallback while npm package is unavailable.
+Do not claim bootstrap success until registry check passes.
+
+### Exact bootstrap artifact procedure
+
+Captain names one clean `origin/main` SHA as `BOOTSTRAP_SHA`; no worker infers
+it. In a fresh detached checkout of that SHA:
+
+1. verify `HEAD == BOOTSTRAP_SHA`, no tracked/untracked files, package and
+   lockfile both declare 0.1.0, and repository still lacks active release
+   workflow on default branch;
+2. run `npm ci`, full local verification suite, generated-skill parity, and
+   clean-tree check;
+3. run `npm pack --json --pack-destination <empty-review-dir>` once;
+4. record SHA, package name/version, tarball filename, `integrity`, `shasum`,
+   exact file list, and local SHA-256; inspect tarball for secrets, license,
+   personal data, and unexpected files;
+5. obtain captain approval for recorded artifact, publish that exact `.tgz`
+   with `--access public`, and verify registry integrity/file list;
+6. create `v0.1.0` at same `BOOTSTRAP_SHA` only after publication succeeds,
+   then create GitHub release from reviewed 0.1.0 notes.
+
+Never rebuild between approval and publish. Failed publish stops; do not claim,
+deprecate, or retry with changed source without new artifact review.
+
+### External sequence
+
+After all gates:
+
+1. T10 checks npm name availability, authenticated account, required 2FA/auth,
+   owner identity, and public-package access at execution time.
+2. T7 completes full-history audit and captain sign-off; T11 changes visibility
+   and verifies anonymous access.
+3. T8 publishes exact approved 0.1.0 artifact; T12 creates matching tag/release.
+4. T13 configures trusted publisher exactly for `vipentti/planlet` and
+   `.github/workflows/release.yml`.
+5. T14 lands automation and confirms main CI before any automated tag.
+6. T9 prepares 0.1.1 on main, pushes source before tag, performs real release,
+   and records workflow/provenance/release evidence.
+
+This order prevents bootstrap tag from activating workflow and ensures
+ancestry guard can pass for 0.1.1.
 
 ## Acceptance Criteria
 
-- `CHANGELOG.md` conforms to Keep a Changelog 1.1.0: `## [Unreleased]` first,
-  versioned sections in reverse chronological order with `YYYY-MM-DD` dates,
-  only the six standard change headings, no empty headings, and compare links
-  for every version. This is reviewed by a human; the script checks only that a
-  requested version's section exists and is non-empty.
-- `node scripts/changelog.mjs 0.1.0` prints the body of the 0.1.0 section and
-  nothing else, and exits zero.
-- `node scripts/changelog.mjs 9.9.9` and a version whose section holds no
-  entries both exit non-zero with a message naming the version; requesting
-  `Unreleased` is rejected.
-- The expected-files array in `tests/integration/packaging.test.ts` includes
-  `CHANGELOG.md` and the test passes, and `npm run format:check` covers it.
-- `.github/workflows/release.yml` triggers only on `v*` tags, declares
-  `contents: write` and `id-token: write`, runs `format:check`, `lint`,
-  `type-check`, `build`, and `test` before publishing, fails when the tag does
-  not match the `package.json` version, and publishes through trusted publishing
-  with no `NPM_TOKEN` secret.
-- The workflow fetches `origin/main` explicitly before the ancestry check, and
-  a tag whose commit is not reachable from `origin/main` fails the workflow
-  before the publish step.
-- The repository `vipentti/planlet` is public before the bootstrap publish.
-- Rerunning the workflow for a version already on npm skips the publish step
-  instead of failing, and creates the GitHub release if it is missing.
-- Planlet 0.1.0 is published on npm with the file list recorded by
-  `packaging-and-polish`, has a GitHub release, and trusted publishing is
-  configured for the repository — all before `release.yml` lands on the default
-  branch.
-- Pushing tag `v0.1.1` publishes 0.1.1 to npm with a provenance attestation and
-  creates a GitHub release whose body equals the 0.1.1 changelog section, with
-  no manual step between the tag push and the published release.
-- `AGENTS.md` and `README.md` document the release procedure and changelog
-  upkeep.
+- Changelog has `Unreleased` first, reverse-chronological dated versions,
+  standard Keep a Changelog headings only, no empty change headings, and links.
+- Extractor prints only requested notes and rejects missing, empty, or
+  `Unreleased` sections with version in error.
+- Package tarball contains changelog; Prettier and packaging tests cover it.
+- Release workflow trigger, permissions, pinned external actions, version and
+  ancestry guards, exact check sequence, provenance, no-token auth, notes,
+  concurrency, and rerun verification match approach above.
+- Existing npm version is accepted only when registry identity and artifact
+  integrity match, plus source SHA when registry exposes `gitHead`; unexpected
+  state fails before release edit.
+- Existing GitHub release is updated; absent release is created; both use exact
+  extracted notes.
+- Full-history audit covers secrets, credentials, licenses/provenance,
+  third-party material, personal data, deleted paths, commit metadata, tags,
+  branches intended for exposure, and large/binary objects, with findings and
+  captain sign-off recorded before public visibility.
+- Bootstrap record identifies exact clean source SHA and exact reviewed tarball;
+  npm name/account/auth/ownership/public-access checks are current at publish.
+- Public visibility, governance, and bootstrap choices remain unresolved until
+  captain records decisions. External tasks remain independently auditable.
+- README clearly states npm availability dependency and source fallback.
+- AGENTS and README document changelog and release procedure accurately.
 
 ## Verification
 
-Run the full suite in order: `npm run format:check`, `npm run lint`,
-`npm run type-check`, `npm run build`, `npm test`, `git diff --check`, and
-`git status --porcelain`.
+Private implementation checks:
 
-New automated coverage: one test spawning `scripts/changelog.mjs` for a known
-version, an absent version, an empty section, and `Unreleased`.
+```sh
+npm run format:check
+npm run lint
+npm run type-check
+npm run build
+npm test
+npm pack --json --dry-run
+npm publish --dry-run
+node dist/planlet.mjs update --tools all
+git diff --exit-code -- .agents .claude
+git diff --check
+git status --porcelain
+```
 
-Manual verification:
-`node dist/planlet.mjs tools` reporting every destination as `installed`; and
-inspection of the `ci.yml` run on the pull request, which already performs the
-clean-tree drift check.
+Also run focused extractor cases against root and fixture, inspect workflow YAML
+and packed file list, and validate Planlet through built CLI. Dry runs cannot
+prove OIDC, provenance, GitHub release mutation, or public visibility.
 
-The workflow itself cannot be proven by a dry run. Publishing is a
-single-attempt, irreversible operation against a public registry, and a
-`--dry-run` publish exercises neither OIDC nor `gh release create`. The 0.1.1
-release is therefore the verification: record the workflow run conclusion, the
-npm provenance status for 0.1.1, and the rendered GitHub release body in a
-Verification results section before completing this planlet.
+## Verification Results
+
+Private implementation completed 2026-07-31 on
+`fm/inspect-planlet-p5-release-b2`:
+
+- `format:check`, lint, type-check, build, and 139 tests passed.
+- Focused changelog and packed-install tests passed.
+- `npm pack --json --dry-run` produced 16 expected files including changelog;
+  `npm publish --dry-run` completed without publishing.
+- Generated destinations reported `installed` with no drift.
+- Release workflow parsed as YAML; pinned action SHAs were resolved from current
+  upstream `v4` refs. `actionlint` was unavailable.
+- `git diff --check` passed. `git status --porcelain` contained only intended
+  implementation changes, so clean-tree release check remains runtime-only.
+- Built Planlet CLI validated 16 unique tasks and checked T1-T6 only.
+
+External 0.1.0 and 0.1.1 evidence stays absent until authorized actions
+actually complete.
 
 ## Risks and Considerations
 
-- Trusted publishing fails in ways that read as ordinary auth errors. A missing
-  `id-token: write`, an npm CLI too old, or a misconfigured publisher on
-  npmjs.com surfaces as a 401 or 403 at the publish step, after the suite has
-  already passed. Confirm the npmjs.com publisher configuration names this
-  repository and `release.yml` exactly before tagging.
-- The ancestry guard is reachability-only. `main` is unprotected, so anyone
-  with write access can push directly to it and tag the result; the guard
-  catches stray tags, not unreviewed code. Enabling branch protection is the
-  fix if review enforcement is wanted, and is out of scope here.
-- `scripts/*.mjs` is outside the ESLint globs; the subprocess test is the check.
-- Publishing is irreversible. An unintended version reaching npm cannot be
-  withdrawn cleanly, only deprecated. The version guard catches tag and
-  `package.json` disagreement, but nothing prevents a human from bumping to the
-  wrong version deliberately and tagging it.
-- The manual 0.1.0 bootstrap is a human dependency that the workflow does not
-  cover, and the workflow is untested until 0.1.1. Treat the first automated
-  release as an experiment worth watching rather than a routine push.
-- The bootstrap ordering is the sharpest edge here. Landing `release.yml` before
-  the manual 0.1.0 publish, or pushing `v0.1.0` afterwards, sends a duplicate
-  version at the registry. Making the repository public is irreversible in
-  practice: the history becomes visible to everyone, so review it before
-  flipping the switch.
-- A hand-maintained changelog is only as good as its upkeep. The failure mode is
-  a release blocked at notes extraction, which is noisy and recoverable, rather
-  than a release with silently wrong notes.
+- Public visibility exposes reachable history; tip cleanup is insufficient.
+- npm publication and public-history disclosure are effectively irreversible.
+- Current unprotected-main trust permits writer-controlled releases unless
+  captain chooses protections.
+- Trusted-publisher mismatch commonly appears as 401/403 after checks pass.
+- npm name or ownership can change before execution; recheck immediately.
+- Concurrent same-tag runs are serialized, but failed external state must still
+  satisfy exact rerun verification.
+- Hand-maintained changelog can be wrong; extractor prevents empty notes, not
+  inaccurate prose.

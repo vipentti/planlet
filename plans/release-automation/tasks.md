@@ -1,11 +1,23 @@
 # Tasks: Release Automation
 
-- [ ] T1 Add `CHANGELOG.md` in Keep a Changelog 1.1.0 format with an empty `Unreleased` section, a 0.1.0 section backfilled from the completed planlets, and compare links
-- [ ] T2 Add `CHANGELOG.md` to the `files` allowlist and the Prettier globs in `package.json`, and to the expected-files array in `tests/integration/packaging.test.ts`
-- [ ] T3 Add `scripts/changelog.mjs` printing one version's release notes, exiting non-zero for a missing or empty section and for `Unreleased`
-- [ ] T4 Add a test spawning `scripts/changelog.mjs` against a fixture changelog for a known version, an absent version, an empty section, and `Unreleased`
-- [ ] T5 Add `.github/workflows/release.yml` triggered by `v*` tags: full suite, tag-versus-version guard, ancestry guard against `origin/main`, notes extraction, trusted-publishing `npm publish`, and `gh release create` — rerun-safe when a version is already on npm
-- [ ] T6 Document the release procedure and changelog upkeep in `AGENTS.md` and `README.md`
-- [ ] T7 Make the GitHub repository `vipentti/planlet` public, a prerequisite for npm provenance and trusted publishing
-- [ ] T8 After T7 and before `release.yml` reaches the default branch, publish 0.1.0 manually, tag `v0.1.0`, create its GitHub release by hand, and configure the npmjs.com trusted publisher naming this repository and `release.yml`; only then land this planlet's changes on `main` and confirm CI is green there
-- [ ] T9 On `main`, prepare 0.1.1 — bump `package.json` and the lockfile, promote `Unreleased` to a dated `0.1.1` section with compare links, commit and push so the commit is reachable from `origin/main` — then tag that exact commit, push `v0.1.1`, and record the workflow conclusion, npm provenance status, and rendered release body in the plan's Verification results
+- [x] T1 Add `CHANGELOG.md` in Keep a Changelog 1.1.0 format with empty `Unreleased`, a 0.1.0 section reviewed against full repository history and user-visible behavior, and compare links
+- [x] T2 Package and format `CHANGELOG.md`, and assert its presence in the packed-artifact integration test
+- [x] T3 Add dependency-free `scripts/changelog.mjs` extracting one dated version and rejecting missing, empty, or `Unreleased` sections
+- [x] T4 Add focused subprocess coverage against a fixture for known, absent, empty, and `Unreleased` sections
+- [x] T5 Add pinned-action tag workflow with exact release checks, version/main-ancestry guards, trusted provenance publication, changelog notes, verified npm reruns, release create/update behavior, and same-tag concurrency serialization
+- [x] T6 Document changelog upkeep, exact release procedure, publication gates, and source-checkout fallback in `AGENTS.md` and `README.md`
+- [ ] T7 Review full history, refs intended for exposure, commit metadata, and stored objects for secrets/credentials, licensing or third-party provenance, and personal data; resolve every finding and record captain sign-off before visibility changes
+- [ ] T8 From captain-approved clean `origin/main` SHA, reproduce and record exact 0.1.0 package metadata, file list, integrity, shasum, and SHA-256; inspect the tarball; then publish only that approved `.tgz` and verify registry state
+- [ ] T9 On `main`, prepare 0.1.1, push its reviewed commit before its exact tag, run the automated release, and record workflow conclusion, npm provenance/integrity, installed package, rendered release body, and safe rerun evidence
+- [ ] T10 Immediately before bootstrap, verify npm name availability, authenticated account and 2FA/auth readiness, intended owner identity, package ownership state, and public-access capability; record failure/retry response without claiming the name
+- [ ] T11 After T7 and captain public-release authorization, make `vipentti/planlet` public and independently verify anonymous repository and full-history visibility
+- [ ] T12 After verified T8 publication and while release workflow is absent from default branch, create `v0.1.0` at exact approved SHA and create matching GitHub release from reviewed changelog notes
+- [ ] T13 After bootstrap package ownership is verified, configure npm trusted publisher exactly for `vipentti/planlet` and `.github/workflows/release.yml`, then independently verify configuration
+- [ ] T14 Land release automation on `main` only after T12-T13, verify fast-forward source and green main CI, and confirm no release tag was pushed during merge
+- [ ] T15 Record captain release-governance choice: accept current solo-maintainer/unprotected-main trust, or implement and verify chosen branch protection, tag controls, and/or protected GitHub environment before T13
+- [ ] T16 Record captain bootstrap authorization naming npm owner/account, exact clean source SHA, reviewed artifact identity/hash, and permission for irreversible 0.1.0 publication
+
+## Evidence
+
+- 2026-07-31 inspection confirmed `origin/feature/p5` at `04d965649a9eb7e769b43bc6ac9bee76cc3e3511`, directly atop `origin/main` at `82a7de038c7e6dba9f1fe0f5f0262e05b8e7f7d5`; branch originally contained planning files only.
+- 2026-07-31 external read-only checks reconfirmed private repository, unprotected `main`, CI as sole workflow, no GitHub releases or tags, and npm `planlet` lookup returning 404.

@@ -1,0 +1,104 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+  id-token: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Verify tag and main ancestry
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(node -p "require('./package.json').version")
+          test "$GITHUB_REF_NAME" = "v$version" || {
+            echo "Tag $GITHUB_REF_NAME does not match package version $version" >&2
+            exit 1
+          }
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main || {
+            echo "$GITHUB_SHA is not reachable from origin/main" >&2
+            exit 1
+          }
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+      - run: npm run format:check
+      - run: npm run lint
+      - run: npm run type-check
+      - run: npm run build
+      - run: npm test
+      - run: git diff --check
+      - name: Verify generated skills
+        run: |
+          node dist/planlet.mjs update --tools all
+          git diff --exit-code
+      - name: Verify clean tagged source
+        run: test -z "$(git status --porcelain)"
+      - name: Extract release notes
+        run: node scripts/changelog.mjs "$VERSION" > "$RUNNER_TEMP/release-notes.md"
+      - name: Build reviewed package artifact
+        shell: bash
+        run: |
+          npm install --global npm@11.5.1
+          npm pack --json --pack-destination "$RUNNER_TEMP" > "$RUNNER_TEMP/pack.json"
+          node --input-type=module <<'NODE'
+          import { readFileSync, appendFileSync } from "node:fs";
+          const report = JSON.parse(readFileSync(`${process.env.RUNNER_TEMP}/pack.json`));
+          const packed = Array.isArray(report) ? report[0] : Object.values(report)[0];
+          appendFileSync(process.env.GITHUB_ENV, `PACKAGE_TARBALL=${process.env.RUNNER_TEMP}/${packed.filename}\n`);
+          NODE
+      - name: Publish or verify existing package
+        shell: bash
+        run: |
+          set -euo pipefail
+          spec="planlet@$VERSION"
+          if npm view "$spec" --json > "$RUNNER_TEMP/registry.json" 2> "$RUNNER_TEMP/npm-view.err"; then
+            node --input-type=module <<'NODE'
+          import assert from "node:assert/strict";
+          import { readFileSync } from "node:fs";
+          const registry = JSON.parse(readFileSync(`${process.env.RUNNER_TEMP}/registry.json`));
+          const report = JSON.parse(readFileSync(`${process.env.RUNNER_TEMP}/pack.json`));
+          const packed = Array.isArray(report) ? report[0] : Object.values(report)[0];
+          const source = JSON.parse(readFileSync("package.json"));
+          assert.equal(registry.name, source.name, "registry package name mismatch");
+          assert.equal(registry.version, source.version, "registry version mismatch");
+          assert.equal(registry.repository?.url, source.repository.url, "registry repository mismatch");
+          if (registry.gitHead !== undefined) {
+            assert.equal(registry.gitHead, process.env.GITHUB_SHA, "registry source SHA mismatch");
+          }
+          assert.equal(registry.dist?.integrity, packed.integrity, "registry artifact integrity mismatch");
+          console.log(`Verified existing ${registry.name}@${registry.version}: ${registry.dist.tarball}`);
+          NODE
+          elif grep -q "E404" "$RUNNER_TEMP/npm-view.err"; then
+            npm publish "$PACKAGE_TARBALL" --access public --provenance
+          else
+            cat "$RUNNER_TEMP/npm-view.err" >&2
+            exit 1
+          fi
+      - name: Create or update GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release edit "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/release-notes.md"
+          else
+            gh release create "$GITHUB_REF_NAME" --verify-tag --title "$GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/release-notes.md"
+          fi

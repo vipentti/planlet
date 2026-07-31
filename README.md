@@ -32,6 +32,15 @@ Or run it without installing:
 npx planlet <command>
 ```
 
+Until the first npm publication is complete, npm commands may return 404. Use a
+source checkout instead:
+
+```sh
+npm ci
+npm run build
+node dist/planlet.mjs <command>
+```
+
 ## Set up a repository
 
 ```sh
@@ -136,6 +145,23 @@ the question and installs every destination, so agents and CI are unaffected.
 | `npm run build`         | Build the executable at `dist/planlet.mjs`      |
 | `npm run skills:update` | Build CLI and refresh installed Planlet skills  |
 | `npm test`              | Run TypeScript tests with `tsx` and `node:test` |
+
+## Changelog and releases
+
+Record user-visible changes under `Unreleased` in
+[`CHANGELOG.md`](https://github.com/vipentti/planlet/blob/main/CHANGELOG.md).
+At release time, rename those entries to a dated version section and restore an
+empty `Unreleased` section. `node scripts/changelog.mjs <version>` prints exact
+GitHub release notes and rejects missing or empty versions.
+
+Releases are deliberate tag operations, not automatic version bumps. Before any
+public action, follow public-history, npm ownership, governance, and exact
+artifact gates in
+[`plans/release-automation/plan.md`](https://github.com/vipentti/planlet/blob/main/plans/release-automation/plan.md). After
+bootstrap and trusted-publisher configuration, release from a clean commit on
+`main` by updating package and lockfile versions plus changelog, pushing commit,
+then pushing matching `v<version>` tag. Workflow reruns verify an existing npm
+artifact before creating or updating GitHub release.
 
 ## Links
 

@@ -36,6 +36,7 @@
   "files": [
     "dist",
     "skills",
+    "CHANGELOG.md",
     "README.md"
   ],
   "engines": {
@@ -44,8 +45,8 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "skills:update": "npm run build && node dist/planlet.mjs update --tools all",
-    "format": "prettier --write package.json tsconfig.json eslint.config.js \".github/workflows/*.yml\" README.md \"src/**/*.ts\" \"tests/**/*.ts\" \"scripts/**/*.mjs\"",
-    "format:check": "prettier --check package.json tsconfig.json eslint.config.js \".github/workflows/*.yml\" README.md \"src/**/*.ts\" \"tests/**/*.ts\" \"scripts/**/*.mjs\"",
+    "format": "prettier --write package.json tsconfig.json eslint.config.js \".github/workflows/*.yml\" README.md CHANGELOG.md \"src/**/*.ts\" \"tests/**/*.ts\" \"scripts/**/*.mjs\"",
+    "format:check": "prettier --check package.json tsconfig.json eslint.config.js \".github/workflows/*.yml\" README.md CHANGELOG.md \"src/**/*.ts\" \"tests/**/*.ts\" \"scripts/**/*.mjs\"",
     "lint": "eslint \"src/**/*.ts\" \"tests/**/*.ts\"",
     "test": "tsx --test \"tests/**/*.test.ts\"",
     "type-check": "tsc --noEmit",
