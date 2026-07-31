@@ -6,7 +6,7 @@
   "files": {
     "planlet-complete/agents/openai.yaml": "f4df999b41feddee85f906ceddf84ced3a5ef60daf7467e7a37bec158cb8451e",
     "planlet-complete/references/completion-guidance.md": "41761a01f6591f7d637dbbcd90fef44edfa38e7f82e2c3e7adaecb9e214b1eb2",
-    "planlet-complete/SKILL.md": "265cac2c2380c9c3b02d47e3a4f96098eb3ed491bda894b486e119b284baaaf5",
+    "planlet-complete/SKILL.md": "0b181fad35918190d0f5c26f15a571a6fe66a411d7fc12fe6d29707595b8a999",
     "planlet-implement/agents/openai.yaml": "1c7b5ff9f8b87f34c4395a3cf72d26e1d3878577dae0701488312910260be1c2",
     "planlet-implement/references/implementation-guidance.md": "6872036ccf3f8165c31753773edfea39355faaedbff76c01137d2a9c7ba762d4",
     "planlet-implement/SKILL.md": "55a1c337dbbddb3fab8d02b79f440140cd00b80ffe49129a011f0ded8c03f452",

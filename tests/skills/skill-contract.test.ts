@@ -120,13 +120,12 @@ test("skills keep evidence exceptional, write-once, and separate from the audit"
   );
   assert.match(completeCorpus, /absence is normal and never blocks completion/);
   assert.match(completeCorpus, /lifecycle audit/);
+  assert.match(completeCorpus, /never uncheck an already-checked task/);
 
-  // the superseded universal-anchor expectation must not return.
+  // the superseded universal-anchor expectation must not return, in any wording.
   for (const corpus of [planCorpus, implementCorpus, completeCorpus]) {
-    assert.doesNotMatch(
-      corpus,
-      /anchored by immutable commit SHAs and full stable URLs/,
-    );
+    assert.doesNotMatch(corpus, /immutable commit SHA/i);
+    assert.doesNotMatch(corpus, /full stable URLs?/i);
   }
 
   // no skill invents an evidence command or schema.
