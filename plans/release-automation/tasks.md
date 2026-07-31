@@ -6,7 +6,7 @@
 - [x] T4 Add focused subprocess coverage against a fixture for known, absent, empty, and `Unreleased` sections
 - [x] T5 Add pinned-action tag workflow with exact release checks, version/main-ancestry guards, trusted provenance publication, changelog notes, verified npm reruns, release create/update behavior, and same-tag concurrency serialization
 - [x] T6 Document changelog upkeep, exact release procedure, publication gates, and source-checkout fallback in `AGENTS.md` and `README.md`
-- [ ] T7 Review full history, refs intended for exposure, commit metadata, and stored objects for secrets/credentials, licensing or third-party provenance, and personal data; resolve every finding and record captain sign-off before visibility changes
+- [x] T7 Review full history, refs intended for exposure, commit metadata, and stored objects for secrets/credentials, licensing or third-party provenance, and personal data; resolve every finding and record captain sign-off before visibility changes
 - [ ] T8 From captain-approved clean `origin/main` SHA, reproduce and record exact 0.1.0 package metadata, file list, integrity, shasum, and SHA-256; inspect the tarball; then publish only that approved `.tgz` and verify registry state
 - [ ] T9 On `main`, prepare 0.1.1, push its reviewed commit before its exact tag, run the automated release, and record workflow conclusion, npm provenance/integrity, installed package, rendered release body, and safe rerun evidence
 - [ ] T10 Immediately before bootstrap, verify npm name availability, authenticated account and 2FA/auth readiness, intended owner identity, package ownership state, and public-access capability; record failure/retry response without claiming the name

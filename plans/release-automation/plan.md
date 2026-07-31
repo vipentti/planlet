@@ -196,6 +196,112 @@ Private implementation completed 2026-07-31 on
 External 0.1.0 and 0.1.1 evidence stays absent until authorized actions
 actually complete.
 
+### T7 public-history audit and clean migration
+
+Audit started 2026-07-31 after fetching every remote head without tags. Remote
+has no tags. Intended audit set was all 67 unique commits and 650 reachable
+objects from root `a7a9f59982645f4184b7aedcf2ddb76a258bea82` through these tips:
+
+- local candidate `50067da85f8219c50f89b65ee68924fe81d3fc44`;
+- `origin/main` and `origin/chore/public-release-cleanup` at
+  `82a7de038c7e6dba9f1fe0f5f0262e05b8e7f7d5`;
+- `origin/feature/improve-skills` at
+  `bd6a3f9b3eaad62f7660b8639f20a1372df5fa2e`;
+- `origin/feature/improvements` at
+  `74384826a58517d42225b95c972079f7d674d601`;
+- `origin/feature/p5` at `04d965649a9eb7e769b43bc6ac9bee76cc3e3511`;
+- `origin/feature/phase4` at
+  `8f277a29dac28ff0690b943ff440f5b8742b9f65`.
+
+Commands used:
+
+```sh
+git fetch --no-tags origin '+refs/heads/*:refs/remotes/origin/*'
+git ls-remote --tags origin
+git for-each-ref --format='%(refname) %(objectname)' refs/heads refs/remotes
+git rev-list --all | sort -u
+git rev-list --objects --all
+git log --all --format='%H%x09%an%x09%ae%x09%cn%x09%ce'
+command -v gitleaks trufflehog detect-secrets git-secrets
+```
+
+Metadata review found all 67 commits expose author and committer address
+`villem.penttinen@gmail.com`; captain approved this address for public history.
+No installed secret scanner was available.
+
+Audit then inventoried every historical path, deletion/rename, reachable blob
+size, and binary diff using:
+
+```sh
+git log --all --pretty=format: --name-only | sort -u
+git log --all --diff-filter=DR --summary
+git rev-list --objects --all |
+  git cat-file --batch-check='%(objecttype) %(objectname) %(objectsize) %(rest)'
+git log --all --pretty=format: --numstat
+```
+
+No binary diff was present; largest reachable blob was 60,466 bytes. Inventory
+confirmed a third-party `git-commit` skill copied from
+`github/awesome-copilot` in commit
+`4dea750efbb497abe0211e510562faa28047743f`, then deleted only from tip by
+`82a7de038c7e6dba9f1fe0f5f0262e05b8e7f7d5`. Historical
+`skills-lock.json` records that provenance. Historical copied file declares
+`license: MIT` but does not include upstream MIT copyright and permission
+notice. Read-only GitHub API inspection confirmed upstream license is MIT with
+`Copyright GitHub, Inc.` and requires that notice in copies or substantial
+portions. Current root license contains only Planlet's copyright, so it does not
+supply upstream notice.
+
+Captain then directed audit to continue without history rewrite. Remaining
+checks covered all 265 unique reachable blobs and every historical diff:
+
+```sh
+git rev-list --objects --all
+# Python stdlib loop: git cat-file -t/-p each unique reachable blob
+git grep -I -n -E '<personal-data and license patterns>' $(git rev-list --all)
+git log --all -p --format= -- .
+git fsck --full --no-dangling
+# Node stdlib inspection of every package-lock.json packages entry
+```
+
+Blob and diff patterns covered private-key headers, AWS/GitHub/npm/Slack/Stripe/
+Google token forms, JWTs, credential-bearing URLs, assigned password/secret/
+API-key/access-token values, email addresses, home-directory paths, and
+copyright/license/provenance markers. Results: zero credential-pattern hits,
+zero binary blobs, no personal paths beyond approved commit email, and clean
+Git object integrity. Current lockfile has 120 dependency entries, no missing
+license metadata, and only Apache-2.0, BSD-2-Clause, BSD-3-Clause,
+BlueOak-1.0.0, ISC, and MIT identifiers. Historical `.claude/settings.json`
+contains only `worktree.baseRef: head`.
+
+Limitations: no dedicated secret scanner was installed, so audit used explicit
+Git-native/stdlib pattern checks rather than entropy or provider validation;
+GitHub API license/source checks were read-only. Unreachable objects and refs
+outside fetched remote heads are not exposed and were out of scope.
+
+Captain subsequently authorized a clean private-repository migration rather
+than publication of copied material. Migration pruned newly empty introduction
+commit and reconstructed 46 descendants with same author/committer identities,
+dates, meaningful messages, and linear topology. Every replacement was signed
+with approved key `3F4BE75912B388D9883870C66EE5A7F076E9B2E5` and verified good. Removal commit
+message was narrowed to unrelated cleanup; historical copied-skill line was
+removed from `AGENTS.md`. Generic `git-commit` names used only as unrelated
+installer-test fixtures remain and were classified separately from copied
+material and provenance.
+
+New private `vipentti/planlet` main is
+`4381349f99582716117fa5e15183625fb0d6114e`. Fresh mirror verified 64 linear,
+validly signed commits; no tags, PR refs, target paths, target blob IDs,
+`github/awesome-copilot`, `skills-lock.json`, or copied-skill prose. Clean main
+tree equals pre-migration main tree. Clean feature candidate replays reviewed
+planning and implementation trees plus this evidence on same scrubbed base.
+Original repository remains private at `vipentti/planlet-private-archive`.
+
+**Conclusion: passed.** Credential, personal-data, binary/large-object,
+third-party provenance, licensing, metadata, path, blob, diff, ref, and
+signature checks passed for intended clean refs. Captain accepted commit email
+and approved historical removal. T7 is complete before any public visibility.
+
 ## Risks and Considerations
 
 - Public visibility exposes reachable history; tip cleanup is insufficient.
