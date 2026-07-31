@@ -390,7 +390,7 @@ Describe the chosen technical approach and important decisions.
 
 ## Verification
 
-Describe relevant automated and manual checks.
+Describe the relevant automated and manual checks as strategy only (see §10.4).
 
 ## Risks and Considerations
 
