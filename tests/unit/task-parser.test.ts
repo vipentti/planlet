@@ -66,6 +66,23 @@ test("free-form bracketed notes are not mistaken for malformed tasks", () => {
   ]);
 });
 
+test("a free-form verification evidence section stays opaque to the parser", () => {
+  const parsed = parseTasks(
+    "# Tasks\n\n- [x] T1 Shipped outcome\n- [ ] T2 External release\n\n" +
+      "## Verification Evidence\n\n" +
+      "- 2026-07-31 local @ `abc1234`: format, lint, type-check, build, tests passed.\n" +
+      "- 2026-07-31 external: no release run exists; T2 remains unchecked.\n" +
+      "  See <https://example.test/actions/runs/1>.\n",
+  );
+
+  assert.deepEqual(parsed.tasks, [
+    { id: "T1", description: "Shipped outcome", completed: true },
+    { id: "T2", description: "External release", completed: false },
+  ]);
+  assert.equal(parsed.completedCount, 1);
+  assert.deepEqual(parsed.remainingTaskIds, ["T2"]);
+});
+
 test("duplicate task IDs produce the dedicated structured error", () => {
   assert.throws(
     () => parseTasks("# Tasks\n\n- [ ] T2 First\n- [x] T2 Second"),

@@ -86,6 +86,45 @@ test("skills use supported rooted CLI forms and operation-specific fallback", ()
   }
 });
 
+test("skills separate strategy, concise evidence, and lifecycle audit", () => {
+  const planCorpus = filesUnder("skills/planlet-plan").map(read).join("\n");
+  const implementCorpus = filesUnder("skills/planlet-implement")
+    .map(read)
+    .join("\n");
+  const completeCorpus = filesUnder("skills/planlet-complete")
+    .map(read)
+    .join("\n");
+
+  // plan.md owns static strategy only.
+  assert.match(planCorpus, /`Verification` is strategy, not a run log/);
+  assert.match(planCorpus, /never paste logs/);
+  assert.match(
+    planCorpus,
+    /immutable commit SHAs and full stable URLs rather than moving branch, `latest`, or dashboard references/,
+  );
+
+  // implement maintains the optional concise note in tasks.md before completion.
+  assert.match(
+    implementCorpus,
+    /## Verification Evidence` section in `tasks\.md`/,
+  );
+  assert.match(implementCorpus, /Before completion/);
+  assert.match(implementCorpus, /Never paste logs or secrets/);
+  assert.match(implementCorpus, /leave failed or unverified tasks unchecked/);
+
+  // complete inspects without parsing, rerunning, or creating proof.
+  assert.match(
+    completeCorpus,
+    /do not parse its semantics, rerun its checks, create missing proof/,
+  );
+  assert.match(completeCorpus, /lifecycle audit/);
+
+  // no skill invents an evidence command or schema.
+  for (const corpus of [planCorpus, implementCorpus, completeCorpus]) {
+    assert.doesNotMatch(corpus, /planlet (?:evidence|verify)\b/);
+  }
+});
+
 test("plan and task templates satisfy Phase 2 file contract", () => {
   const plan = read("skills/planlet-plan/assets/plan-template.md");
   const tasks = read("skills/planlet-plan/assets/tasks-template.md");

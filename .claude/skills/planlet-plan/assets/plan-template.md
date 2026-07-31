@@ -19,7 +19,9 @@ Explain the chosen implementation direction and key decisions.
 
 ## Verification
 
-Describe the automated and manual checks that establish success.
+Describe the automated and manual checks that establish success: stable commands or check
+categories, expected outcomes, external gates, and known limitations. Strategy only; record
+material results as concise lines in `tasks.md` and never paste logs.
 
 ## Risks and Considerations
 

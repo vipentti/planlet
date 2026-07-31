@@ -27,6 +27,8 @@ Before checking a task, confirm that its whole described outcome exists and that
 
 If a check fails, distinguish an in-scope defect from unrelated existing failure. Fix in-scope defects when the plan authorizes it. Otherwise report the failing command and evidence, leave the task unchecked, and continue only when independent remaining work is safe.
 
+Durable evidence lives in `tasks.md`, not `plan.md`. Keep the optional `## Verification Evidence` section short: one line per material outcome, naming the check and its pass, fail, partial, or unavailable result, the affected task IDs when useful, the implementation commit SHA, and a full stable URL for external state. Preserve a failed or unavailable line when it explains partial progress instead of rewriting it green. Write evidence before running completion, because task mutation is refused once a completion record exists. Logs, secrets, stack traces, and large listings stay in the terminal, CI, or provider systems that already retain them.
+
 Treat CLI exit status and stable structured error code as authoritative. Do not parse field order, whitespace, or incidental TOON layout. After a successful task check, inspect canonical task and status results instead of inferring progress from command prose.
 
 For newly discovered necessary work, determine whether it is a small implementation detail or a material scope addition. Incorporate small details transparently. For material additions, propose consistent edits to both `plan.md` and `tasks.md`; preserve existing IDs and allocate new IDs above the highest current numeric suffix.

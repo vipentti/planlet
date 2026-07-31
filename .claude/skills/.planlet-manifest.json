@@ -5,15 +5,15 @@
   ],
   "files": {
     "planlet-complete/agents/openai.yaml": "f4df999b41feddee85f906ceddf84ced3a5ef60daf7467e7a37bec158cb8451e",
-    "planlet-complete/references/completion-guidance.md": "2d1f835bb76f99d9f79421eece1791dd08e1ef89d3f2304e75c92180a232328a",
-    "planlet-complete/SKILL.md": "bf82306e99d1441f8b15a3c2b79980e516894135d6dc0e1a18677f6188e43d1a",
+    "planlet-complete/references/completion-guidance.md": "e0f16d79a25478659e0863134cad2ce02cf02f80058c1c4f0be44f5d7fa52da6",
+    "planlet-complete/SKILL.md": "9c82a1d1bd5c209ce06f483cc03ccfb2f0ad3fd79579823f26c3f25d6cd212d0",
     "planlet-implement/agents/openai.yaml": "1c7b5ff9f8b87f34c4395a3cf72d26e1d3878577dae0701488312910260be1c2",
-    "planlet-implement/references/implementation-guidance.md": "29089b2961fb0eb5d9f5dc684f55ac5bda5474c2fbc2aa5f927f1279861101a8",
-    "planlet-implement/SKILL.md": "7e852d79d744fb9b0d74354b6dada3ef0a96d3e0628f2a48e788b4d5284874cf",
+    "planlet-implement/references/implementation-guidance.md": "9c631546c984d948c5dbf86cec387d4093a59d515e06d1b22d60b2f3b8191162",
+    "planlet-implement/SKILL.md": "572e39bd8a8ca1e6a7813de311d346f769f339518fdb18b488928024f8c59b9f",
     "planlet-plan/agents/openai.yaml": "44d12699d652017b382f38bfba32820f1f47cf4766e99b978d8949186e697fc3",
-    "planlet-plan/assets/plan-template.md": "dbf17e23bdd15e8399369a2575977dcd7f602726e406dc5a13e06d17ed5b0628",
+    "planlet-plan/assets/plan-template.md": "66b8779f54f1d2e046f035b6c7685d1a95ac14197217a669435df1ecbe89f567",
     "planlet-plan/assets/tasks-template.md": "122e9b8f66d2a3eb3a7d61b09870bb6a3fea8af2fbef3c5a84dc207e71914e32",
-    "planlet-plan/references/planning-guidance.md": "4e5960db2ad199778c5dad406944086f1febbef59712854b0465e88d2797cc9b",
-    "planlet-plan/SKILL.md": "90332e982493c0e4a7ad960b38ebb0de89f97261ee47c3a30b1c44bba1025d60"
+    "planlet-plan/references/planning-guidance.md": "90d7b20edc43f4704856a294588e4299565d31a4920beca8e270e163c6beadb1",
+    "planlet-plan/SKILL.md": "7014084604f307f25e799df27ffc1c847e2b4cfb2a47c9d82d112a5029dc3fdf"
   }
 }

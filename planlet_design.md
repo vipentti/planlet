@@ -431,6 +431,15 @@ Rules:
 - The MVP need not support nested task trees or dependency syntax.
 - Free-form Markdown notes are allowed outside recognized task lines.
 
+Verification records are divided as follows, without any new file, command, or schema:
+
+- `plan.md` `Verification` is the static strategy: stable commands or check categories, expected outcomes, external gates, and known limitations.
+- Task checkboxes are the progress gate. A failed, partial, or unavailable check leaves its task unchecked.
+- An optional `## Verification Evidence` section in `tasks.md` records material, failed, partial, unavailable, or externally governed outcomes as short lines, written before completion. Logs stay in the terminal or provider systems; anchor external evidence with immutable commit SHAs and full stable URLs, never moving branch, `latest`, or dashboard references.
+- The CLI-generated `## Completion` record is a lifecycle audit only, and never carries verification results.
+
+The evidence section is free-form Markdown that the CLI treats as opaque. It is optional; routine planlets may rely on task state alone.
+
 A completion record must be appended by the CLI before moving the planlet:
 
 ```markdown
@@ -673,7 +682,7 @@ Responsibilities:
 - Explore the user's request and repository.
 - Ask only questions that materially affect the plan.
 - Compare options and recommend an approach.
-- Define scope, exclusions, acceptance criteria, and verification.
+- Define scope, exclusions, acceptance criteria, and the verification strategy, without recording run results.
 - Propose the slug.
 - Obtain confirmation before writing.
 - After confirmation, scaffold new files with `planlet create` (per §8.1 step 10) rather than writing them directly, then replace the stubs with the agreed content; revise existing files consistently.
@@ -696,6 +705,7 @@ Responsibilities:
 - Implement tasks and verify outcomes.
 - Check off tasks incrementally through the CLI.
 - Surface plan drift and blockers.
+- Maintain the optional concise `## Verification Evidence` section in `tasks.md` when verification is material, failed, partial, unavailable, or externally governed.
 - Report completion readiness.
 
 Must not:
@@ -713,10 +723,11 @@ Responsibilities:
 - Complete normally when all tasks are checked.
 - Warn and ask for confirmation when work remains.
 - Supply an override reason only after explicit confirmation.
-- Report the archived path and completion mode.
+- Report the archived path and completion mode, plus whether an optional evidence section was present.
 
 Must not:
 
+- Parse, rerun, or create verification evidence; the completion record is a lifecycle audit.
 - Bypass the CLI's completion check silently.
 - treat missing or malformed task files as completed.
 - complete several planlets at once in the core workflow.

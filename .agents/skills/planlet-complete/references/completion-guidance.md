@@ -47,6 +47,8 @@ For an approved override, use:
 
 Refuse a pre-existing or conflicting completion record rather than silently rewriting history.
 
+The completion record is a lifecycle audit: it proves when and under what authority the planlet moved, never that verification passed. Leave any optional `## Verification Evidence` section untouched and archive it as written; do not merge it into the completion record, extend the record with verification fields, or add evidence during completion.
+
 ## Move safely
 
 Before writing, verify that `plans/completed/` is inside the repository and that neither a logical-slug conflict nor `plans/completed/<YYYY-MM-DD>-<slug>` exists. Write the completion record safely and re-read it. Recheck the destination immediately before a plain filesystem move of the entire source directory.
