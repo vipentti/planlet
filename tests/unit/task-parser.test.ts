@@ -70,9 +70,10 @@ test("a free-form verification evidence section stays opaque to the parser", () 
   const parsed = parseTasks(
     "# Tasks\n\n- [x] T1 Shipped outcome\n- [ ] T2 External release\n\n" +
       "## Verification Evidence\n\n" +
-      "- 2026-07-31 local @ `abc1234`: format, lint, type-check, build, tests passed.\n" +
-      "- 2026-07-31 external: no release run exists; T2 remains unchecked.\n" +
-      "  See <https://example.test/actions/runs/1>.\n",
+      "- Published `example-tool` 1.4.0; the registry refuses republishing that version.\n" +
+      "  Tarball digest `sha512-3Qk1n0Ye`.\n" +
+      "- The signing key rotation could not be verified: the previous key was already\n" +
+      "  destroyed, so T2 remains unchecked.\n",
   );
 
   assert.deepEqual(parsed.tasks, [

@@ -115,8 +115,8 @@ test("incomplete override records remaining IDs and the approved reason", () => 
 
 const EVIDENCE =
   "\n## Verification Evidence\n\n" +
-  "- 2026-07-31 local @ `abc1234`: repository checks passed.\n" +
-  "- 2026-07-31 external: no release run exists.\n";
+  "- Published `example-tool` 1.4.0; that version can never be republished.\n" +
+  "  Tarball digest `sha512-3Qk1n0Ye`.\n";
 
 for (const [mode, tasksMarkdown, options] of [
   ["normal", `${COMPLETE_TASKS}${EVIDENCE}`, {}],
