@@ -83,6 +83,21 @@ test("a free-form verification evidence section stays opaque to the parser", () 
   assert.deepEqual(parsed.remainingTaskIds, ["T2"]);
 });
 
+test("a checkbox-shaped evidence bullet is rejected as a malformed task line", () => {
+  assert.throws(
+    () =>
+      parseTasks(
+        "# Tasks\n\n- [ ] T1 External release\n\n" +
+          "## Verification Evidence\n\n" +
+          "- [ ] CI release gate pending\n",
+      ),
+    (error) =>
+      error instanceof PlanletError &&
+      error.code === "invalid_plan" &&
+      error.details.line === 7,
+  );
+});
+
 test("duplicate task IDs produce the dedicated structured error", () => {
   assert.throws(
     () => parseTasks("# Tasks\n\n- [ ] T2 First\n- [x] T2 Second"),

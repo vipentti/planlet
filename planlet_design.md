@@ -438,7 +438,7 @@ Verification records are divided as follows, without any new file, command, or s
 - An optional `## Verification Evidence` section in `tasks.md` records material, failed, partial, unavailable, or externally governed outcomes as short lines, written before completion. Logs stay in the terminal or provider systems; anchor external evidence with immutable commit SHAs and full stable URLs, never moving branch, `latest`, or dashboard references.
 - The CLI-generated `## Completion` record is a lifecycle audit only, and never carries verification results.
 
-The evidence section is free-form Markdown that the CLI treats as opaque. It is optional; routine planlets may rely on task state alone.
+The evidence section is free-form Markdown that the CLI treats as opaque. It is optional; routine planlets may rely on task state alone. Because the parser reads every top-level `- [ ]` or `- [x]` bullet as a task line, evidence lines must be plain bullets or prose; a checkbox-shaped evidence line is rejected as a malformed or duplicate task.
 
 A completion record must be appended by the CLI before moving the planlet:
 
