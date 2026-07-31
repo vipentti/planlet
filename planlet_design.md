@@ -390,7 +390,7 @@ Describe the chosen technical approach and important decisions.
 
 ## Verification
 
-Describe relevant automated and manual checks.
+Describe the relevant automated and manual checks as strategy only (see §10.4).
 
 ## Risks and Considerations
 
@@ -430,6 +430,15 @@ Rules:
 - Verification should appear as explicit tasks when it is significant.
 - The MVP need not support nested task trees or dependency syntax.
 - Free-form Markdown notes are allowed outside recognized task lines.
+
+Verification records are divided as follows, without any new file, command, or schema:
+
+- `plan.md` `Verification` is the static strategy: stable commands or check categories, expected outcomes, external gates, and known limitations.
+- Task checkboxes are the progress gate. A failed, partial, or unavailable check leaves its task unchecked.
+- An optional `## Verification Evidence` section in `tasks.md` is exceptional and absent by default. It exists only for a durable fact that ordinary Git, test, pull-request, or CI history cannot reconstruct adequately: external, irreversible, non-reproducible, failed, partial, or unavailable verification whose residual result affects a later decision. Routine tests, lint, type-checking, builds, review, and branch-protected CI stay in the systems that already hold them.
+- The CLI-generated `## Completion` record is a lifecycle audit only, and never carries verification results.
+
+The evidence section is free-form Markdown that the CLI treats as opaque, and it never gates completion. Whatever it records must be effectively write-once: no current-head or self-referential commit SHA, moving branch, `latest`, or dashboard link, bare run identifier, transient log, or local path — nothing that needs editing as later commits land. Prefer a final artifact version or digest, or a stable external record, and only when material; a provider record that already binds to its source needs no duplicate SHA. Because the parser reads every top-level `- [ ]` or `- [x]` bullet as a task line, evidence lines must be plain bullets or prose; a checkbox-shaped evidence line is rejected as a malformed or duplicate task.
 
 A completion record must be appended by the CLI before moving the planlet:
 
@@ -673,7 +682,7 @@ Responsibilities:
 - Explore the user's request and repository.
 - Ask only questions that materially affect the plan.
 - Compare options and recommend an approach.
-- Define scope, exclusions, acceptance criteria, and verification.
+- Define scope, exclusions, acceptance criteria, and the verification strategy, without recording run results.
 - Propose the slug.
 - Obtain confirmation before writing.
 - After confirmation, scaffold new files with `planlet create` (per §8.1 step 10) rather than writing them directly, then replace the stubs with the agreed content; revise existing files consistently.
@@ -696,6 +705,7 @@ Responsibilities:
 - Implement tasks and verify outcomes.
 - Check off tasks incrementally through the CLI.
 - Surface plan drift and blockers.
+- Record an exceptional, write-once `## Verification Evidence` note in `tasks.md` only when ordinary history cannot reconstruct a durable verification fact.
 - Report completion readiness.
 
 Must not:
@@ -713,10 +723,11 @@ Responsibilities:
 - Complete normally when all tasks are checked.
 - Warn and ask for confirmation when work remains.
 - Supply an override reason only after explicit confirmation.
-- Report the archived path and completion mode.
+- Report the archived path and completion mode, plus whether an optional evidence section was present.
 
 Must not:
 
+- Parse, rerun, or create verification evidence; the completion record is a lifecycle audit.
 - Bypass the CLI's completion check silently.
 - treat missing or malformed task files as completed.
 - complete several planlets at once in the core workflow.

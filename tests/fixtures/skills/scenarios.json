@@ -39,7 +39,10 @@
     "skill": "planlet-implement",
     "prompt": "Verification fails after code edit.",
     "expectedDecision": "leave-task-unchecked",
-    "evidence": ["leave failed or unverified tasks unchecked"]
+    "evidence": [
+      "leave failed or unverified tasks unchecked",
+      "Preserve a failed or unavailable line when it explains partial progress"
+    ]
   },
   {
     "id": "multiple-targets",

@@ -50,6 +50,7 @@ When a described CLI capability is not yet present, do not invent commands or re
 - Keep `plan.md` and `tasks.md` consistent when scope or approach changes.
 - Preserve stable IDs for unchanged tasks. Assign new IDs above the highest existing numeric suffix.
 - Mark a task complete only after its implementation and relevant verification succeed.
+- Keep `plan.md` verification as strategy. Do not copy routine command results into planlet files; the repository suite, review, and CI already hold them. Record a `## Verification Evidence` note only for a durable fact ordinary history cannot reconstruct, and keep every recorded line write-once: no current-head SHA, moving link, bare run ID, log, or local path.
 - Keep task checkboxes current as work progresses, not only at the end.
 - Treat material plan drift, new scope, failed verification, and ambiguous tasks explicitly; do not guess through them.
 - Do not complete a planlet with unchecked tasks without explicit user confirmation and a recorded reason.

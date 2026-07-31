@@ -66,6 +66,39 @@ test("free-form bracketed notes are not mistaken for malformed tasks", () => {
   ]);
 });
 
+test("a free-form verification evidence section stays opaque to the parser", () => {
+  const parsed = parseTasks(
+    "# Tasks\n\n- [x] T1 Shipped outcome\n- [ ] T2 External release\n\n" +
+      "## Verification Evidence\n\n" +
+      "- Published `example-tool` 1.4.0; the registry refuses republishing that version.\n" +
+      "  Tarball digest `sha512-3Qk1n0Ye`.\n" +
+      "- The signing key rotation could not be verified: the previous key was already\n" +
+      "  destroyed, so T2 remains unchecked.\n",
+  );
+
+  assert.deepEqual(parsed.tasks, [
+    { id: "T1", description: "Shipped outcome", completed: true },
+    { id: "T2", description: "External release", completed: false },
+  ]);
+  assert.equal(parsed.completedCount, 1);
+  assert.deepEqual(parsed.remainingTaskIds, ["T2"]);
+});
+
+test("a checkbox-shaped evidence bullet is rejected as a malformed task line", () => {
+  assert.throws(
+    () =>
+      parseTasks(
+        "# Tasks\n\n- [ ] T1 External release\n\n" +
+          "## Verification Evidence\n\n" +
+          "- [ ] CI release gate pending\n",
+      ),
+    (error) =>
+      error instanceof PlanletError &&
+      error.code === "invalid_plan" &&
+      error.details.line === 7,
+  );
+});
+
 test("duplicate task IDs produce the dedicated structured error", () => {
   assert.throws(
     () => parseTasks("# Tasks\n\n- [ ] T2 First\n- [x] T2 Second"),

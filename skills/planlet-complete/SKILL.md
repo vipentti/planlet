@@ -20,6 +20,8 @@ Complete one planlet without hiding unfinished or invalid work.
 
 Inspect all recognized tasks. For normal completion, require every task to be checked. If tasks remain, show their IDs and descriptions, warn that completion will archive unfinished work, and obtain explicit confirmation plus a non-empty reason. Do not reuse general implementation approval as an override.
 
+Report any optional `## Verification Evidence` section in `tasks.md` as inspected evidence. Treat it as opaque prose: do not parse its semantics, rerun its checks, create missing proof, or accept it in place of a checked task. Most planlets have no such section, and its absence is normal and never blocks completion; never add one during completion. If the plan's strategy names a mandatory external gate that no evidence records, report that gap as an observation only: never uncheck an already-checked task, never edit `tasks.md` for it, and never let it block or downgrade completion.
+
 Read [completion guidance](references/completion-guidance.md) before performing manual completion. Refuse unsafe paths, invalid slugs, an existing completed planlet with the same logical slug, or an occupied destination. Do not change the source when any check fails.
 
 For zero remaining tasks, run `planlet --root "<repository-root>" complete <slug>`. For explicitly approved incomplete completion, run `planlet --root "<repository-root>" complete <slug> --allow-incomplete --reason "<reason>"`. Never attempt normal completion first merely to prompt user; `tasks --remaining` supplies decision evidence.
@@ -32,4 +34,4 @@ Do not implement remaining tasks, complete several planlets, overwrite a destina
 
 ## Finish
 
-Report logical slug, recorded UTC timestamp, mode, remaining task IDs for override, final archive path, and post-completion validation result. If operation stopped, report exact source state and blocking code. When fallback was used, repeat each unavailable deterministic operation.
+Report logical slug, recorded UTC timestamp, mode, remaining task IDs for override, final archive path, whether an optional evidence section was present, and post-completion validation result. If operation stopped, report exact source state and blocking code. When fallback was used, repeat each unavailable deterministic operation.

@@ -113,6 +113,56 @@ test("incomplete override records remaining IDs and the approved reason", () => 
   });
 });
 
+const EVIDENCE =
+  "\n## Verification Evidence\n\n" +
+  "- Published `example-tool` 1.4.0; that version can never be republished.\n" +
+  "  Tarball digest `sha512-3Qk1n0Ye`.\n";
+
+for (const [mode, tasksMarkdown, options] of [
+  ["normal", `${COMPLETE_TASKS}${EVIDENCE}`, {}],
+  [
+    "incomplete override",
+    `${INCOMPLETE_TASKS}${EVIDENCE}`,
+    { allowIncomplete: true, reason: "External gates pending" },
+  ],
+] as const) {
+  test(`a free-form evidence section survives ${mode} completion unchanged`, () => {
+    withRepository(tasksMarkdown, (root) => {
+      const result = completePlanlet({
+        repositoryRoot: root,
+        slug: "fixture-plan",
+        ...options,
+        dependencies: { now: () => new Date("2026-07-31T10:00:00Z") },
+      });
+      const archived = readFileSync(
+        join(result.destination, "tasks.md"),
+        "utf8",
+      );
+
+      assert.equal(result.mode, mode);
+      assert.ok(archived.startsWith(tasksMarkdown));
+      assert.match(archived, /## Verification Evidence\n/);
+      assert.match(
+        archived,
+        /## Verification Evidence[\s\S]*## Completion\n\n- Completed at: /,
+      );
+
+      const validated = validatePlanletStructure({
+        directoryName: result.archiveName,
+        location: "completed",
+        planMarkdown: readFileSync(join(result.destination, "plan.md"), "utf8"),
+        tasksMarkdown: archived,
+      });
+      assert.equal(validated.state, "completed");
+      assert.deepEqual(
+        validated.tasks.map((task) => task.id),
+        mode === "normal" ? ["T1", "T2"] : ["T1", "T2", "T4"],
+      );
+      assert.equal(validated.completion?.mode, mode);
+    });
+  });
+}
+
 test("normal completion refuses an empty draft without changing the source", () => {
   const draftTasks = "# Tasks: Fixture Plan\n";
   withRepository(draftTasks, (root, source) => {

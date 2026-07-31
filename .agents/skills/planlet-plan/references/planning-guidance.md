@@ -14,6 +14,10 @@ Keep implementation details at the level needed for a reliable handoff. Name imp
 
 Acceptance criteria describe observable outcomes. Prefer statements that a reviewer or check can prove. Include negative behavior and compatibility expectations when they matter.
 
+`Verification` is strategy, not a run log. Name the stable repository commands or check categories, their expected outcomes, when they run, external gates a reviewer must see, and known limitations. Do not record execution results in `plan.md` and never paste logs. A later strategy or scope change is a plan revision, not an execution journal entry.
+
+Committed verification evidence is exceptional and absent by default. Tests, lint, type-checking, builds, ordinary pull-request review, and branch-protected CI already hold their own results, so a plan must not ask an implementer to copy them into `tasks.md`. Expect a `## Verification Evidence` note only when the plan foresees a durable fact that ordinary Git, test, pull-request, or CI history cannot reconstruct adequately: external, irreversible, non-reproducible, failed, partial, or unavailable verification whose residual result affects a later decision. Say so explicitly in `Verification` when the plan expects one, and stay silent otherwise.
+
 ## Build stable tasks
 
 Map the chosen approach and acceptance criteria to an ordered checklist of verifiable outcomes:

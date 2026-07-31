@@ -24,8 +24,9 @@ Implement one persisted planlet and keep its progress truthful.
 4. Verify each task with checks proportionate to its outcome. Mark it complete immediately after both implementation and relevant verification succeed; leave failed or unverified tasks unchecked.
 5. Run `planlet --root "<repository-root>" task check <slug> <task-id>` only after whole task outcome and relevant verification succeed. Treat successful `changed: false` as idempotent completion, not failure.
 6. Immediately run `planlet --root "<repository-root>" tasks <slug>` and `planlet --root "<repository-root>" status <slug>` after each check. Confirm expected task and counts before continuing.
-7. If task-check is unavailable, update only exact recognized line in `tasks.md`, preserve ID and text, normalize marker to `[x]`, write safely, and re-read file. Never fall back around a supported command's `task_not_found`, `invalid_plan`, `unsafe_path`, or `write_conflict` error.
-8. If new work materially expands scope, update plan and tasks only with user approval or pause for direction.
+7. Leave `tasks.md` without a `## Verification Evidence` section by default. Add one, before completion, only for a durable fact that ordinary Git, test, pull-request, or CI history cannot reconstruct adequately: external, irreversible, non-reproducible, failed, partial, or unavailable verification whose residual result affects a later decision. Never copy routine test, lint, type-check, build, review, or CI results into it. Read [implementation guidance](references/implementation-guidance.md) before writing one, because every recorded line must be write-once and must survive later commits unchanged.
+8. If task-check is unavailable, update only exact recognized line in `tasks.md`, preserve ID and text, normalize marker to `[x]`, write safely, and re-read file. Never fall back around a supported command's `task_not_found`, `invalid_plan`, `unsafe_path`, or `write_conflict` error.
+9. If new work materially expands scope, update plan and tasks only with user approval or pause for direction.
 
 Pause rather than guess when the plan is materially stale, a task has multiple consequential interpretations, verification fails without an in-scope remedy, required authority is missing, or safe progress would expand scope. Record evidence and keep affected tasks unchecked.
 
