@@ -161,8 +161,9 @@ Record user-visible changes under `Unreleased` in
 At release time, move those entries into a dated version section and restore an
 empty `Unreleased` section. Ordinary CI runs
 `node scripts/assert-changelog-release-ready.mjs`, which requires exactly one
-`[Unreleased]` section and at most one structurally valid dated `[0.1.0]`
-section. Explicit release verification uses
+`[Unreleased]` section and at most one structurally valid dated section for the
+current `package.json` version. Malformed headings that mention `Unreleased` or
+that version still count toward those limits. Explicit release verification uses
 `node scripts/assert-changelog-release-ready.mjs --release-date YYYY-MM-DD`.
 
 ### Manual 0.1.0 bootstrap (before release automation)

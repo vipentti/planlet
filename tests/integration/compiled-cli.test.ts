@@ -345,6 +345,18 @@ test("production entry emits internal_error without stack by default", async () 
   });
   assert.match(debug.stderr, /boom \/tmp\/secret/);
 
+  const { PlanletError } = await import("../../src/errors/planlet-error.js");
+  const passthrough = renderUnexpectedError(
+    new PlanletError("plan_not_found", "Planlet not found: missing", {
+      details: { slug: "missing" },
+      next: "planlet list",
+    }),
+    {},
+  );
+  assert.match(passthrough.stderr, /plan_not_found/);
+  assert.match(passthrough.stderr, /planlet list/);
+  assert.doesNotMatch(passthrough.stderr, /internal_error/);
+
   const chunks: string[] = [];
   const code = await runProductionEntry(
     async () => {
@@ -358,4 +370,17 @@ test("production entry emits internal_error without stack by default", async () 
   assert.equal(code, EXIT_CODES.operational);
   assert.match(chunks.join(""), /internal_error/);
   assert.doesNotMatch(chunks.join(""), /\/home\/secret/);
+});
+
+test("leftover harness recovery directories emit top-level next on stderr", () => {
+  withRepository((root) => {
+    const skills = join(root, ".agents", "skills");
+    mkdirSync(join(skills, ".planlet-bak-dead"), { recursive: true });
+    const result = runCli(["init", "--tools", "agents"], root);
+    assert.equal(result.exitCode, EXIT_CODES.filesystemConflict);
+    assert.match(result.stderr, /write_conflict/);
+    assert.match(result.stderr, /Inspect leftover/);
+    assert.match(result.stderr, /leftoverPaths|planlet-bak-dead/);
+    assert.doesNotMatch(result.stdout, /Inspect leftover/);
+  });
 });

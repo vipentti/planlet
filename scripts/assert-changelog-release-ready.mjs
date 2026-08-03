@@ -1,20 +1,22 @@
 #!/usr/bin/env node
 
 /**
- * Changelog readiness checks for the unpublished 0.1.0 bootstrap.
+ * Changelog readiness checks for the current package version.
  *
  * Ordinary CI (no flags):
- *   Requires exactly one [Unreleased] section and at most one [0.1.0]
- *   section. A dated [0.1.0] must use a real calendar date and non-empty
- *   notes. Does not require --release-date.
+ *   Requires exactly one [Unreleased] section and at most one [pkg.version]
+ *   section. A dated version section must use a real calendar date and
+ *   non-empty notes. Malformed headings that mention Unreleased or the
+ *   package version still count toward cardinality.
  *
  * Release verification:
  *   node scripts/assert-changelog-release-ready.mjs --release-date YYYY-MM-DD
- *   Requires package 0.1.0, exactly one Unreleased, exactly one dated [0.1.0]
- *   matching --release-date with non-empty notes.
+ *   Requires exactly one Unreleased, exactly one correctly dated package
+ *   version section matching --release-date with non-empty notes.
  */
 
 import { readFileSync } from "node:fs";
+import { parseArgs } from "node:util";
 import { fileURLToPath } from "node:url";
 
 function fail(message) {
@@ -33,41 +35,55 @@ function hasNonEmptyNotes(sectionBody) {
   return /^\s*-\s+\S/m.test(sectionBody);
 }
 
-function assertValidDatedNotes(dated, sectionBody, label) {
+function assertValidDatedNotes(dated, sectionBody, label, version) {
   if (dated === undefined) {
-    fail(`${label} [0.1.0] header must include - YYYY-MM-DD.`);
+    fail(`${label} [${version}] header must include - YYYY-MM-DD.`);
   }
   if (!isValidCalendarDate(dated)) {
-    fail(`${label} 0.1.0 date is not a valid calendar day: ${dated}`);
+    fail(`${label} ${version} date is not a valid calendar day: ${dated}`);
   }
   if (!hasNonEmptyNotes(sectionBody)) {
-    fail(`${label} 0.1.0 section is missing release notes.`);
+    fail(`${label} ${version} section is missing release notes.`);
   }
 }
 
-function parseArgs(argv) {
-  let releaseDate;
-  const positionals = [];
-  for (let index = 0; index < argv.length; index += 1) {
-    const arg = argv[index];
-    if (arg === "--release-date") {
-      const value = argv[index + 1];
-      if (value === undefined || value.startsWith("-")) {
-        fail("Missing value for --release-date");
-      }
-      releaseDate = value;
-      index += 1;
-      continue;
-    }
-    if (arg.startsWith("--")) {
-      fail(`Unknown option: ${arg}`);
-    }
-    positionals.push(arg);
-  }
-  return { releaseDate, positionals };
+const releaseDateFlags = process.argv
+  .slice(2)
+  .filter((arg) => arg === "--release-date");
+if (releaseDateFlags.length > 1) {
+  fail("Duplicate --release-date option.");
 }
 
-const { releaseDate, positionals } = parseArgs(process.argv.slice(2));
+let values;
+let positionals;
+try {
+  ({ values, positionals } = parseArgs({
+    args: process.argv.slice(2),
+    options: {
+      "release-date": { type: "string" },
+      help: { type: "boolean", short: "h" },
+    },
+    allowPositionals: true,
+    strict: true,
+  }));
+} catch (error) {
+  fail(error instanceof Error ? error.message : String(error));
+}
+
+if (values.help) {
+  console.log(
+    `Usage: assert-changelog-release-ready.mjs [--release-date YYYY-MM-DD] [CHANGELOG.md] [package.json]`,
+  );
+  process.exit(0);
+}
+
+if (positionals.length > 2) {
+  fail(
+    "Too many positional arguments (expected at most CHANGELOG.md and package.json).",
+  );
+}
+
+const releaseDate = values["release-date"];
 const changelogPath =
   positionals[0] ?? fileURLToPath(new URL("../CHANGELOG.md", import.meta.url));
 const packagePath =
@@ -75,20 +91,15 @@ const packagePath =
 
 const pkg = JSON.parse(readFileSync(packagePath, "utf8"));
 const changelog = readFileSync(changelogPath, "utf8");
+const version = pkg.version;
 
-if (pkg.version !== "0.1.0") {
-  if (releaseDate !== undefined) {
-    fail(
-      `Release verification requires package version 0.1.0 (found ${pkg.version}).`,
-    );
-  }
-  process.exit(0);
+if (typeof version !== "string" || version.length === 0) {
+  fail("package.json version must be a non-empty string.");
 }
 
-const unreleasedMatches = [...changelog.matchAll(/^## \[Unreleased\]\s*$/gm)];
-const versionMatches = [
-  ...changelog.matchAll(/^## \[0\.1\.0\](?: - (\d{4}-\d{2}-\d{2}))?\s*$/gm),
-];
+const headings = [...changelog.matchAll(/^## \[([^\]]+)\](.*)$/gm)];
+const unreleased = headings.filter((match) => match[1] === "Unreleased");
+const versionSections = headings.filter((match) => match[1] === version);
 
 function sectionBodyAfter(headerMatch) {
   const start = headerMatch.index + headerMatch[0].length;
@@ -97,47 +108,67 @@ function sectionBodyAfter(headerMatch) {
   return (next === -1 ? rest : rest.slice(0, next)).trim();
 }
 
-if (unreleasedMatches.length !== 1) {
+function parseVersionSuffix(suffix) {
+  if (suffix === undefined || suffix.trim() === "") {
+    return { kind: "bare" };
+  }
+  const dated = /^ - (\d{4}-\d{2}-\d{2})$/.exec(suffix);
+  if (dated) {
+    return { kind: "dated", date: dated[1] };
+  }
+  return { kind: "malformed", raw: suffix };
+}
+
+if (unreleased.length !== 1) {
   fail(
-    `Changelog must contain exactly one [Unreleased] section (found ${unreleasedMatches.length}).`,
+    `Changelog must contain exactly one [Unreleased] section (found ${unreleased.length}).`,
+  );
+}
+const unreleasedSuffix = parseVersionSuffix(unreleased[0][2]);
+if (unreleasedSuffix.kind !== "bare") {
+  fail(
+    "Changelog [Unreleased] header must not include a date or trailing text.",
   );
 }
 
-if (releaseDate === undefined) {
-  if (versionMatches.length > 1) {
+const maxVersionSections = releaseDate === undefined ? 1 : 1;
+if (versionSections.length > maxVersionSections) {
+  fail(
+    `Changelog must contain at most one [${version}] section (found ${versionSections.length}).`,
+  );
+}
+
+if (releaseDate !== undefined) {
+  if (!isValidCalendarDate(releaseDate)) {
+    fail(`--release-date is not a valid calendar day: ${releaseDate}`);
+  }
+  if (versionSections.length !== 1) {
     fail(
-      `Changelog must contain at most one [0.1.0] section (found ${versionMatches.length}).`,
+      `Changelog must contain exactly one [${version}] section for release verification (found ${versionSections.length}).`,
     );
   }
-  if (versionMatches.length === 0) {
-    process.exit(0);
-  }
-  const sectionMatch = versionMatches[0];
-  assertValidDatedNotes(
-    sectionMatch[1],
-    sectionBodyAfter(sectionMatch),
-    "Changelog",
-  );
+}
+
+if (versionSections.length === 0) {
   process.exit(0);
 }
 
-if (!isValidCalendarDate(releaseDate)) {
-  fail(`--release-date is not a valid calendar day: ${releaseDate}`);
+const sectionMatch = versionSections[0];
+const suffix = parseVersionSuffix(sectionMatch[2]);
+if (suffix.kind === "malformed") {
+  fail(`Changelog [${version}] header has an invalid suffix:${suffix.raw}`);
 }
-if (versionMatches.length !== 1) {
-  fail(
-    `Changelog must contain exactly one [0.1.0] section for release verification (found ${versionMatches.length}).`,
-  );
-}
-const sectionMatch = versionMatches[0];
+const dated = suffix.kind === "dated" ? suffix.date : undefined;
 assertValidDatedNotes(
-  sectionMatch[1],
+  dated,
   sectionBodyAfter(sectionMatch),
   "Changelog",
+  version,
 );
-if (sectionMatch[1] !== releaseDate) {
+
+if (releaseDate !== undefined && dated !== releaseDate) {
   fail(
-    `--release-date ${releaseDate} does not match changelog 0.1.0 date ${sectionMatch[1]}.`,
+    `--release-date ${releaseDate} does not match changelog ${version} date ${dated}.`,
   );
 }
 

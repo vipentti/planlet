@@ -249,18 +249,14 @@ function sameRecord(
   );
 }
 
-function listRecoveryLeftovers(destinationPath: string): string[] {
-  if (pathKind(destinationPath) !== "directory") return [];
-  return readdirSync(destinationPath)
+function assertNoLeftoverRecoveryDirs(destinationPath: string): void {
+  if (pathKind(destinationPath) !== "directory") return;
+  const leftovers = readdirSync(destinationPath)
     .filter(
       (name) =>
         name.startsWith(".planlet-bak-") || name.startsWith(".planlet-tx-"),
     )
     .sort();
-}
-
-function assertNoLeftoverRecoveryDirs(destinationPath: string): void {
-  const leftovers = listRecoveryLeftovers(destinationPath);
   if (leftovers.length === 0) return;
   const leftoverPaths = leftovers.map((name) => join(destinationPath, name));
   throw new PlanletError(
@@ -270,8 +266,8 @@ function assertNoLeftoverRecoveryDirs(destinationPath: string): void {
       details: {
         destination: destinationPath,
         leftoverPaths,
-        next: `Inspect leftover .planlet-bak-* / .planlet-tx-* under ${destinationPath}, restore managed files from backup if needed, remove the leftover dirs only when no install is running, then retry`,
       },
+      next: `Inspect leftover .planlet-bak-* / .planlet-tx-* under ${destinationPath}, restore managed files from backup if needed, remove the leftover dirs only when no install is running, then retry`,
     },
   );
 }
@@ -356,13 +352,12 @@ function asWriteConflict(error: unknown, destination: string): PlanletError {
 
 export type InstallTxStep =
   | "afterStage"
-  | "afterBackup"
   | "afterReplaceSkill"
   | "afterRemoveObsolete"
   | "beforeManifest"
   | "afterCommit"
   | "duringRollback"
-  | "afterCleanup";
+  | "beforeCleanup";
 
 export interface InstallTransactionHooks {
   readonly onStep?: (step: InstallTxStep, detail?: string) => void;
@@ -388,10 +383,6 @@ function writeSkillTree(
 function moveManagedEntry(source: string, destination: string): void {
   mkdirSync(dirname(destination), { recursive: true });
   renameSync(source, destination);
-}
-
-function bestEffortRemove(path: string): void {
-  rmSync(path, { recursive: true, force: true });
 }
 
 /**
@@ -468,7 +459,6 @@ function publishDestinationTransaction(
       if (pathKind(live) === "missing") continue;
       moveManagedEntry(live, join(backupRoot, skill));
       mutated.add(skill);
-      emit("afterBackup", skill);
     }
     if (obsoleteSkills.length > 0) {
       emit("afterRemoveObsolete");
@@ -509,16 +499,16 @@ function publishDestinationTransaction(
               stagePath: stageRoot,
               mutated: [...mutated],
               manifestPublished: false,
-              next: `Do not delete ${backupRoot} until managed files are restored from it. Leftover recovery dirs: ${backupRoot}, ${stageRoot}. Restore manually if needed, remove leftover .planlet-bak-* / .planlet-tx-* only when no install is running, then retry`,
             },
+            next: `Do not delete ${backupRoot} until managed files are restored from it. Leftover recovery dirs: ${backupRoot}, ${stageRoot}. Restore manually if needed, remove leftover .planlet-bak-* / .planlet-tx-* only when no install is running, then retry`,
             cause: new AggregateError([error, rollbackError]),
           },
         );
       }
     }
     try {
-      bestEffortRemove(stageRoot);
-      if (!committed) bestEffortRemove(backupRoot);
+      rmSync(stageRoot, { recursive: true, force: true });
+      if (!committed) rmSync(backupRoot, { recursive: true, force: true });
     } catch (cleanupError) {
       throw new PlanletError(
         "write_conflict",
@@ -537,14 +527,13 @@ function publishDestinationTransaction(
   }
 
   try {
-    emit("afterCleanup");
-    bestEffortRemove(stageRoot);
-    bestEffortRemove(backupRoot);
-  } catch (cleanupError) {
+    emit("beforeCleanup");
+    rmSync(stageRoot, { recursive: true, force: true });
+    rmSync(backupRoot, { recursive: true, force: true });
+  } catch {
     warnings.push(
       `Harness installation published but cleanup was incomplete at ${destinationPath}`,
     );
-    void cleanupError;
   }
 
   return warnings;
@@ -592,7 +581,7 @@ export function installHarnessSkills(options: {
     };
   }
 
-  return withHarnessInstallLock(
+  const { value, releaseWarning } = withHarnessInstallLock(
     options.repositoryRoot,
     () => {
       const source = options.source ?? enumerateCanonicalSkills();
@@ -646,6 +635,19 @@ export function installHarnessSkills(options: {
     },
     options.lock,
   );
+
+  if (releaseWarning === undefined) return value;
+  return {
+    ...value,
+    destinations: value.destinations.map((destination, index) =>
+      index === 0
+        ? {
+            ...destination,
+            warnings: [...(destination.warnings ?? []), releaseWarning],
+          }
+        : destination,
+    ),
+  };
 }
 
 function applyInspectionWithSource(

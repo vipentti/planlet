@@ -14,3 +14,8 @@
 - [x] T12 Serialize harness installs with repository-wide __harness__ lock; nested install write_conflict tests
 - [x] T13 Ordinary changelog requires exactly one Unreleased; shared date/notes helper; ponytail cuts
 - [x] T14 Full verification, commit, push launch-readiness, refresh PR #6 description
+- [x] T15 Move harness leftover/rollback recovery next to PlanletError top-level; cover structured, rendered, and compiled CLI
+- [x] T16 Route harness cleanup warnings through handler diagnostics on stderr; strip from stdout data
+- [x] T17 Changelog discover≠validate for Unreleased/pkg.version; reject malformed headings and bad argv
+- [x] T18 Collapse lock to one file; release-failure warnings; validate-before-lock; ponytail micro-cuts
+- [x] T19 Full verification and commit remaining PR #6 review fixes (no push)

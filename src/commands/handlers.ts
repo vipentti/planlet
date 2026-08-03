@@ -2,6 +2,7 @@ import { createPlanlet } from "../core/creation.js";
 import {
   detectHarnesses,
   installHarnessSkills,
+  type InstallationSummary,
 } from "../core/harness-installer.js";
 import type { PlanletState, PlanSummary } from "../core/models.js";
 import { completePlanlet } from "../core/planlet-completion.js";
@@ -73,6 +74,29 @@ function warningsFromSummaries(summaries: readonly PlanSummary[]): string[] {
   return summaries.flatMap((summary) => summary.warnings);
 }
 
+/** Strip destination warnings from stdout data; return them for stderr diagnostics. */
+export function harnessInstallOutcome(result: InstallationSummary): {
+  readonly data: InstallationSummary;
+  readonly warnings: readonly string[];
+} {
+  const warnings = result.destinations.flatMap(
+    (destination) => destination.warnings ?? [],
+  );
+  return {
+    data: {
+      ...result,
+      destinations: result.destinations.map((destination) => ({
+        destination: destination.destination,
+        tools: destination.tools,
+        state: destination.state,
+        changed: destination.changed,
+        files: destination.files,
+      })),
+    },
+    warnings,
+  };
+}
+
 function compactSummary(
   summary: PlanSummary,
 ): Readonly<Record<string, unknown>> {
@@ -111,26 +135,30 @@ export function handleHarnessInit(
   arguments_: HarnessCommandArguments,
   context: ExecutionContext,
 ): ExitCode {
-  return emit(context, () => ({
-    data: installHarnessSkills({
-      repositoryRoot: context.root,
-      operation: "init",
-      ...arguments_,
-    }),
-  }));
+  return emit(context, () =>
+    harnessInstallOutcome(
+      installHarnessSkills({
+        repositoryRoot: context.root,
+        operation: "init",
+        ...arguments_,
+      }),
+    ),
+  );
 }
 
 export function handleHarnessUpdate(
   arguments_: HarnessCommandArguments,
   context: ExecutionContext,
 ): ExitCode {
-  return emit(context, () => ({
-    data: installHarnessSkills({
-      repositoryRoot: context.root,
-      operation: "update",
-      ...arguments_,
-    }),
-  }));
+  return emit(context, () =>
+    harnessInstallOutcome(
+      installHarnessSkills({
+        repositoryRoot: context.root,
+        operation: "update",
+        ...arguments_,
+      }),
+    ),
+  );
 }
 
 export function handleTools(context: ExecutionContext): ExitCode {

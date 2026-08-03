@@ -137,12 +137,16 @@ function asWriteConflict(
 export function updateTask(options: UpdateTaskOptions): UpdateTaskResult {
   const slug = assertValidSlug(options.slug);
   const dependencies = { ...DEFAULT_DEPENDENCIES, ...options.dependencies };
-  return withPlanletLock(
+  const plansPath = resolveSafePath(options.repositoryRoot, "plans");
+  assertActivePlanletDirectory(resolve(plansPath, slug), slug);
+  const { value, releaseWarning } = withPlanletLock(
     options.repositoryRoot,
     slug,
     () => updateTaskLocked(options, dependencies, slug),
     dependencies.lock,
   );
+  if (releaseWarning === undefined) return value;
+  return { ...value, warnings: [...value.warnings, releaseWarning] };
 }
 
 function updateTaskLocked(

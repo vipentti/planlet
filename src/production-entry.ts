@@ -1,11 +1,6 @@
 import { main } from "./cli.js";
-import { PlanletError } from "./errors/planlet-error.js";
+import { isPlanletError, PlanletError } from "./errors/planlet-error.js";
 import { renderToonError } from "./output/toon.js";
-
-function debugEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
-  const value = env.PLANLET_DEBUG?.trim().toLowerCase();
-  return value === "1" || value === "true" || value === "yes";
-}
 
 export function renderUnexpectedError(
   error: unknown,
@@ -14,7 +9,11 @@ export function renderUnexpectedError(
   readonly stderr: string;
   readonly exitCode: number;
 } {
-  const debug = debugEnabled(env);
+  if (isPlanletError(error)) {
+    return renderToonError(error.toStructuredError());
+  }
+
+  const debug = env.PLANLET_DEBUG === "1";
   const details: Record<string, unknown> = {};
   if (debug) {
     if (error instanceof Error) {
@@ -34,9 +33,7 @@ export function renderUnexpectedError(
         details,
         ...(debug
           ? {}
-          : {
-              next: "Re-run with PLANLET_DEBUG=1 for diagnostic details",
-            }),
+          : { next: "Re-run with PLANLET_DEBUG=1 for diagnostic details" }),
       },
     ).toStructuredError(),
   );
@@ -53,13 +50,7 @@ export async function runProductionEntry(
     return await runMain();
   } catch (error) {
     const rendered = renderUnexpectedError(error, env);
-    if (rendered.stderr.length > 0) {
-      writeStderr(
-        rendered.stderr.endsWith("\n")
-          ? rendered.stderr
-          : `${rendered.stderr}\n`,
-      );
-    }
+    writeStderr(rendered.stderr);
     return rendered.exitCode;
   }
 }

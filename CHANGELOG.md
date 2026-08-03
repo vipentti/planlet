@@ -16,6 +16,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and thi
 - Structured `internal_error` production boundary with optional `PLANLET_DEBUG` diagnostics.
 - Changelog release-date gate (`scripts/assert-changelog-release-ready.mjs`) for unpublished 0.1.0.
 
+### Fixed
+
+- Harness recovery guidance uses top-level `next` so CLI stderr shows it.
+- Harness post-commit cleanup warnings emit as stderr diagnostics.
+- Changelog gate counts malformed `Unreleased` / version headings before validating syntax.
+- Successful lock operations warn when lock release fails instead of silent success.
+
 ### Changed
 
 - Interactive `planlet init` prompts for skill destinations while non-interactive use remains deterministic.

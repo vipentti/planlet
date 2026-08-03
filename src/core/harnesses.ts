@@ -81,13 +81,6 @@ export function normalizeToolSelector(
   );
 }
 
-function registryOrder(ids: Iterable<HarnessToolId>): HarnessToolId[] {
-  const wanted = new Set(ids);
-  return HARNESS_ADAPTERS.map((adapter) => adapter.id).filter((id) =>
-    wanted.has(id),
-  );
-}
-
 /**
  * Resolves selected harness destinations. Unselected adapters that safely
  * resolve to the same physical path are included as aliases; unselected
@@ -98,43 +91,46 @@ export function resolveHarnessDestinations(
   selectedToolIds: readonly HarnessToolId[],
 ): readonly HarnessDestination[] {
   const selected = new Set<HarnessToolId>(selectedToolIds);
-  const aliasesByPath = new Map<string, Set<HarnessToolId>>();
-  const relativeByPath = new Map<string, string>();
-
-  for (const adapter of HARNESS_ADAPTERS) {
-    if (!selected.has(adapter.id)) continue;
-    const path = resolveSafePath(repositoryRoot, adapter.skillDirectory);
-    const aliases = aliasesByPath.get(path);
-    if (aliases === undefined) {
-      aliasesByPath.set(path, new Set([adapter.id]));
-      relativeByPath.set(path, adapter.skillDirectory);
-    } else {
-      aliases.add(adapter.id);
+  const resolved = HARNESS_ADAPTERS.map((adapter) => {
+    if (selected.has(adapter.id)) {
+      return {
+        adapter,
+        path: resolveSafePath(repositoryRoot, adapter.skillDirectory),
+      };
     }
-  }
-
-  for (const adapter of HARNESS_ADAPTERS) {
-    if (selected.has(adapter.id)) continue;
-    let path: string;
     try {
-      path = resolveSafePath(repositoryRoot, adapter.skillDirectory);
+      return {
+        adapter,
+        path: resolveSafePath(repositoryRoot, adapter.skillDirectory),
+      };
     } catch {
-      continue;
+      return { adapter, path: undefined };
     }
-    const aliases = aliasesByPath.get(path);
-    if (aliases !== undefined) {
-      aliases.add(adapter.id);
+  });
+
+  const byPath = new Map<string, HarnessAdapter[]>();
+  for (const entry of resolved) {
+    if (entry.path === undefined) continue;
+    const bucket = byPath.get(entry.path);
+    if (bucket === undefined) {
+      byPath.set(entry.path, [entry.adapter]);
+    } else {
+      bucket.push(entry.adapter);
     }
   }
 
-  return [...aliasesByPath]
-    .map(([path, aliases]) => ({
-      path,
-      relativePath: relativeByPath.get(path)!,
-      selectedToolIds: registryOrder(
-        [...aliases].filter((id) => selected.has(id)),
-      ),
-      aliases: registryOrder(aliases),
-    }))
-    .filter((destination) => destination.selectedToolIds.length > 0);
+  return [...byPath]
+    .map(([path, adapters]) => {
+      const selectedAdapters = adapters.filter((adapter) =>
+        selected.has(adapter.id),
+      );
+      if (selectedAdapters.length === 0) return undefined;
+      return {
+        path,
+        relativePath: selectedAdapters[0]!.skillDirectory,
+        selectedToolIds: selectedAdapters.map((adapter) => adapter.id),
+        aliases: adapters.map((adapter) => adapter.id),
+      };
+    })
+    .filter((destination) => destination !== undefined);
 }

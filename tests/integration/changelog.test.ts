@@ -259,3 +259,73 @@ test("explicit release mode enforces dated non-empty matching 0.1.0 notes", () =
     0,
   );
 });
+
+test("malformed Unreleased and version headings still count and fail", () => {
+  const cases = [
+    "# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - TBD\n\n### Added\n\n- Item\n",
+    "# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - 2026-8-10\n\n### Added\n\n- Item\n",
+    "# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - 2026-08-10 extra\n\n### Added\n\n- Item\n",
+    "# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - 2026-08-10\n\n### Added\n\n- Item\n\n## [0.1.0] - TBD\n\n### Added\n\n- Dup\n",
+    "# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - TBD\n\n### Added\n\n- A\n\n## [0.1.0] - TBD\n\n### Added\n\n- B\n",
+    "# Changelog\n\n## [Unreleased]\n\n## [Unreleased] - 2026-08-10\n\n### Added\n\n- Item\n",
+  ];
+  for (const changelog of cases) {
+    const files = fixture(changelog);
+    assert.notEqual(
+      assertReady([files.changelogPath, files.packagePath]).status,
+      0,
+      changelog,
+    );
+    assert.notEqual(
+      assertReady([
+        "--release-date",
+        "2026-08-10",
+        files.changelogPath,
+        files.packagePath,
+      ]).status,
+      0,
+      changelog,
+    );
+  }
+
+  const good = fixture(
+    "# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - 2026-08-10\n\n### Added\n\n- Item\n",
+  );
+  assert.equal(assertReady([good.changelogPath, good.packagePath]).status, 0);
+  assert.equal(
+    assertReady([
+      "--release-date",
+      "2026-08-10",
+      good.changelogPath,
+      good.packagePath,
+    ]).status,
+    0,
+  );
+
+  const dupFlag = fixture(
+    "# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - 2026-08-10\n\n### Added\n\n- Item\n",
+  );
+  assert.notEqual(
+    assertReady([
+      "--release-date",
+      "2026-08-10",
+      "--release-date",
+      "2026-08-11",
+      dupFlag.changelogPath,
+      dupFlag.packagePath,
+    ]).status,
+    0,
+  );
+
+  const extraPositional = fixture(
+    "# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - 2026-08-10\n\n### Added\n\n- Item\n",
+  );
+  assert.notEqual(
+    assertReady([
+      extraPositional.changelogPath,
+      extraPositional.packagePath,
+      "/tmp/extra",
+    ]).status,
+    0,
+  );
+});

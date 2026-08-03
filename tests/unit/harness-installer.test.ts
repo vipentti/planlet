@@ -421,9 +421,18 @@ test("destination install rolls back to the exact pre-operation state on faults"
         assert.equal(error.details.manifestPublished, false);
         assert.equal(typeof error.details.backupPath, "string");
         assert.equal(typeof error.details.stagePath, "string");
+        assert.equal(error.details.next, undefined);
+        assert.match(String(error.next), /Do not delete/);
         assert.ok(Array.isArray(error.details.mutated));
         assert.ok(existsSync(String(error.details.backupPath)));
         assert.ok(existsSync(String(error.details.stagePath)));
+
+        const structured = error.toStructuredError();
+        assert.match(String(structured.next), /Do not delete/);
+        assert.equal(
+          (structured.details as { next?: unknown }).next,
+          undefined,
+        );
 
         const destination = join(root, ".agents", "skills");
         for (const [relativePath, content] of Object.entries(before)) {
@@ -455,7 +464,11 @@ test("destination install rolls back to the exact pre-operation state on faults"
       (error) =>
         error instanceof PlanletError &&
         error.code === "write_conflict" &&
-        Array.isArray(error.details.leftoverPaths),
+        Array.isArray(error.details.leftoverPaths) &&
+        error.details.next === undefined &&
+        typeof error.next === "string" &&
+        error.next.includes("Inspect leftover") &&
+        error.toStructuredError().next === error.next,
     );
 
     const destination = join(root, ".agents", "skills");
@@ -794,7 +807,7 @@ test("post-commit cleanup failure preserves published skills and leaves backup",
               force: true,
             });
           }
-          if (step === "afterCleanup") {
+          if (step === "beforeCleanup") {
             throw new Error("fail deleting leftover backup");
           }
         },

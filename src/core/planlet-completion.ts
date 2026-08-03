@@ -270,12 +270,22 @@ export function completePlanlet(
 ): CompletePlanletResult {
   const slug = assertValidSlug(options.slug);
   const dependencies = { ...DEFAULT_DEPENDENCIES, ...options.dependencies };
-  return withPlanletLock(
+  const plansPath = resolveSafePath(options.repositoryRoot, "plans");
+  assertActivePlanletDirectory(resolve(plansPath, slug), slug);
+  const { value, releaseWarning } = withPlanletLock(
     options.repositoryRoot,
     slug,
     () => completePlanletLocked(options, dependencies, slug),
     dependencies.lock,
   );
+  if (releaseWarning === undefined) return value;
+  return {
+    ...value,
+    summary: {
+      ...value.summary,
+      warnings: [...value.summary.warnings, releaseWarning],
+    },
+  };
 }
 
 function completePlanletLocked(

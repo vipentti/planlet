@@ -30,7 +30,8 @@ Out of scope:
 - npm publish, tags, GitHub releases, visibility, trusted publisher.
 - Landing `.github/workflows/release.yml` on `main` (Slice B).
 - Marking external `release-automation` tasks complete.
-- `handleValidate` style cleanup, tasks.md symlink rejection, ponytail dedup.
+- `handleValidate` style cleanup, tasks.md symlink rejection.
+- Deleting ownership-token / quarantine reclaim in favor of mkdir-only locks.
 
 ## Approach
 
@@ -51,6 +52,10 @@ Out of scope:
    gate plus explicit `--release-date` release verification.
 7. Lock reclaim uses ownership tokens and atomic quarantine rename so two
    reclaimers cannot delete each other's live lock.
+8. Surface harness recovery `next` at the PlanletError top level; emit harness
+   cleanup and lock-release warnings as stderr diagnostics; discover changelog
+   headings broadly then validate syntax; collapse lock wrappers and apply
+   safe line cuts without weakening reclaim.
 
 ## Acceptance Criteria
 
