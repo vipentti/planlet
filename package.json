@@ -34,10 +34,10 @@
     "planlet": "dist/planlet.mjs"
   },
   "files": [
-    "dist",
-    "skills",
     "CHANGELOG.md",
-    "README.md"
+    "README.md",
+    "dist",
+    "skills"
   ],
   "engines": {
     "node": ">=22"

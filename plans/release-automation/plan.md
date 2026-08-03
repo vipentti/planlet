@@ -105,13 +105,17 @@ No external step proceeds until captain records all choices:
 3. **Bootstrap:** approve npm owner/account, available package name, exact clean
    source SHA, reviewed artifact hash/file list, and irreversible 0.1.0 publish.
 
-README must retain source-checkout fallback while npm package is unavailable.
-Do not claim bootstrap success until registry check passes.
+README must present source-checkout install as the only prepublication path and
+must tell readers not to use `npm install -g planlet` or `npx planlet` until the
+official package is published and verified. Do not claim bootstrap success until
+registry check passes.
 
 ### Exact bootstrap artifact procedure
 
 Captain names one clean `origin/main` SHA as `BOOTSTRAP_SHA`; no worker infers
-it. In a fresh detached checkout of that SHA:
+it. If the `[0.1.0]` changelog header date still differs from the intended
+publish day, update that date on `main` first so the approved SHA includes it.
+In a fresh detached checkout of that SHA:
 
 1. verify `HEAD == BOOTSTRAP_SHA`, no tracked/untracked files, package and
    lockfile both declare 0.1.0, and repository still lacks active release
@@ -175,7 +179,8 @@ ancestry guard can pass for 0.1.1.
 - Active plan records routine verification as strategy and task state only;
   exceptional evidence is retained only when ordinary history cannot reconstruct
   a durable fact, and every line is write-once and non-self-referential.
-- README documents changelog upkeep, common release flow, and source fallback;
+- README documents changelog upkeep, common release flow, and source-only
+  install until the official npm package is verified;
   AGENTS points to these owner documents without duplicating release procedure.
 - Slice A can merge without `release.yml`; Slice B lands only after T12-T13.
 

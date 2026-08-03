@@ -15,11 +15,11 @@ const changelog = readFileSync(
 const escaped = version.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const match = `${changelog}\n## `.match(
   new RegExp(
-    `^## \\[${escaped}\\] - \\d{4}-\\d{2}-\\d{2}\\s*$([\\s\\S]*?)(?=^## |^\\[[^\\]]+\\]:)`,
+    `^## \\[${escaped}\\] - \\d{4}-\\d{2}-\\d{2}[ \\t]*$([\\s\\S]*?)(?=^## |^\\[[^\\]]+\\]:)`,
     "m",
   ),
 );
-const notes = match?.[1].trim();
+const notes = match?.[1]?.trim();
 if (!notes || !/^\s*-\s+\S/m.test(notes)) {
   console.error(`Missing or empty changelog section: ${version}`);
   process.exit(1);
