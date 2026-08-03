@@ -860,13 +860,13 @@ Do not rely on executing raw TypeScript in user environments. Node's native type
 Primary installation:
 
 ```bash
-npm install --global planlet
+npm install --global @vipentti/planlet
 ```
 
 Occasional execution may also work through:
 
 ```bash
-npx planlet list
+npx @vipentti/planlet list
 ```
 
 However, installed or bundled execution is preferable for agents because it avoids repeated package resolution, network access, and version ambiguity.

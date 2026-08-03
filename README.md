@@ -22,10 +22,9 @@ You normally drive Planlet through the skills and let your agent call the CLI.
 
 Planlet requires Node.js 22 or newer.
 
-Until the official `planlet` package is published and verified on npm, install
-from a source checkout only. Do not run `npm install -g planlet` or
-`npx planlet` yet: an unpublished name can 404, and a colliding name could
-resolve to an unrelated package.
+Until the official `@vipentti/planlet` package is published and verified on npm,
+install from a source checkout only. Do not run `npm install -g @vipentti/planlet`
+or `npx @vipentti/planlet` yet.
 
 ```sh
 git clone https://github.com/vipentti/planlet.git
@@ -38,13 +37,14 @@ node dist/planlet.mjs <command>
 After the official package is published and verified:
 
 ```sh
-npm install -g planlet
+npm install -g @vipentti/planlet
 ```
 
-Or run it without installing:
+That installs the `planlet` executable on your `PATH`. Or run it without
+installing:
 
 ```sh
-npx planlet <command>
+npx @vipentti/planlet <command>
 ```
 
 ## Set up a repository
@@ -201,7 +201,7 @@ manual while tag-triggered automation lands separately.
 - [Product and technical design](https://github.com/vipentti/planlet/blob/main/planlet_design.md)
 - [Contributor guide](https://github.com/vipentti/planlet/blob/main/AGENTS.md)
 - [Issue tracker](https://github.com/vipentti/planlet/issues)
-- [npm package](https://www.npmjs.com/package/planlet)
+- [npm package](https://www.npmjs.com/package/@vipentti/planlet)
 
 ## License
 
