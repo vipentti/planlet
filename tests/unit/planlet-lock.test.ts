@@ -15,9 +15,9 @@ import test from "node:test";
 
 import { completePlanlet } from "../../src/core/planlet-completion.js";
 import {
-  PLANLET_LOCK_DIR,
   acquireOwnedLock,
   isProcessAlive,
+  planletLockRoot,
   releaseOwnedLock,
   withPlanletLock,
   type OwnedLockHolder,
@@ -39,12 +39,13 @@ function withRepo(run: (root: string, tasksPath: string) => void): void {
   try {
     run(root, join(planletPath, "tasks.md"));
   } finally {
+    rmSync(planletLockRoot(root), { recursive: true, force: true });
     rmSync(root, { recursive: true, force: true });
   }
 }
 
 function lockPathFor(repositoryRoot: string, slug: string): string {
-  return join(repositoryRoot, "plans", PLANLET_LOCK_DIR, slug);
+  return join(planletLockRoot(repositoryRoot), slug);
 }
 
 function plantPlanletLock(
@@ -52,7 +53,7 @@ function plantPlanletLock(
   slug: string,
   holder: OwnedLockHolder,
 ): string {
-  const root = join(repositoryRoot, "plans", PLANLET_LOCK_DIR);
+  const root = planletLockRoot(repositoryRoot);
   mkdirSync(root, { recursive: true });
   const lockPath = lockPathFor(repositoryRoot, slug);
   writeFileSync(lockPath, `${JSON.stringify(holder)}\n`, {
@@ -68,7 +69,7 @@ function acquirePlanletLock(
   dependencies: Parameters<typeof acquireOwnedLock>[3] = {},
 ) {
   return acquireOwnedLock(
-    join(repositoryRoot, "plans", PLANLET_LOCK_DIR),
+    planletLockRoot(repositoryRoot),
     slug,
     slug,
     dependencies,
@@ -261,11 +262,8 @@ test("lock directories reject symlink escapes", () => {
   withRepo((root) => {
     const outside = mkdtempSync(join(tmpdir(), "planlet-lock-outside-"));
     try {
-      mkdirSync(join(root, "plans", PLANLET_LOCK_DIR), { recursive: true });
-      symlinkSync(
-        outside,
-        join(root, "plans", PLANLET_LOCK_DIR, "fixture-plan"),
-      );
+      mkdirSync(planletLockRoot(root), { recursive: true });
+      symlinkSync(outside, join(planletLockRoot(root), "fixture-plan"));
       assert.throws(
         () =>
           updateTask({
@@ -286,7 +284,7 @@ test("lock directories reject symlink escapes", () => {
 test("corrupt holder metadata is not treated as reclaimable", () => {
   withRepo((root, tasksPath) => {
     const lockPath = lockPathFor(root, "fixture-plan");
-    mkdirSync(join(root, "plans", PLANLET_LOCK_DIR), { recursive: true });
+    mkdirSync(planletLockRoot(root), { recursive: true });
     writeFileSync(lockPath, "{not-json\n");
 
     assert.throws(
@@ -492,8 +490,9 @@ test("missing planlet does not create a lock directory before plan_not_found", (
       (error) =>
         error instanceof PlanletError && error.code === "plan_not_found",
     );
-    assert.equal(existsSync(join(root, "plans", PLANLET_LOCK_DIR)), false);
+    assert.equal(existsSync(planletLockRoot(root)), false);
   } finally {
+    rmSync(planletLockRoot(root), { recursive: true, force: true });
     rmSync(root, { recursive: true, force: true });
   }
 });

@@ -505,7 +505,7 @@ The CLI should require a slug for mutating commands. It may provide a read-only 
 
 “One at a time” means one target per invocation or agent workflow. The MVP does not need a global active-plan pointer.
 
-Task-file writes should be atomic. Mutating CLI operations that rewrite `tasks.md` (`task check`, `task uncheck`, and `complete`) take an exclusive per-planlet lock under `plans/.planlet-locks/<slug>`. Each acquisition writes an ownership token into the holder file and returns that token with the lock path. Competing writers fail with `write_conflict` rather than applying a stale read-modify-write. Stale locks whose recorded holder PID is dead are reclaimed only by atomically renaming the lock directory into a unique quarantine sibling; only the rename winner may delete the quarantine and retry acquisition. Release deletes the lock only when the caller's ownership token still matches the holder. Live holders are never stolen. Editors and git can still rewrite `tasks.md` outside the CLI lock; treat that as ordinary version-control conflict resolution.
+Task-file writes should be atomic. Mutating CLI operations that rewrite `tasks.md` (`task check`, `task uncheck`, and `complete`) take an exclusive per-planlet lock. Locks live outside the repository, in a per-owner, per-repository-root directory under the OS temp directory, so a transient holder file never appears in `git status` or an editor tree. Each acquisition writes an ownership token into the holder file and returns that token with the lock path. Competing writers fail with `write_conflict` rather than applying a stale read-modify-write. Stale locks whose recorded holder PID is dead are reclaimed only by atomically renaming the lock directory into a unique quarantine sibling; only the rename winner may delete the quarantine and retry acquisition. Release deletes the lock only when the caller's ownership token still matches the holder. Live holders are never stolen. Editors and git can still rewrite `tasks.md` outside the CLI lock; treat that as ordinary version-control conflict resolution.
 
 ## 13. CLI Design
 
@@ -983,7 +983,7 @@ interface PlanSummary {
 - On partial failure, leave the source recoverable and report the exact state.
 - Do not infer authorization to delete abandoned or invalid plans.
 - Make task checking idempotent: checking an already checked task succeeds without duplicating changes.
-- Per-planlet CLI write locks cover concurrent `task check` / `task uncheck` / `complete` in one repository working tree. Cross-branch edits of `tasks.md` still surface as ordinary git merge conflicts on checkbox lines.
+- Per-planlet CLI write locks cover concurrent `task check` / `task uncheck` / `complete` in one repository working tree on one machine, for one user. Because the lock root lives in the OS temp directory, a single checkout mounted into separate machines, containers, or user accounts gets separate lock namespaces. Cross-branch edits of `tasks.md` still surface as ordinary git merge conflicts on checkbox lines.
 - Optional precondition hashes remain a possible future hardening for non-CLI writers.
 - When completing a planlet, use a plain filesystem move even inside a git working tree. Git can detect the rename from the resulting delete-plus-add, while index management remains the user's responsibility. The CLI must not inspect working-tree cleanliness, stage, or commit on its own.
 

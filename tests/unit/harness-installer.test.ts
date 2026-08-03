@@ -26,7 +26,7 @@ import {
 import type { HarnessToolId } from "../../src/core/harnesses.js";
 import {
   HARNESS_INSTALL_LOCK_NAME,
-  PLANLET_LOCK_DIR,
+  planletLockRoot,
 } from "../../src/core/planlet-lock.js";
 import {
   sha256,
@@ -61,6 +61,7 @@ function withRoot(run: (root: string) => void): void {
   try {
     run(root);
   } finally {
+    rmSync(planletLockRoot(root), { recursive: true, force: true });
     rmSync(root, { recursive: true, force: true });
   }
 }
@@ -661,9 +662,7 @@ test("nested harness installs serialize on the repository-wide lock", () => {
         content,
       );
       assert.equal(
-        existsSync(
-          join(root, "plans", PLANLET_LOCK_DIR, HARNESS_INSTALL_LOCK_NAME),
-        ),
+        existsSync(join(planletLockRoot(root), HARNESS_INSTALL_LOCK_NAME)),
         false,
       );
     }
@@ -726,9 +725,7 @@ test("nested claude install against coalesced agents destination cannot mutate w
       "# AgentsWinner\n",
     );
     assert.equal(
-      existsSync(
-        join(root, "plans", PLANLET_LOCK_DIR, HARNESS_INSTALL_LOCK_NAME),
-      ),
+      existsSync(join(planletLockRoot(root), HARNESS_INSTALL_LOCK_NAME)),
       false,
     );
   });
@@ -757,9 +754,7 @@ test("harness lock is released after install failure", () => {
         error instanceof PlanletError && error.code === "write_conflict",
     );
     assert.equal(
-      existsSync(
-        join(root, "plans", PLANLET_LOCK_DIR, HARNESS_INSTALL_LOCK_NAME),
-      ),
+      existsSync(join(planletLockRoot(root), HARNESS_INSTALL_LOCK_NAME)),
       false,
     );
   });

@@ -27,6 +27,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and thi
 
 ### Changed
 
+- Write locks moved from `plans/.planlet-locks/` to a per-owner, per-repository directory in the OS temp directory, so lock files never appear in `git status` or an editor tree.
 - Interactive `planlet init` prompts for skill destinations while non-interactive use remains deterministic.
 - Documentation now leads with the skill-first workflow and complete CLI reference.
 - Harness install/update publishes a destination transactionally and rolls back on failure.
