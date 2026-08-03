@@ -10,6 +10,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and thi
 
 - Move changelog and tag-release guidance from `README.md` into `RELEASING.md`.
 
+### Fixed
+
+- Stop the `planlet-plan` skill from naming `planlet_design.md` directly; agents read applicable repository instructions instead.
+
 ## [0.1.1] - 2026-08-03
 
 ### Added

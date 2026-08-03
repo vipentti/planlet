@@ -61,7 +61,11 @@ When a described CLI capability is not yet present, do not invent commands or re
 
 ## Pull requests
 
-When creating a pull request against this repository, structure the description with [`.github/pull_request_template.md`](.github/pull_request_template.md). Keep it proportional to the change, remove sections that do not apply, and check only the verification commands actually run.
+When creating a pull request against this repository, structure the description with [`.github/pull_request_template.md`](.github/pull_request_template.md). Keep it proportional to the change, remove sections that do not apply, and check only the verification commands actually run. The template’s contributor checklist already includes the `CHANGELOG.md` → `Unreleased` item.
+
+## Changelog
+
+When a change is user-visible product, CLI, or published-skill behavior, update [`CHANGELOG.md`](CHANGELOG.md) under `[Unreleased]` in the same change set. For chore, internal-only, or contributor-doc-only work, skip the entry and be explicit that none is needed. Format and release-cut procedure live in [`RELEASING.md`](RELEASING.md); do not duplicate them here.
 
 ## Planlet file conventions
 
