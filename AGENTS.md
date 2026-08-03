@@ -144,6 +144,14 @@ The built CLI runs as `node dist/planlet.mjs <command>`.
 against Node 22 and 24, plus a ubuntu/Node-22-only step that regenerates
 installed skill copies and fails on drift. Workflow files are covered by `format:check`.
 
+## Changelog and release maintenance
+
+Release and changelog guidance lives in [`README.md`](README.md); release gates
+and workflow contract live in
+[`plans/release-automation/plan.md`](plans/release-automation/plan.md). Do not
+publish, create release tags, or configure trusted publishing without the
+captain decisions required by that plan.
+
 ## Maintaining this guide
 
 Update `AGENTS.md` when the repository gains stable commands, important top-level structure, or agent-specific constraints. Prefer links to authoritative files over duplicating material that can drift.

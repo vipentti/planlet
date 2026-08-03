@@ -105,12 +105,11 @@ No external step proceeds until captain records all choices:
 3. **Bootstrap:** approve npm owner/account, available package name, exact clean
    source SHA, reviewed artifact hash/file list, and irreversible 0.1.0 publish.
 
-README must present source-checkout install as the only prepublication path and
-must tell readers not to use `npm install -g @vipentti/planlet` or
-`npx @vipentti/planlet` until the official package is published and verified. Do
-not claim bootstrap success until registry check passes. The published package
-name is `@vipentti/planlet` (unscoped `planlet` failed npm's similarity check
-against `blanket`); the CLI binary name remains `planlet`.
+README documents changelog upkeep and the common tag-triggered release flow for
+`@vipentti/planlet`. The first publication was a manual bootstrap without
+`release.yml` on `main`; later releases use the tag workflow after trusted
+publishing is configured. AGENTS points to these owner documents without
+duplicating release procedure.
 
 ### Exact bootstrap artifact procedure
 
@@ -145,7 +144,8 @@ After all gates:
 2. T7 completes full-history audit and captain sign-off; T11 changes visibility
    and verifies anonymous access.
 3. T8 publishes exact approved 0.1.0 artifact; T12 creates matching tag/release.
-4. T13 configures trusted publisher exactly for `vipentti/planlet` and
+4. T13 configures trusted publisher for npm package `@vipentti/planlet` on
+   GitHub repository `vipentti/planlet` with workflow
    `.github/workflows/release.yml`.
 5. T14 lands Slice B automation and confirms main CI before any automated tag.
 6. T9 prepares 0.1.1 on main, pushes source before tag, performs real release,
@@ -175,16 +175,16 @@ ancestry guard can pass for 0.1.1.
   captain sign-off recorded before public visibility.
 - Bootstrap record identifies exact clean source SHA and exact reviewed tarball;
   npm name/account/auth/ownership/public-access checks are current at publish.
-- Public visibility, remaining governance, and bootstrap choices remain
-  unresolved until captain records decisions. External tasks remain
-  independently auditable.
+- Public visibility, release governance (T15), and bootstrap authorization (T16)
+  are recorded; remaining external gates are trusted publishing (T13) and Slice B
+  merge (T14) before automated 0.1.1 proof (T9).
 - Active plan records routine verification as strategy and task state only;
   exceptional evidence is retained only when ordinary history cannot reconstruct
   a durable fact, and every line is write-once and non-self-referential.
-- README documents changelog upkeep, common release flow, and source-only
-  install until the official npm package is verified;
-  AGENTS points to these owner documents without duplicating release procedure.
-- Slice A can merge without `release.yml`; Slice B lands only after T12-T13.
+- README documents changelog upkeep, `@vipentti/planlet` install, and the common
+  tag-triggered release flow; AGENTS points to these owner documents without
+  duplicating release procedure.
+- Slice A merged without `release.yml`; Slice B lands only after T12-T13.
 
 ## Verification
 
