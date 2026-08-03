@@ -7,9 +7,14 @@ release-cut operator steps from `RELEASING.md` into two explicit subcommands:
 `prepare` (changelog cut, version alignment, signed release commit, branch push,
 and PR into `main`) and `tag` (annotated signed tag, optional push). Remote
 publish stays with environment-gated `release.yml`. No auto-merge and no
-auto-tag after merge. Dry-run stays strictly non-mutating; `prepare --execute`
-is safely resumable after partial success; `tag` derives its release date from
-the changelog so delayed merges do not require remembering prepare-time state.
+auto-tag after merge.
+
+Dry-run stays strictly non-mutating. `prepare` selects **fresh** vs **resume**
+mode before applying fresh-only checks, and resumes by validating an existing
+release commit against explicit invariants (never by predicting a commit SHA).
+`tag` requires `HEAD` equal to the current remote `main` tip and verifies the
+already-prepared changelog date through a new historical assert mode so delayed
+merges work without weakening prepare-time date rules.
 
 ## Motivation
 
@@ -28,27 +33,32 @@ In scope:
 - npm aliases only:
   - `release:prepare` → `node scripts/release.mjs prepare`
   - `release:tag` → `node scripts/release.mjs tag`
-- `prepare`: for required `--version`, cut changelog; align `package.json` and
-  root `package-lock.json` version fields; create branch `release/v<version>`;
-  create a signed commit (`git commit -S`) with message `release: <version>`
-  containing only those release files; push the branch to `origin`; open a PR
-  into `main` via `gh pr create` (no auto-merge). Idempotent / resumable when a
-  prior attempt left a matching remote branch without a PR.
-- `tag`: require clean worktree; validate `HEAD` against current remote `main`
-  tip; require `package.json` version equals `--version`; refuse local and
-  remote tag collisions via exact-ref `git ls-remote`; create annotated signed
-  `git tag -a -s`; optional `--push` pushes only that tag. Default release date
-  is read from the matching changelog version section (not “today”).
-- Dry-run by default on both subcommands; mutations require `--execute`.
-  `--push` is valid only on `tag` and still requires `--execute`. Prepare has
-  no separate `--push`; network write steps are part of `prepare --execute`.
-- Gate on existing `scripts/assert-changelog-release-ready.mjs --release-date`
-  without reimplementing its rules; smoke notes via `scripts/changelog.mjs`.
+- Narrow extension of
+  `scripts/assert-changelog-release-ready.mjs` with a historical verification
+  mode (e.g. `--verify-release-date YYYY-MM-DD`) that validates an
+  already-prepared version section without requiring the date to be today or
+  later. Existing `--release-date` prepare-time semantics (including
+  not-in-the-past) stay unchanged.
+- `prepare` fresh mode: cut changelog; align `package.json` and root
+  `package-lock.json`; create branch `release/v<version>`; signed commit
+  `release: <version>` with only those release files; push; `gh pr create`
+  into `main` (no auto-merge).
+- `prepare` resume mode: discover existing release branch / PR state first;
+  validate the existing release commit against invariants; finish push and/or
+  PR creation without recreating the commit.
+- `tag`: require clean worktree and `HEAD ==` current remote `main` tip;
+  `package.json` version equals `--version`; refuse local and remote tag
+  collisions via exact-ref `git ls-remote`; create annotated signed
+  `git tag -a -s`; optional `--push`. Release date is read from the changelog
+  and verified with `--verify-release-date` (not `--release-date`).
+- Dry-run by default; mutations require `--execute`. `--push` is valid only on
+  `tag` and still requires `--execute`. Prepare has no separate `--push`.
+- Reuse assert and `scripts/changelog.mjs` as subprocesses; do not reimplement
+  changelog parsing/validation inside `release.mjs`.
 - Update `RELEASING.md` for the scripted operator path; leave workflow /
   trusted-publishing narrative authoritative for the remote job.
-- Fixture / subprocess tests (temp repos, bare local remotes, stubbed `gh`) for
-  cut, alignment, dry-run purity, recovery, remote tag collision, and refusals.
-  CI must not require live GitHub or real signing keys.
+- Fixture / subprocess tests (temp repos, bare remotes, stubbed `gh` /
+  signing). CI must not require live GitHub or real signing keys.
 
 Out of scope:
 
@@ -57,207 +67,243 @@ Out of scope:
 - Changing `.github/workflows/release.yml`, Environment `release`, tag rulesets,
   or npm trusted publishing.
 - Auto-merge of the version PR.
-- Auto-tag immediately after PR merge (tag remains a separate post-merge step).
+- Auto-tag immediately after PR merge.
 - Version selection / semver inference, changelog prose generation, prerelease
   channels, or direct `npm publish`.
-- Force-updating, moving, or deleting tags or release branches (including
-  automatic cleanup of partial attempts).
+- Force-updating, moving, or deleting tags or release branches.
 - New runtime dependencies.
+- Predicting or regenerating a release commit SHA for idempotency.
 
 ## Approach
 
 ### Operator workflow
 
-1. On a clean checkout whose `HEAD` SHA equals the current remote `main` tip
-   (queried without mutating local refs in dry-run):
+1. Fresh prepare on a clean checkout at the current remote `main` tip:
    `npm run release:prepare -- --version X.Y.Z` (dry-run), then `--execute`.
 2. Human reviews and merges the opened PR into `main` (no auto-merge). Merge
    may land on a later UTC day than prepare.
-3. On a clean checkout at that main-reachable merge commit:
-   `npm run release:tag -- --version X.Y.Z --execute`, optionally with `--push`
-   on the same invocation. No remembered prepare-time date is required.
+3. After merge, on a clean checkout updated so `HEAD` equals the current remote
+   `main` tip (the merge result):
+   `npm run release:tag -- --version X.Y.Z --execute`, optionally with `--push`.
+   No remembered prepare-time date is required.
 
 ### Shared CLI rules
 
 1. Parse subcommand first (`prepare` | `tag`). Shared flags: required
-   `--version`, optional `--release-date`, `--execute`, `--help`. Tag-only:
-   `--push`. Reject unknown flags and duplicate flag values consistently (same
-   hardening spirit as the assert script’s duplicate-flag pre-scan).
+   `--version`, optional `--release-date` (prepare only for cutting; on `tag`
+   optional override that must match the changelog), `--execute`, `--help`.
+   Tag-only: `--push`. Reject unknown flags and duplicate values consistently.
 2. Never run `npm publish`, merge a PR, create a release tag during `prepare`,
-   or perform any worktree / index / remote-write / local-ref-write mutation
-   during dry-run.
-3. Subprocess failures must name the failed operation and include enough stderr
-   context for recovery without echoing credentials or tokens.
-4. Reuse `scripts/assert-changelog-release-ready.mjs` and `scripts/changelog.mjs`
-   as subprocesses; do not fork their validation semantics.
+   or perform worktree / index / remote-write / local-ref-write mutations during
+   dry-run.
+3. Subprocess failures name the failed operation and include enough stderr for
+   recovery without echoing credentials.
+4. Call assert / changelog helpers as subprocesses; do not duplicate their
+   validation rules in `release.mjs`.
 
 ### Mutation classes (dry-run contract)
-
-Distinguish four classes of operations:
 
 | Class | Examples | Dry-run | `--execute` |
 | --- | --- | --- | --- |
 | Remote read-only | `git ls-remote`, `gh` read APIs | Allowed | Allowed |
-| Local Git metadata mutation | `git fetch` (updates remote-tracking refs / objects), writing `FETCH_HEAD` | Forbidden | Allowed when required; prefer `--no-write-fetch-head` where useful, acknowledging objects/refs may still update |
-| Worktree / index mutation | editing files, `git add`, `git commit`, creating local branches/tags | Forbidden | Allowed for the subcommand’s intended steps |
-| Remote mutation | `git push`, `gh pr create` | Forbidden | Allowed for the subcommand’s intended steps |
+| Local Git metadata mutation | `git fetch`, writing `FETCH_HEAD` | Forbidden | Allowed when required; prefer `--no-write-fetch-head` where useful |
+| Worktree / index mutation | editing files, `git add` / `commit`, creating local branches/tags | Forbidden | Allowed for intended steps |
+| Remote mutation | `git push`, `gh pr create` | Forbidden | Allowed for intended steps |
 
-Dry-run acceptance is mechanically testable: after a dry-run, worktree, index,
-local refs (including remote-tracking refs), and remotes are unchanged aside
-from process-ephemeral state outside the repo.
+Dry-run acceptance is mechanically testable: after dry-run, worktree, index,
+and local refs (including remote-tracking refs) are unchanged aside from
+process-ephemeral state outside the repo.
 
 ### Remote `main` identity without false validation
 
 - **Dry-run:** obtain remote `main` SHA via
-  `git ls-remote origin refs/heads/main` (remote read-only). For `prepare`,
-  require local `HEAD` equals that SHA. For `tag`, if the remote tip object is
-  not available locally, do **not** claim ancestry success; report that full
-  ancestry validation requires `--execute` (which will fetch) and exit
-  non-zero when ancestry cannot be proven, or succeed only when ancestry can
-  already be proven from objects present locally against the ls-remote SHA.
-- **`--execute`:** explicitly `git fetch` (with `--no-write-fetch-head` where
-  useful) before mutations, then validate against the fetched result:
-  `prepare` requires `HEAD == origin/main` tip; `tag` requires `HEAD` is an
-  ancestor of that tip (reachable from remote `main`).
+  `git ls-remote origin refs/heads/main`. Compare local SHAs to that value
+  without `git fetch`. If a required object is missing locally and identity
+  cannot be proven, do not claim success — report that `--execute` must fetch
+  and exit non-zero (or only succeed when the comparison is already provable).
+- **`--execute`:** explicitly `git fetch` before mutations, then validate
+  against the fetched tip.
 
-### Release-date resolution
+### Assert helper: prepare vs historical verify
 
-- **`prepare`:** `--release-date` defaults to today UTC. That date is written
-  into the new changelog section `## [<version>] - <date>`. Assert is invoked
-  with that same date. Past dates remain refused by the existing assert
-  semantics (do not weaken them).
-- **`tag`:** do **not** default `--release-date` to today. By default, parse
-  the date from the matching dated changelog section for `--version`. If the
-  operator supplies `--release-date`, it must exactly equal that changelog
-  date; otherwise refuse. Always invoke
-  `assert-changelog-release-ready.mjs --release-date <resolved-date>` with the
-  resolved changelog date. Primary docs use
-  `npm run release:tag -- --version X.Y.Z --execute` with no hidden date
-  state. Tests must cover tagging on a UTC day later than prepare.
+Extend `scripts/assert-changelog-release-ready.mjs` (dependency-free, same
+Node range) with a clearly named historical mode, e.g.
+`--verify-release-date YYYY-MM-DD`, mutually exclusive with `--release-date`.
 
-### `prepare` prechecks (before any file edits)
+| Mode | Used by | Checks | Not-in-the-past? |
+| --- | --- | --- | --- |
+| (default / CI) | existing ordinary CI | unchanged | N/A (existing behavior) |
+| `--release-date D` | `prepare` | unchanged: Unreleased + matching version section dated `D`, non-empty notes, `D` today-or-later UTC, date equality | Yes — preserve |
+| `--verify-release-date D` | `tag` | exactly one empty Unreleased; exactly one matching package-version section; valid calendar date; non-empty notes; section date equals `D` | **No** — historical OK |
 
-Run all non-mutating prerequisite checks first, on both dry-run and execute:
+Do not weaken `--release-date`. Do not reimplement these rules inside
+`release.mjs`. Document both flags in script usage / `RELEASING.md` as needed.
+Tests for the helper itself:
 
-1. Clean worktree (no unrelated dirt).
-2. `--version` / `--release-date` shape validation.
-3. Remote `main` identity as above; local `HEAD` must equal remote `main` tip.
-4. Local and remote branch collision discovery for `release/v<version>`
-   (local branch inspect + `git ls-remote` for the exact branch ref).
-5. Existing PR lookup via `gh` (read-only) for head `release/v<version>` into
-   `main`.
-6. `gh` availability and authentication checks that are safe to run read-only.
-7. Signing configuration checks that can be performed without creating a
-   commit or tag (fail closed if signing cannot be used).
+- `--release-date` still rejects a past date;
+- `--verify-release-date` accepts a valid earlier-day changelog section for the
+  current package version;
+- `--verify-release-date` rejects mismatch between `D` and the changelog date.
 
-Only after prechecks pass may `--execute` edit files.
+### Release-date resolution in `release.mjs`
 
-### `prepare` expected release commit and recovery state machine
+- **`prepare`:** `--release-date` defaults to today UTC; write that date into
+  the new section; invoke assert with `--release-date <D>` (strict).
+- **`tag`:** derive `D` from the matching changelog version section. If the
+  operator supplies `--release-date`, it must equal that section date or
+  refuse. Invoke assert with `--verify-release-date <D>` (historical). Primary
+  docs: `npm run release:tag -- --version X.Y.Z --execute` with no hidden date.
 
-Define the **expected release commit** as the unique signed commit that would
-result from the file edits + `git commit -S -m "release: <version>"` with only
-the release files (`CHANGELOG.md`, `package.json`, root `package-lock.json`).
+### `prepare` mode selection (before fresh-only checks)
 
-Phases and recovery (never delete or force-update branches automatically):
+Before applying fresh-run requirements, discover whether release state already
+exists for `--version`:
 
-| Failure point | Left behind | Rerun behavior |
-| --- | --- | --- |
-| During file edits (before commit) | Dirty / partial files | Refuse if worktree dirty; operator restores clean tree manually. No automatic reset. |
-| After commit, before push | Local branch at expected commit | Resume: push branch, then ensure PR. |
-| After successful push, before/during `gh pr create` | Remote branch at expected commit, no PR | Resume: skip recreating commit/push content; only create the missing PR. |
-| PR already exists for expected head | Matching open (or relevant) PR | Report existing PR URL; do not create a duplicate; exit success (or dedicated non-error “already complete” status). |
-| Local or remote branch exists but tip ≠ expected release commit | Divergent history | Hard refuse; require deliberate manual investigation. |
-| Existing PR whose head commit ≠ expected | Conflicting PR | Hard refuse. |
-| Unsafe collision (unrelated same-name branch/PR) | Foreign state | Hard refuse. Do not overwrite. |
+1. Inspect local ref `refs/heads/release/v<version>` if present.
+2. `git ls-remote` exact remote branch `refs/heads/release/v<version>`.
+3. `gh` read lookup for a PR with head `release/v<version>` into `main`.
 
-Idempotent success path when remote `release/v<version>` already points at the
-exact expected signed release commit and no conflicting PR exists: allow
-retrying PR creation only. Refuse solely-on-exists is incorrect; inspect the
-commit.
+**Fresh preparation** — no corresponding local branch, remote branch, or PR:
 
-`prepare --execute` success means: release files committed as expected, branch
-pushed, and a non-merging PR into `main` exists (created now or already
-present and matching).
+- Require clean worktree.
+- Require current `HEAD` equals current remote `main` tip.
+- Shared prechecks: version/date shape, `gh` auth, signing config checks that
+  can run without creating a commit.
+- Then: edit files → create branch → signed commit → push → `gh pr create`.
+
+**Resume preparation** — any of local branch, remote branch, or matching PR
+exists:
+
+- Do **not** require `HEAD ==` remote `main`.
+- Allow running while checked out on the matching release branch, **or**
+  inspect the branch by ref without requiring checkout.
+- Require clean worktree (no unrelated dirt that would confuse validation).
+- Validate any existing release commit against the invariant set below.
+- Finish only the missing steps (push and/or PR). Never recreate the commit.
+- Never delete or force-update branches.
+
+Mode selection must happen before fresh-only `HEAD == main` enforcement.
+
+### Release-commit invariants (resume identity)
+
+Do **not** define identity as “the SHA that would result from repeating
+`git commit -S`”. Commit IDs depend on parent, author/committer identities and
+timestamps, message, and signature material; a rerun cannot recreate the same
+SHA.
+
+After a commit exists, its **actual SHA** is the recovery identity. Validate
+that commit against this invariant set:
+
+1. Branch name is exactly `release/v<version>`.
+2. Commit has exactly one parent.
+3. That parent is the preparation base: the remote `main` tip that was current
+   when the release commit was created. With no extra hidden state, identify
+   the base as the release commit’s sole parent once the commit passes the
+   other invariants (message, signed, release-file-only diff, versions,
+   changelog). If current remote `main` has advanced, resume remains allowed
+   when the validated release commit’s parent is still an ancestor of current
+   remote `main` **and** the release commit still satisfies all content
+   invariants; refuse automatic recovery when local and remote release-branch
+   tips diverge, when the parent relationship is ambiguous, or when content
+   no longer matches `--version` / changelog expectations. Prefer refusing
+   over guessing when remote `main` movement makes the intended base unclear.
+4. Commit message is exactly `release: <version>`.
+5. Commit is cryptographically signed and Git reports a valid signature under
+   the project’s chosen verification rule (e.g. `git verify-commit`); CI stubs
+   this path.
+6. Committed `CHANGELOG.md`, `package.json`, and root `package-lock.json`
+   contain the expected release state for `--version` (versions match;
+   changelog section satisfies prepare-time assert against the section’s own
+   date via `--release-date` only when that date is still today-or-later, or
+   content checks equivalent for already-committed files — prefer invoking
+   helpers without inventing a third parser). For resume of an already-cut
+   changelog whose section date may be “today” relative to commit time but
+   past relative to resume day, validate committed file contents against
+   `--verify-release-date <section-date>` plus package/lock version equality
+   rather than re-running prepare-time `--release-date`.
+7. No other paths differ from the parent (release-files-only diff).
+8. Where both local and remote `release/v<version>` exist, they must point to
+   the same validated commit SHA.
+
+### Resume scenarios
+
+| Observed state | Behavior |
+| --- | --- |
+| Local matching validated branch, no remote branch | Push that SHA; then ensure PR. |
+| Remote matching validated branch, no local branch | May fetch/create local tracking ref without force; ensure PR. Or operate on remote SHA via inspection without checkout. |
+| Matching remote branch, missing PR | Create PR only. |
+| Existing PR whose head SHA is the validated release commit | Report PR URL; no duplicate; success / already-complete. |
+| Divergent local vs remote release branches | Hard refuse; manual investigation. |
+| Branch/PR tip fails invariant validation | Hard refuse. |
+| Dirty / partial file edits before any commit | Refuse while dirty; operator restores clean tree manually. No automatic reset. |
+| Remote `main` advanced after release commit; commit still validates; parent still ancestor of current main; refs agree | Resume push/PR only as needed. |
+| Remote `main` advanced in a way that makes base/intent ambiguous (divergent tips, invariant failure) | Hard refuse. |
+
+`prepare --execute` success: a validated release commit exists on
+`release/v<version>`, that branch is on `origin`, and a non-merging PR into
+`main` exists for that head SHA (created now or already present).
 
 ### `tag`
 
-1. Prechecks: clean worktree; version match; resolve release date from
-   changelog (optional explicit `--release-date` must match); run assert with
-   resolved date; smoke notes as appropriate; remote `main` ancestry per
-   mutation-class rules above.
-2. **Remote tag collision (dry-run and execute):** query the exact remote tag
-   ref without mutating it, e.g.
-   `git ls-remote --exit-code --tags origin refs/tags/v<version>`.
-   Refuse if that exact tag name already exists remotely. Do not rely on the
-   local tag namespace or a possibly stale fetch. Match the exact tag name
-   (handle peeled annotated-tag refs carefully; do not treat similarly
-   prefixed tags as collisions). Also refuse if the tag already exists
-   locally.
-3. Do **not** create a local tag and discover collision only at `git push`.
-4. Recreating a previously deleted release tag is **always refused** by
-   default when the remote still has the tag, and if history/investigation
-   shows a prior release under that version the safe default remains refuse
-   and require deliberate manual investigation — the script never
-   force-moves or deletes tags.
-5. `--execute`: create `git tag -a -s "v<version>" -m "v<version>"` at `HEAD`.
-   With `--push`, `git push origin refs/tags/v<version>` only. Signing
-   failure must leave no lightweight tag.
-6. Refuse: past resolved dates per assert, empty notes, version/tag mismatch,
-   dirty tree, SHA not on remote `main`, unsigned/lightweight tag,
-   force/delete tag operations, `--push` without `--execute` or on
-   `prepare`, any npm publish attempt.
+1. Clean worktree.
+2. Require `HEAD ==` current remote `main` tip (same tip safety as fresh
+   prepare). Do **not** allow tagging an arbitrary ancestor merely because
+   package/changelog versions still match — that can omit later fixes already
+   on `main`. Tests cover remote main advancing between local checkout and
+   tag (stale HEAD refused).
+3. `package.json` version equals `--version`.
+4. Derive changelog date; optional explicit `--release-date` must match;
+   invoke `assert-changelog-release-ready.mjs --verify-release-date <D>`;
+   smoke `changelog.mjs` as appropriate.
+5. Exact remote tag collision via
+   `git ls-remote --exit-code --tags origin refs/tags/v<version>` on dry-run
+   and execute; also refuse local tag existence. No create-then-push collision
+   discovery. Never force-move or delete tags; refuse recreating a colliding
+   tag; require manual investigation for prior releases under that version.
+6. `--execute`: `git tag -a -s "v<version>" -m "v<version>"` at `HEAD`. With
+   `--push`, push only that tag ref. Signing failure leaves no lightweight tag.
 
 ### Documentation
 
-Update `RELEASING.md` for prepare → review/merge → tag[`--push`], including:
+Update `RELEASING.md` for:
 
-- that `tag` reads the changelog date automatically;
-- that prepare may be safely re-run to finish PR creation after a successful
-  push;
-- that dry-run uses remote read-only queries and does not fetch.
+- prepare → review/merge → update-to-main-tip → tag[`--push`];
+- changelog-derived tag dates via `--verify-release-date`;
+- fresh vs resume prepare;
+- dry-run remote-read semantics.
 
 ## Acceptance Criteria
 
-- `release:prepare` / `release:tag` dry-run perform no worktree/index
-  mutations, no local Git metadata mutations (including no `git fetch`), and
-  no remote mutations; they may use remote read-only queries. Guarantees are
-  covered by mechanical tests.
-- Dry-run never falsely reports successful `main` ancestry/identity when that
-  fact cannot be proven without a fetch; execute fetches explicitly before
-  mutating.
-- `prepare` defaults `--release-date` to today UTC; `tag` defaults by reading
-  the matching changelog section date; explicit `tag --release-date` must
-  match that section; assert is always called with the resolved date and its
-  semantics are not weakened. Documented tag command needs no remembered
-  prepare date; tests cover tag on a later UTC day than prepare.
-- `prepare --execute` cuts changelog, aligns package/lock versions, creates
-  signed commit `release: <version>` on branch `release/v<version>`, pushes
-  that branch, and ensures a non-merging PR into `main` via `gh`.
-- After push succeeds and PR creation fails, a rerun that finds the remote
-  branch at the exact expected release commit creates the missing PR and does
-  not duplicate commits or force-update the branch.
-- Same-name local/remote branch or PR pointing elsewhere is refused without
-  automatic delete/force-update.
-- An existing matching PR is reported without creating a duplicate.
-- `prepare` never merges the PR, never creates a release tag, and never
-  publishes to npm.
-- `tag` refuses when the exact remote tag ref already exists (verified via
-  `ls-remote` before local tag creation), including remote-only collisions in
-  fixture tests; never force-moves or deletes tags.
-- `tag --execute` on a clean, main-reachable commit matching `--version`
-  creates only an annotated signed `v<version>` tag; signing failure leaves no
-  lightweight tag.
-- Tag push happens only with `--push` together with `--execute` on `tag`.
-- Flags are parsed strictly; duplicate values are rejected; subprocess errors
-  include operation + stderr context without credentials.
-- `RELEASING.md` documents the operator path above; remote job behavior
-  unchanged.
-- Automated tests use fixture repos and bare local remotes; CI does not
-  require live GitHub/npm or real signing keys for green.
+- Dry-run performs no worktree/index mutations, no local Git metadata mutations
+  (including no `git fetch`), and no remote mutations; remote read-only queries
+  allowed; mechanically tested.
+- `prepare` uses assert `--release-date` (rejects past dates). `tag` uses
+  `--verify-release-date` (accepts valid earlier-day changelog dates; rejects
+  date mismatch). Delayed tagging after day-N prepare / day-N+1 merge works
+  without claiming that `--release-date` alone would allow it.
+- Helper tests prove: prepare-mode past date rejected; verify-mode earlier-day
+  accepted; verify-mode explicit mismatch rejected.
+- Fresh prepare requires clean tree and `HEAD ==` remote `main` tip; creates
+  signed release commit, pushes branch, opens non-merging PR.
+- Resume is selected before fresh-only checks; does not require `HEAD ==`
+  remote `main`; validates existing commit invariants; resumes push and/or PR;
+  never recreates/predicts commit SHAs; never deletes/force-updates branches.
+- Documented resume behaviors cover local-only, remote-only, missing PR,
+  matching PR, divergent branches, and remote-main advancement cases above.
+- Matching validated PR is reported without duplicate creation.
+- `prepare` never merges, never tags, never npm-publishes.
+- `tag` requires `HEAD ==` current remote `main` tip; refuses stale ancestor
+  checkouts when main has advanced; refuses exact remote tag collisions via
+  `ls-remote` before local tag creation.
+- Tag push only with `--push` + `--execute` on `tag`.
+- Strict/duplicate flag parsing; subprocess errors include operation + stderr
+  without credentials.
+- `RELEASING.md` updated; remote job behavior unchanged.
+- CI uses fixtures, bare remotes, stubbed `gh`/signing — no live GitHub/npm.
 
 ## Verification
 
-Strategy only — run results stay in the test suite, review, and CI:
+Strategy only — results stay in the test suite, review, and CI:
 
 ```sh
 npm run format:check
@@ -268,29 +314,28 @@ npm test
 git diff --check
 ```
 
-Also run focused subprocess/fixture cases for `scripts/release.mjs`, including
-dry-run purity (no ref/worktree drift), prepare recovery after push-without-PR,
-divergent-branch refusal, matching-PR idempotence, remote-only tag collision,
-and tag-after-later-UTC-day prepare. Live signed commit, real `gh`, signed
-tag, and `git push` against `vipentti/planlet` remain operator gates outside
-CI. No `## Verification Evidence` section expected unless an irreversible
-external proof is later required.
+Focused cases must include: assert `--release-date` vs `--verify-release-date`
+behavior; dry-run purity; fresh prepare; resume after commit-without-push and
+push-without-PR; divergent-branch refusal; matching-PR idempotence; remote-only
+tag collision; tag requiring main tip (stale ancestor refused); tag on a UTC
+day later than prepare. Live signing/`gh`/push against `vipentti/planlet`
+remain operator gates. No `## Verification Evidence` unless later required.
 
 ## Risks and Considerations
 
-- Prepare performs network git/GitHub mutations under `--execute`; dry-run
-  default, prechecks-before-edits, and an explicit recovery state machine are
-  load-bearing so “fail closed” does not strand a pushed branch without a PR.
-- Commit and tag signing depend on the operator’s local git SSH/GPG setup; CI
-  cannot fully prove GitHub verification for laptop-created objects and must
-  stub signing paths.
-- A successful tag push still waits on Environment `release` reviewers; the
-  script must not claim npm/GitHub release success.
-- Changelog cut cannot invent prose; empty Unreleased must fail.
-- Requiring `HEAD` equal to the current remote `main` tip for prepare avoids
-  sweeping unrelated local commits into the version PR; operators must update
-  to current main first.
-- Reading the tag release date from the changelog removes cross-day operator
-  footguns without weakening assert’s date equality rules.
-- `git ls-remote` / `gh` read calls need network even in dry-run; that is
-  intentional and distinct from Git metadata or remote-write mutations.
+- Historical verify mode is load-bearing for delayed tag; using `--release-date`
+  for tag would still reject past dates — the new flag exists specifically to
+  avoid that contradiction without weakening prepare-time rules.
+- Resume must not apply fresh `HEAD == main` checks; otherwise the normal
+  post-commit state can never reach recovery.
+- Commit SHA prediction is unsuitable for idempotency; invariant validation of
+  the actual SHA is the recovery model.
+- Tagging only the current remote `main` tip avoids releasing an outdated
+  main-reachable commit when later fixes already landed.
+- Prepare network mutations under `--execute` remain gated by dry-run default
+  and fail-closed prechecks; no automatic branch delete/force-update.
+- Signing/`gh` depend on operator setup; CI stubs those paths.
+- Tag push still waits on Environment `release`; script must not claim npm
+  success.
+- `git ls-remote` / `gh` reads need network in dry-run; distinct from Git
+  metadata or remote-write mutations.
