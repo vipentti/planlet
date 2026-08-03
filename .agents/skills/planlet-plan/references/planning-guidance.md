@@ -4,7 +4,13 @@
 
 Read repository instructions, relevant source and tests, package or build metadata, and nearby plans before recommending work. Trace the current behavior far enough to identify integration boundaries and verification surfaces. Do not edit product files during this workflow.
 
-Look up repository facts instead of asking. For a vague or incomplete request, surface material open decisions that affect outcome, boundaries, constraints, acceptance, verification, or task sizing; ask in small related batches and prefer about 2–4 related decisions per discovery batch; ask one-at-a-time only when answers depend on each other; include a recommended answer with each decision. Narrow into a concrete proposal only after those decisions are settled enough for a fresh agent handoff. If the request is already precise, proceed without ceremonial questions.
+Look up repository facts instead of asking.
+For a vague or incomplete request, surface material open decisions that affect outcome, boundaries, constraints, acceptance, verification, or task sizing.
+Ask in small related batches and prefer about 2–4 related decisions per discovery batch.
+Ask one-at-a-time only when answers depend on each other.
+Include a recommended answer with each decision.
+Narrow into a concrete proposal only after those decisions are settled enough for a fresh agent handoff.
+If the request is already precise, proceed without ceremonial questions.
 
 ## Shape a focused plan
 

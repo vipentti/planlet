@@ -18,7 +18,11 @@ Create or revise one focused planlet while keeping planning separate from implem
 ## Develop the proposal
 
 1. Inspect the repository before recommending an approach.
-2. Look up repository facts instead of asking. For a vague or incomplete request, surface material open decisions that affect outcome, boundaries, constraints, acceptance, verification, or task sizing; ask in small related batches (prefer about 2–4 related decisions; one-at-a-time only when answers depend on each other) with a recommended answer for each decision; settle those decisions enough for a fresh-session handoff before narrowing into a concrete proposal. If the request is already precise, proceed without ceremonial questions.
+2. Look up repository facts instead of asking.
+   - For a vague or incomplete request, surface material open decisions that affect outcome, boundaries, constraints, acceptance, verification, or task sizing.
+   - Ask in small related batches (prefer about 2–4 related decisions; one-at-a-time only when answers depend on each other) with a recommended answer for each decision.
+   - Settle those decisions enough for a fresh-session handoff before narrowing into a concrete proposal.
+   - If the request is already precise, proceed without ceremonial questions.
 3. Define the outcome, scope, exclusions, approach, acceptance criteria, verification, and meaningful risks. Compare options only when the choice matters. Keep `plan.md` static: verification records strategy, never results of a past or future run.
 4. Propose a descriptive slug matching `^[a-z0-9]+(?:-[a-z0-9]+)*$` and verify that its logical slug is unused among active and completed planlets.
 5. Turn the proposal into `plan.md` and a stable, verifiable task sequence in `tasks.md`. Keep each task small enough that a typical agent can implement and verify it independently. Read [planning guidance](references/planning-guidance.md) and use the templates in [plan-template.md](assets/plan-template.md) and [tasks-template.md](assets/tasks-template.md).
