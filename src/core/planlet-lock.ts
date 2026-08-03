@@ -25,6 +25,13 @@ export const HARNESS_INSTALL_LOCK_NAME = "__harness__";
  * Release renames the path aside and deletes only when the quarantined token
  * still matches, so a read-then-unlink race cannot drop a successor's lock.
  * Do not drop the token.
+ *
+ * Residual after that recovery: a late release can quarantine the successor,
+ * leave the canonical path empty long enough for a third holder, then restore
+ * over it on POSIX. Closing that window needs flock(2)/LockFileEx, or a lock
+ * directory whose release only unlinks the caller's token child — not another
+ * rename protocol on this file representation. These locks are short-lived
+ * temp files; that interleaving is rare enough to defer.
  */
 export interface OwnedLockHolder {
   readonly pid: number;
@@ -58,6 +65,10 @@ const DEFAULT_PLANLET_LOCK_DEPENDENCIES: PlanletLockDependencies = {
 
 function isAlreadyExists(error: unknown): boolean {
   return error instanceof Error && "code" in error && error.code === "EEXIST";
+}
+
+function isNotFound(error: unknown): boolean {
+  return error instanceof Error && "code" in error && error.code === "ENOENT";
 }
 
 /**
@@ -224,6 +235,8 @@ export function acquireOwnedLock(
  * atomic rename aside. A pathname read followed by unlink cannot provide
  * ownership-checked deletion: the path can be replaced between the two.
  * Mismatched quarantine contents are restored to the lock path when possible.
+ * Only a missing source (ENOENT) is a silent no-op on the initial rename;
+ * other rename failures propagate so callers can surface a release warning.
  * Throws from rename/remove are not swallowed here once ownership is confirmed.
  */
 export function releaseOwnedLock(
@@ -240,8 +253,12 @@ export function releaseOwnedLock(
 
   try {
     rename(handle.path, quarantine);
-  } catch {
-    return;
+  } catch (error) {
+    // Path already gone (released, or manually cleared). Any other failure
+    // leaves the caller's lock in place and must reach releaseWarning /
+    // double-fault handling — silent success would wedge later acquires.
+    if (isNotFound(error)) return;
+    throw error;
   }
 
   const holder = readOwnedLockHolder(quarantine);

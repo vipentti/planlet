@@ -466,6 +466,76 @@ test("withPlanletLock reports both the operation error and a failed release", ()
   });
 });
 
+test("failed initial release rename with a successful operation returns a warning", () => {
+  withRepo((root, tasksPath) => {
+    const renameError = Object.assign(new Error("busy"), { code: "EBUSY" });
+    const result = updateTask({
+      repositoryRoot: root,
+      slug: "fixture-plan",
+      taskId: "T1",
+      operation: "check",
+      dependencies: {
+        lock: {
+          rename: () => {
+            throw renameError;
+          },
+        },
+      },
+    });
+    assert.equal(result.changed, true);
+    assert.match(readFileSync(tasksPath, "utf8"), /\[x\] T1/);
+    assert.ok(
+      result.warnings.some((warning) =>
+        warning.includes("Lock release failed"),
+      ),
+    );
+    assert.equal(existsSync(lockPathFor(root, "fixture-plan")), true);
+  });
+});
+
+test("failed initial release rename with a failed operation keeps both faults", () => {
+  withRepo((root) => {
+    const renameError = Object.assign(new Error("access denied"), {
+      code: "EACCES",
+    });
+    assert.throws(
+      () =>
+        withPlanletLock(
+          root,
+          "fixture-plan",
+          () => {
+            throw new PlanletError("task_not_found", "missing");
+          },
+          {
+            rename: () => {
+              throw renameError;
+            },
+          },
+        ),
+      (error) => {
+        assert.ok(error instanceof PlanletError);
+        assert.equal(error.code, "task_not_found");
+        assert.equal(error.details.lockReleaseFailed, true);
+        assert.equal(error.details.lockPath, lockPathFor(root, "fixture-plan"));
+        const cause = error.cause;
+        assert.ok(cause instanceof AggregateError);
+        assert.equal(cause.errors[1], renameError);
+        return true;
+      },
+    );
+    assert.equal(existsSync(lockPathFor(root, "fixture-plan")), true);
+  });
+});
+
+test("missing lock during release rename is a silent no-op", () => {
+  withRepo((root) => {
+    const handle = acquirePlanletLock(root, "fixture-plan");
+    rmSync(handle.path, { force: true });
+    releaseOwnedLock(handle);
+    assert.equal(existsSync(handle.path), false);
+  });
+});
+
 test("a failed release surfaces through the production entry with its code", () => {
   withRepo((root) => {
     let thrown: unknown;
