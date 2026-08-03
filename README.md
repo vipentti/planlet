@@ -177,7 +177,7 @@ publishes or verifies the exact `@vipentti/planlet` artifact with provenance,
 re-checks registry identity/integrity after a new publish, then creates or
 updates the GitHub release from the changelog. Do not push a release tag until
 the version commit is on `main` and captain gates in the
-[release automation plan](https://github.com/vipentti/planlet/blob/main/plans/release-automation/plan.md)
+[release automation plan](https://github.com/vipentti/planlet/blob/main/plans/completed/2026-08-03-release-automation/plan.md)
 are satisfied. After changing the workflow environment name, keep the npm
 trusted-publisher environment field in sync (`release`).
 
