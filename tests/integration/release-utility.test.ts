@@ -49,6 +49,8 @@ function ghStub(base: string, initialPrList: string): string {
   mkdirSync(bin);
   writeFileSync(prList, initialPrList);
   writeFileSync(ghLog, "");
+
+  // POSIX shell stub, found directly by an un-shelled spawn.
   const stub = join(bin, "gh");
   writeFileSync(
     stub,
@@ -62,6 +64,20 @@ function ghStub(base: string, initialPrList: string): string {
     ].join("\n"),
   );
   chmodSync(stub, 0o755);
+
+  // Windows batch stub: release.mjs resolves gh through a shell there, so
+  // gh.cmd (found via PATHEXT) is the reachable program.
+  writeFileSync(
+    join(bin, "gh.cmd"),
+    [
+      "@echo off",
+      `echo %*>> "${ghLog}"`,
+      `if "%1"=="pr" if "%2"=="list" (type "${prList}" & exit /b 0)`,
+      `if "%1"=="pr" if "%2"=="create" (echo https://github.com/vipentti/planlet/pull/100 & exit /b 0)`,
+      "exit /b 1",
+      "",
+    ].join("\r\n"),
+  );
   return ghLog;
 }
 

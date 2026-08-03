@@ -32,7 +32,15 @@ function git(...args) {
 }
 
 function gh(...args) {
-  const r = spawnSync("gh", args, { cwd: root, encoding: "utf8" });
+  // On Windows the github CLI, like any command without an executable
+  // extension, must resolve through a shell (cmd.exe) to honor PATHEXT, so a
+  // test stub provided as gh.cmd remains reachable. POSIX spawns the argv
+  // directly to keep arguments verbatim.
+  const r = spawnSync("gh", args, {
+    cwd: root,
+    encoding: "utf8",
+    shell: process.platform === "win32",
+  });
   return r;
 }
 
