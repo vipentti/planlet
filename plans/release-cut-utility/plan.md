@@ -14,10 +14,13 @@ vs **resume** before applying fresh-only checks. Resume validates existing
 objects against invariants (never by predicting SHAs or recreating tags). The
 assert helper is the sole changelog parser and exposes resolved dates through
 one fixed machine-readable CLI contract. Signature checks guarantee local
-cryptographic validity only, not maintainer authorization. `tag` requires
-`HEAD` equal to the current remote `main` tip. Prepare PR lookup distinguishes
-open, merged, closed-unmerged, and conflicting PR states. Remote-ref probes use
-exact `git ls-remote --exit-code` status classification.
+cryptographic validity only, not maintainer authorization. Fresh prepare and
+fresh tag **must** verify the newly created object with `git verify-commit` /
+`git verify-tag` (and full invariants) **before** any push; signing prechecks
+are preliminary only. `tag` requires `HEAD` equal to the current remote `main`
+tip. Prepare PR lookup distinguishes open, merged, closed-unmerged, and
+conflicting PR states. Remote-ref probes use exact `git ls-remote --exit-code`
+status classification.
 
 ## Motivation
 
@@ -45,7 +48,10 @@ In scope:
 - `tag` fresh / resume (local annotated signed tag invariants; optional push;
   remote tag always investigation-required).
 - Signature policy: local cryptographic validity via `git verify-commit` /
-  `git verify-tag` exit status only (not maintainer allowlisting).
+  `git verify-tag` exit status only (not maintainer allowlisting). Mandatory
+  **post-creation** verification of the exact new commit/tag before any push;
+  early signing-configuration prechecks are preliminary diagnostics only and
+  do not replace it.
 - Dry-run by default; mutations require `--execute`. `--push` is valid only on
   `tag` and still requires `--execute`. Prepare has no separate `--push`.
 - Remote-ref probes use the exact found / absent / failed classification under
@@ -286,17 +292,33 @@ annotated tag / commit via Git plumbing as needed for other invariants).
 - Resume **accepts** an object signed by a different key than the current
   operator when `verify-*` exits `0`.
 
+#### Preliminary signing prechecks vs post-creation verification
+
+- Non-mutating early checks (signing configured / verify tooling present) are
+  **preliminary diagnostics only**. They may fail closed before edits when
+  clearly broken, but they **do not** prove a future object will verify.
+- Dry-run may report that signing and post-creation verification will be
+  required; it must **not** claim a future object is already cryptographically
+  verified.
+- **Mandatory post-creation verification** of the exact new object is required
+  before any push (and before `gh pr create` for prepare). This is the
+  authoritative application of the policy.
+
 #### Where applied
 
-Same policy for: fresh release-commit creation prechecks (signing usable),
-resumed release-commit validation, fresh tag creation, resumed local-tag
-validation.
+- Fresh prepare: after `git commit -S`, before push/PR — full release-commit
+  invariants including `git verify-commit <exact-sha>`.
+- Fresh tag: after `git tag -a -s`, before any tag push — full local-tag
+  invariants including `git verify-tag`.
+- Resume prepare / resume tag: same invariant + verify checks on the existing
+  object before any remote mutation.
 
 #### CI / fixtures
 
 - Stub or fixture-control `git verify-commit` / `git verify-tag` (or use test
   repos with known keys) to cover: valid signed, invalid/tampered, unsigned /
-  lightweight, and verify-tooling-missing → refuse.
+  lightweight, verify-tooling-missing → refuse, and **post-creation verify
+  failure with no push**.
 - “Wrong signer” relative to an allowlist is **out of scope**; do not add
   allowlist fixtures. A second valid key still counts as valid under this
   policy.
@@ -310,16 +332,41 @@ Discover state for `--version`:
 3. `gh` lookup of open, closed, and merged PRs for head `release/v<version>`.
 
 **Fresh** — no local branch, remote branch, or relevant PR: clean worktree;
-`HEAD ==` remote main tip; then edit → branch → signed commit → push →
-`gh pr create`.
+`HEAD ==` remote main tip; then the ordered fresh path below.
 
 **Resume** — any of those exist: do not require `HEAD ==` main; validate
 commit invariants; finish push/PR per PR-state rules; never recreate commit;
 never delete/force-update.
 
+### Fresh prepare ordering (post-creation verify before push)
+
+```text
+prechecks (incl. preliminary signing diagnostics)
+→ edit release files
+→ create branch release/v<version>
+→ git commit -S -m "release: <version>"
+→ resolve exact new commit SHA
+→ validate full release-commit invariants on that SHA
+   (incl. git verify-commit <exact-sha> exit 0)
+→ only then: git push -u origin release/v<version>
+→ only then: gh pr create (per PR-state rules)
+```
+
+If post-creation invariant or `verify-commit` fails:
+
+1. Refuse push and refuse PR creation.
+2. Leave the local branch and commit **untouched** (no reset, rewrite, delete,
+   or automatic recreate).
+3. Error must state clearly that the release commit was created locally but was
+   **not pushed** because post-creation verification failed.
+4. The actual commit SHA remains the recovery identity; a later rerun enters
+   **resume** and either validates successfully (then may push/PR) or continues
+   to refuse.
+
 ### Release-commit invariants
 
-Actual SHA is recovery identity. Validate:
+Actual SHA is recovery identity (including after a fresh commit that failed
+post-creation verify before push). Validate:
 
 1. Branch name exactly `release/v<version>`.
 2. Exactly one parent (base = that parent once other invariants pass).
@@ -327,11 +374,10 @@ Actual SHA is recovery identity. Validate:
    current remote main, content invariants hold, and local/remote tips agree;
    else hard-refuse.
 4. Message exactly `release: <version>`.
-5. `git verify-commit` exit `0` (policy above).
+5. `git verify-commit <exact-sha>` exit `0` (policy above).
 6. Release file contents match `--version`; changelog via
    `--verify-release --print-release-date` (and optional
-   `--verify-release-date`) on those committed files / worktree as
-   implemented for resume — helper only, no third parser.
+   `--verify-release-date`) — helper only, no third parser.
 7. Release-files-only diff vs parent.
 8. Local and remote tips agree when both exist.
 
@@ -355,6 +401,7 @@ Create PR only when full lookup finds no relevant open/closed/merged PR.
 | Local validated, no remote | Push; then PR handling |
 | Remote validated, no local | Inspect/track without force; PR handling |
 | Remote validated, no relevant PR | Create PR |
+| Local commit exists after post-creation verify failure (never pushed) | Resume: re-validate invariants; if now valid, push/PR; if still invalid, refuse and leave untouched |
 | Divergent local/remote tips | Hard refuse |
 | Invariant failure | Hard refuse |
 | Dirty pre-commit tree | Refuse; manual restore |
@@ -370,24 +417,48 @@ helper `--verify-release --print-release-date` (+ optional
 - **Remote tag found:** hard-refuse (investigation-required). Never
   force-move/delete.
 - **Remote probe failed:** fail closed.
-- **Fresh** (remote absent, no local tag): `--execute` creates
-  `git tag -a -s "v<version>" -m "v<version>"` at `HEAD`; push only with
-  `--push`. Signing failure leaves no lightweight tag. Creation prechecks
-  ensure verify tooling will be able to validate (fail closed if signing
-  cannot produce a verifiable tag).
-- **Resume** (local tag exists, remote absent): validate name `v<version>`;
-  annotated (not lightweight); `git verify-tag` exit `0`; points at current
-  `HEAD`; `HEAD` still remote main tip; message exactly `v<version>`; package +
-  helper verify still pass. Without `--push`: report exists, success. With
-  `--push --execute`: push that tag only. Never recreate/move/delete/force.
-- **Invalid local tag:** hard-refuse.
+
+#### Fresh tag ordering (post-creation verify before push)
+
+Including one-step `tag --execute --push`:
+
+```text
+prechecks (incl. preliminary signing diagnostics)
+→ git tag -a -s "v<version>" -m "v<version>" HEAD
+→ resolve exact tag via refs/tags/v<version>
+→ validate local-tag invariants (annotated; name; message; peeled target == HEAD;
+   git verify-tag exits 0)
+→ only then, if --push: git push origin refs/tags/v<version>
+```
+
+There is **no** path that creates a tag and pushes without verification in
+between. Signing failure during create must leave no lightweight tag. If
+post-creation validation or `verify-tag` fails:
+
+1. Refuse any tag push.
+2. Leave the local tag **untouched** (never recreate, move, force-update, or
+   delete automatically).
+3. Error must state clearly that the tag exists locally but was **not pushed**
+   because post-creation verification failed.
+4. A later rerun enters **local-tag resume** and either validates successfully
+   or continues to refuse.
+
+#### Resume — existing local tag, remote absent
+
+Validate: name `v<version>`; annotated (not lightweight); `git verify-tag`
+exit `0`; peeled target is exact current `HEAD`; `HEAD` still remote main tip;
+message exactly `v<version>`; package + helper verify still pass. Without
+`--push`: report exists, success. With `--push --execute`: push that tag only.
+Never recreate/move/delete/force. **Invalid local tag:** hard-refuse.
 
 ### Documentation (`RELEASING.md`)
 
 Document operator flow; exact assert flags (`--verify-release`,
 `--verify-release-date`, `--print-release-date` vs `--release-date`); signature
-policy (crypto validity only); prepare/tag fresh/resume; PR states; ls-remote
-exit classification; local-tag-then-push.
+policy (crypto validity only); mandatory post-creation verify before push;
+prepare/tag fresh/resume; PR states; ls-remote exit classification;
+local-tag-then-push; errors that leave unverified-but-created local objects
+for investigation.
 
 ## Acceptance Criteria
 
@@ -400,6 +471,15 @@ exit classification; local-tag-then-push.
 - Signature checks use `git verify-commit` / `git verify-tag` exit `0` only;
   no allowlist; resume accepts other valid keys; missing verify config fails
   closed.
+- Fresh prepare: create commit → full invariant + `verify-commit` on exact SHA
+  → only then push/PR. Verify failure: no push/PR; local commit left for
+  inspection; error states not-pushed-due-to-verification-failure; rerun uses
+  resume.
+- Fresh tag / `--execute --push`: create tag → full invariant + `verify-tag` →
+  only then optional push. Same leave-local / resume behavior on failure. No
+  create-then-push without verify.
+- Preliminary signing prechecks do not replace post-creation verification;
+  dry-run does not claim future objects are already verified.
 - Fresh/resume prepare and tag behaviors, PR states, and remote-tag refusal as
   specified.
 - ls-remote: exit `0` found (with peel-pair OK), exit `2` absent, else failed;
@@ -428,7 +508,11 @@ Focused cases: helper flag matrix and exact stdout; dry-run purity; fresh
 prepare; resume push/PR; PR open/merged/closed/conflict stubs; tag local resume
 and push-fail retry; invalid local tag; remote tag refuse; ls-remote status
 matrix; verify-commit/tag valid/invalid/unsigned/missing-tooling; stale main
-tip; later-UTC-day tag. Live signing/`gh`/push remain operator gates.
+tip; later-UTC-day tag; **post-creation verify success then push**; **post-
+creation verify failure with no push/PR and local object retained**; later
+rerun resume after failed post-creation verify; `--execute --push` create →
+verify → push ordering; no cleanup/force after verify failure. Live
+signing/`gh`/push remain operator gates.
 
 ## Risks and Considerations
 
@@ -438,6 +522,10 @@ tip; later-UTC-day tag. Live signing/`gh`/push remain operator gates.
 - Crypto-validity-only signing is weaker than maintainer authorization; stated
   explicitly so operators are not misled. Environment `release` reviewers remain
   the publish gate.
+- Signing prechecks cannot prove the created object verifies (e.g. SSH sign vs
+  `allowedSignersFile` mismatch); post-creation `verify-*` before push is
+  load-bearing. Leaving the local object on failure is intentional for
+  investigation and resume — never auto-cleanup.
 - SSH verify depends on local `allowedSignersFile`; missing config fails closed
   rather than skipping.
 - ls-remote exit `2` is the only “absent” signal; treating other nonzeros as
