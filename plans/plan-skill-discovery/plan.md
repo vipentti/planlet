@@ -43,7 +43,7 @@ In guidance, define “small task” as one delivered outcome a typical agent ca
 - Test-pinned verification sentences and forbidden command names remain intact in the planlet-plan corpus.
 - `planlet_design.md` §14.1 uses the richer-discovery responsibility wording (Scope draft or equivalent) and no longer contradicts hybrid discovery; §8.1 numbering and precise-request fast path remain.
 - Scenario fixtures and eval S1/S2 match the new wording; decision labels stay unless a rename is unavoidable.
-- Installed skill copies match canonical sources after `planlet update` / `planlet tools`.
+- Installed skill copies match canonical sources after `node dist/planlet.mjs update` / `node dist/planlet.mjs tools`.
 - Planning still never writes before confirmation and never implements product code.
 
 ## Verification
