@@ -534,10 +534,10 @@ test("isProcessAlive reclaims only on ESRCH and treats everything else as alive"
   };
 
   assert.equal(classify("ESRCH"), false);
+  // EPERM is the case that matters: another user's live process on a shared
+  // /tmp. Anything unrecognized must count as alive for the same reason.
   assert.equal(classify("EPERM"), true);
-  assert.equal(classify("EACCES"), true);
   assert.equal(classify("EIO"), true);
-  assert.equal(classify("ENOSYS"), true);
 });
 
 test("unknown probe result leaves the lock untouched", () => {

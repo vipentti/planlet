@@ -387,10 +387,10 @@ test("destination install rolls back to the exact pre-operation state on faults"
       assert.equal(readFileSync(unrelated, "utf8"), "# Keep\n");
     };
 
-    fault("afterStage");
+    // One pre-commit fault is enough: every step before the commit point funnels
+    // into the same rollback. Faulting on the first of two skills also leaves a
+    // partial `mutated` set, which is the only variation that changes behavior.
     fault("afterReplaceSkill", "planlet-example");
-    fault("afterRemoveObsolete");
-    fault("beforeManifest");
 
     assert.throws(
       () =>
@@ -402,8 +402,8 @@ test("destination install rolls back to the exact pre-operation state on faults"
           source: updated,
           transactionHooks: {
             onStep: (step) => {
-              if (step === "beforeManifest") {
-                throw new Error("fail before manifest for rollback hook");
+              if (step === "afterReplaceSkill") {
+                throw new Error("fail before commit for rollback hook");
               }
               if (step === "duringRollback") {
                 throw new Error("fail during rollback");
@@ -543,7 +543,7 @@ test("rollback failure after one skill and while restoring manifest leaves recov
             source: updated,
             transactionHooks: {
               onStep: (step, detail) => {
-                if (step === "beforeManifest") {
+                if (step === "afterReplaceSkill") {
                   throw new Error("fail before manifest");
                 }
                 if (
@@ -607,68 +607,9 @@ test("rollback failure after one skill and while restoring manifest leaves recov
   });
 });
 
-test("nested harness installs serialize on the repository-wide lock", () => {
-  withRoot((root) => {
-    const initial = source({
-      "planlet-example/SKILL.md": "# Example\n",
-    });
-    installHarnessSkills({
-      repositoryRoot: root,
-      operation: "init",
-      tools: "agents",
-      source: initial,
-    });
-    const loserSource = source({
-      "planlet-example/SKILL.md": "# Loser\n",
-    });
-    for (const [step, content] of [
-      ["afterStage", "# WinnerAfterStage\n"],
-      ["beforeManifest", "# WinnerBeforeManifest\n"],
-    ] as const) {
-      const winnerSource = source({
-        "planlet-example/SKILL.md": content,
-      });
-      const result = installHarnessSkills({
-        repositoryRoot: root,
-        operation: "update",
-        tools: "agents",
-        force: true,
-        source: winnerSource,
-        transactionHooks: {
-          onStep: (current) => {
-            if (current !== step) return;
-            assert.throws(
-              () =>
-                installHarnessSkills({
-                  repositoryRoot: root,
-                  operation: "update",
-                  tools: "codex",
-                  force: true,
-                  source: loserSource,
-                }),
-              (error) =>
-                error instanceof PlanletError &&
-                error.code === "write_conflict",
-            );
-          },
-        },
-      });
-      assert.equal(result.data.changed, true);
-      assert.equal(
-        readFileSync(
-          join(root, ".agents", "skills", "planlet-example", "SKILL.md"),
-          "utf8",
-        ),
-        content,
-      );
-      assert.equal(
-        existsSync(join(planletLockRoot(root), HARNESS_INSTALL_LOCK_NAME)),
-        false,
-      );
-    }
-  });
-});
-
+// The one nested-install test. The lock wraps the whole operation, so nesting at
+// a second step proves nothing extra; a coalesced destination does, because it
+// shows the lock is repository-wide rather than per-destination.
 test("nested claude install against coalesced agents destination cannot mutate winner", () => {
   withRoot((root) => {
     mkdirSync(join(root, ".agents", "skills"), { recursive: true });
@@ -698,7 +639,7 @@ test("nested claude install against coalesced agents destination cannot mutate w
       source: winnerSource,
       transactionHooks: {
         onStep: (step) => {
-          if (step !== "afterStage") return;
+          if (step !== "afterReplaceSkill") return;
           assert.throws(
             () =>
               installHarnessSkills({
@@ -744,7 +685,7 @@ test("harness lock is released after install failure", () => {
           }),
           transactionHooks: {
             onStep: (step) => {
-              if (step === "afterStage") {
+              if (step === "afterReplaceSkill") {
                 throw new Error("boom");
               }
             },
@@ -790,21 +731,18 @@ test("post-commit cleanup failure preserves published skills and leaves backup",
       source: updated,
       transactionHooks: {
         onStep: (step) => {
-          if (step === "afterCommit") {
-            const destination = join(root, ".agents", "skills");
-            const backup = readdirSync(destination).find((name) =>
-              name.startsWith(".planlet-bak-"),
-            );
-            assert.ok(backup);
-            // Simulate partial backup deletion before cleanup fails.
-            rmSync(join(destination, backup, "planlet-example"), {
-              recursive: true,
-              force: true,
-            });
-          }
-          if (step === "beforeCleanup") {
-            throw new Error("fail deleting leftover backup");
-          }
+          if (step !== "beforeCleanup") return;
+          const destination = join(root, ".agents", "skills");
+          const backup = readdirSync(destination).find((name) =>
+            name.startsWith(".planlet-bak-"),
+          );
+          assert.ok(backup);
+          // Simulate partial backup deletion before cleanup fails.
+          rmSync(join(destination, backup, "planlet-example"), {
+            recursive: true,
+            force: true,
+          });
+          throw new Error("fail deleting leftover backup");
         },
       },
     });

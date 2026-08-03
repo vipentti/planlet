@@ -355,14 +355,17 @@ function asWriteConflict(error: unknown, destination: string): PlanletError {
   );
 }
 
+/**
+ * Fault-injection seams for the publish transaction. Production never sets
+ * hooks; they exist because the recovery paths below cannot be reached through
+ * the public API otherwise. Three steps, one per distinct outcome: a throw at
+ * `afterReplaceSkill` rolls back (and fires per skill, so a fault mid-loop
+ * exercises a partial rollback), at `duringRollback` leaves recovery
+ * directories, at `beforeCleanup` publishes but warns. Adding a step means a
+ * new outcome, not a new place to throw.
+ */
 export type InstallTxStep =
-  | "afterStage"
-  | "afterReplaceSkill"
-  | "afterRemoveObsolete"
-  | "beforeManifest"
-  | "afterCommit"
-  | "duringRollback"
-  | "beforeCleanup";
+  "afterReplaceSkill" | "duringRollback" | "beforeCleanup";
 
 export interface InstallTransactionHooks {
   readonly onStep?: (step: InstallTxStep, detail?: string) => void;
@@ -454,7 +457,6 @@ function publishDestinationTransaction(
         { encoding: "utf8", flag: "wx" },
       );
     }
-    emit("afterStage");
 
     mkdirSync(backupRoot);
     backupReady = true;
@@ -464,9 +466,6 @@ function publishDestinationTransaction(
       if (pathKind(live) === "missing") continue;
       moveManagedEntry(live, join(backupRoot, skill));
       mutated.add(skill);
-    }
-    if (obsoleteSkills.length > 0) {
-      emit("afterRemoveObsolete");
     }
     if (options.writeManifest && pathKind(liveManifest) !== "missing") {
       moveManagedEntry(liveManifest, join(backupRoot, INSTALLATION_MANIFEST));
@@ -479,14 +478,12 @@ function publishDestinationTransaction(
       emit("afterReplaceSkill", skill);
     }
     if (options.writeManifest) {
-      emit("beforeManifest");
       moveManagedEntry(join(stageRoot, INSTALLATION_MANIFEST), liveManifest);
       mutated.add(INSTALLATION_MANIFEST);
     }
 
     // Commit point: live managed state is now the new installation.
     committed = true;
-    emit("afterCommit");
   } catch (error) {
     if (backupReady && !committed) {
       try {

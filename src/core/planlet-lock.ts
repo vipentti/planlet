@@ -15,6 +15,13 @@ import { tryLstat } from "./paths.js";
 /** Reserved lock name for repository-wide harness install serialization. */
 export const HARNESS_INSTALL_LOCK_NAME = "__harness__";
 
+/**
+ * The token is not PID-reuse insurance; a dead process never calls release.
+ * It guards the recovery this module's own error text invites: a user who
+ * removes a lock that turned out to be live lets a second holder acquire, and
+ * the first holder's later release would delete that holder's lock mid-write.
+ * A token mismatch makes the stale release a no-op instead. Do not drop it.
+ */
 export interface OwnedLockHolder {
   readonly pid: number;
   readonly token: string;
@@ -40,7 +47,9 @@ export interface OwnedLockRunResult<T> {
 /**
  * Conservative process probe for stale-lock reclaim: only a definite "no such
  * process" reclaims a lock. Everything else, including EPERM from another
- * user's live process, counts as alive.
+ * user's live process, counts as alive. This is one comparison, not a table of
+ * handled codes: rethrowing the non-ESRCH cases would crash the CLI on the
+ * EPERM a shared /tmp produces whenever another user holds the lock.
  */
 export function isProcessAlive(pid: number): boolean {
   try {
@@ -82,23 +91,21 @@ function assertNotSymlink(path: string, label: string): void {
   }
 }
 
+/**
+ * Unreadable or malformed holder metadata returns null, which callers treat as
+ * "not reclaimable" — contention the user resolves by hand. The positive-integer
+ * check is not defensive noise: process.kill addresses a process group for pid 0
+ * and every permitted process for pid -1, so a hand-edited lock file must never
+ * reach the probe.
+ */
 export function readOwnedLockHolder(path: string): OwnedLockHolder | null {
   try {
-    const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
-    if (
-      typeof parsed !== "object" ||
-      parsed === null ||
-      !("pid" in parsed) ||
-      !("token" in parsed) ||
-      typeof parsed.pid !== "number" ||
-      !Number.isInteger(parsed.pid) ||
-      parsed.pid <= 0 ||
-      typeof parsed.token !== "string" ||
-      parsed.token.length === 0
-    ) {
-      return null;
-    }
-    return { pid: parsed.pid, token: parsed.token };
+    const { pid, token } = JSON.parse(
+      readFileSync(path, "utf8"),
+    ) as Partial<OwnedLockHolder>;
+    return Number.isInteger(pid) && pid! > 0 && typeof token === "string"
+      ? { pid: pid!, token }
+      : null;
   } catch {
     return null;
   }
@@ -145,6 +152,9 @@ export function planletLockRoot(repositoryRoot: string): string {
   } catch {
     // Keep the lexical path: acquisition reports the real failure.
   }
+  // Hashed, not a sanitized copy of the path: a readable encoding of a deep
+  // checkout exceeds the 255-byte filename limit and publishes the user's
+  // directory layout into a world-readable /tmp.
   const key = createHash("sha256")
     .update(`${owner}\0${canonical}`)
     .digest("hex")
@@ -267,7 +277,9 @@ function withOwnedLock<T>(
       // Keep the operation's structured code and message: the release failure
       // is extra recovery information, not a different error. A bare
       // AggregateError here would reach the CLI boundary as internal_error and
-      // the lock path would never be printed.
+      // the lock path would never be printed. Warning on stderr instead is not
+      // an option either: rendering belongs to the command handlers, and this
+      // module writes no output.
       const failed = isPlanletError(operationError)
         ? operationError
         : undefined;
