@@ -64,14 +64,10 @@ export function isProcessAlive(pid: number): boolean {
   }
 }
 
-function removeTree(path: string): void {
-  rmSync(path, { recursive: true, force: true });
-}
-
-export const DEFAULT_PLANLET_LOCK_DEPENDENCIES: PlanletLockDependencies = {
+const DEFAULT_PLANLET_LOCK_DEPENDENCIES: PlanletLockDependencies = {
   write: (path, contents) =>
     writeFileSync(path, contents, { encoding: "utf8", flag: "wx" }),
-  remove: removeTree,
+  remove: (path) => rmSync(path, { recursive: true, force: true }),
   isProcessAlive,
   pid: process.pid,
 };
@@ -98,7 +94,7 @@ function assertNotSymlink(path: string, label: string): void {
  * and every permitted process for pid -1, so a hand-edited lock file must never
  * reach the probe.
  */
-export function readOwnedLockHolder(path: string): OwnedLockHolder | null {
+function readOwnedLockHolder(path: string): OwnedLockHolder | null {
   try {
     const { pid, token } = JSON.parse(
       readFileSync(path, "utf8"),
@@ -111,6 +107,15 @@ export function readOwnedLockHolder(path: string): OwnedLockHolder | null {
   }
 }
 
+/**
+ * ponytail: reclaim is remove-then-create, which leaves a window where two
+ * processes that both see the same dead holder can both remove and both
+ * acquire. No file-based scheme closes it — there is no atomic compare-and-
+ * delete on a POSIX filesystem, and the quarantine-rename variant this
+ * replaced had the identical window, since the loser's rename simply takes the
+ * winner's fresh lock. Reaching it needs two reclaims of one dead lock inside
+ * a few microseconds. Bind flock(2)/LockFileEx if that ever has to be closed.
+ */
 function tryReclaimDeadLock(
   lockPath: string,
   label: string,
@@ -181,7 +186,9 @@ export function acquireOwnedLock(
 ): OwnedLockHandle {
   const resolved = { ...DEFAULT_PLANLET_LOCK_DEPENDENCIES, ...dependencies };
   try {
-    mkdirSync(rootDir, { recursive: true });
+    // 0o700: the namespace sits in a world-writable /tmp, so anyone able to
+    // guess or list it could otherwise pre-create or read lock holders.
+    mkdirSync(rootDir, { recursive: true, mode: 0o700 });
   } catch (createError) {
     throw new PlanletError(
       "write_conflict",

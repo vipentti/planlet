@@ -493,7 +493,7 @@ test("successful operation with failed release returns a release warning", () =>
   });
 });
 
-test("missing planlet does not create a lock directory before plan_not_found", () => {
+test("missing planlet still reports plan_not_found and leaves no lock behind", () => {
   const root = mkdtempSync(join(tmpdir(), "planlet-lock-missing-"));
   try {
     mkdirSync(join(root, ".git"));
@@ -509,7 +509,9 @@ test("missing planlet does not create a lock directory before plan_not_found", (
       (error) =>
         error instanceof PlanletError && error.code === "plan_not_found",
     );
-    assert.equal(existsSync(planletLockRoot(root)), false);
+    // The namespace directory is created now that the check happens under the
+    // lock; what must not survive is the lock itself.
+    assert.equal(existsSync(join(planletLockRoot(root), "absent")), false);
   } finally {
     rmSync(planletLockRoot(root), { recursive: true, force: true });
     rmSync(root, { recursive: true, force: true });

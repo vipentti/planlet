@@ -547,6 +547,7 @@ export function installHarnessSkills(options: {
   readonly tools?: string | undefined;
   readonly force?: boolean | undefined;
   readonly source?: CanonicalSkillSource | undefined;
+  /** @internal Fault-injection seam for the publish transaction. Tests only. */
   readonly transactionHooks?: InstallTransactionHooks | undefined;
   readonly lock?: Partial<PlanletLockDependencies> | undefined;
 }): InstallationOutcome {

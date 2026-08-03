@@ -270,10 +270,6 @@ export function completePlanlet(
 ): CompletePlanletResult {
   const slug = assertValidSlug(options.slug);
   const dependencies = { ...DEFAULT_DEPENDENCIES, ...options.dependencies };
-  const plansPath = resolveSafePath(options.repositoryRoot, "plans");
-  // Fail before acquiring, so a missing planlet never creates a lock namespace.
-  // The locked path re-checks; this one is not a substitute for that.
-  assertActivePlanletDirectory(resolve(plansPath, slug), slug);
   const { value, releaseWarning } = withPlanletLock(
     options.repositoryRoot,
     slug,
@@ -299,8 +295,6 @@ function completePlanletLocked(
   // Keep the lexical planlet entry as the move source. resolveSafePath follows
   // symlinks, which is correct for containment checks but unsafe for a rename.
   const source = resolve(plansPath, slug);
-  // Re-checked under the lock: the planlet can vanish between the pre-lock
-  // check and acquisition.
   assertActivePlanletDirectory(source, slug);
 
   const planPath = resolveSafePath(source, "plan.md");

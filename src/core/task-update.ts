@@ -137,10 +137,6 @@ function asWriteConflict(
 export function updateTask(options: UpdateTaskOptions): UpdateTaskResult {
   const slug = assertValidSlug(options.slug);
   const dependencies = { ...DEFAULT_DEPENDENCIES, ...options.dependencies };
-  const plansPath = resolveSafePath(options.repositoryRoot, "plans");
-  // Fail before acquiring, so a missing planlet never creates a lock namespace.
-  // The locked path re-checks; this one is not a substitute for that.
-  assertActivePlanletDirectory(resolve(plansPath, slug), slug);
   const { value, releaseWarning } = withPlanletLock(
     options.repositoryRoot,
     slug,
@@ -158,8 +154,6 @@ function updateTaskLocked(
 ): UpdateTaskResult {
   const plansPath = resolveSafePath(options.repositoryRoot, "plans");
   const planletPath = resolve(plansPath, slug);
-  // Re-checked under the lock: the planlet can vanish between the pre-lock
-  // check and acquisition.
   assertActivePlanletDirectory(planletPath, slug);
 
   const planPath = resolveSafePath(planletPath, "plan.md");
