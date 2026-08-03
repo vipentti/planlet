@@ -22,20 +22,6 @@ You normally drive Planlet through the skills and let your agent call the CLI.
 
 Planlet requires Node.js 22 or newer.
 
-Until the official `@vipentti/planlet` package is published and verified on npm,
-install from a source checkout only. Do not run `npm install -g @vipentti/planlet`
-or `npx @vipentti/planlet` yet.
-
-```sh
-git clone https://github.com/vipentti/planlet.git
-cd planlet
-npm ci
-npm run build
-node dist/planlet.mjs <command>
-```
-
-After the official package is published and verified:
-
 ```sh
 npm install -g @vipentti/planlet
 ```
@@ -45,6 +31,16 @@ installing:
 
 ```sh
 npx @vipentti/planlet <command>
+```
+
+From a source checkout:
+
+```sh
+git clone https://github.com/vipentti/planlet.git
+cd planlet
+npm ci
+npm run build
+node dist/planlet.mjs <command>
 ```
 
 ## Set up a repository
@@ -166,34 +162,23 @@ current `package.json` version. Malformed headings that mention `Unreleased` or
 that version still count toward those limits. Explicit release verification uses
 `node scripts/assert-changelog-release-ready.mjs --release-date YYYY-MM-DD`.
 
-### Manual 0.1.0 bootstrap (before release automation)
-
-Keep `.github/workflows/release.yml` off `main` until after this bootstrap.
-Captain names one clean `origin/main` SHA as `BOOTSTRAP_SHA`.
-
-1. If `[0.1.0]` is still under `Unreleased`, move notes into
-   `## [0.1.0] - YYYY-MM-DD` for the intended publish day, restore empty
-   `Unreleased`, and land that commit on `main` before selecting the SHA.
-2. In a fresh detached checkout of `BOOTSTRAP_SHA`, verify `HEAD` matches,
-   the tree is clean, `package.json` is `0.1.0`, and no release workflow is on
-   the default branch.
-3. Run `npm ci`, the full verification suite, generated-skill parity, and
-   `node scripts/assert-changelog-release-ready.mjs --release-date YYYY-MM-DD`.
-4. Run `npm pack --json --pack-destination <empty-review-dir>` exactly once.
-5. Record package name/version, tarball name, integrity, shasum, SHA-256, and
-   exact file list; inspect the tarball for secrets, license, personal data,
-   and unexpected files.
-6. Publish that exact `.tgz` with `--access public` (no rebuild) and verify
-   registry metadata.
-7. Create `v0.1.0` at `BOOTSTRAP_SHA` and the matching GitHub release from the
-   dated changelog notes only after registry verification succeeds.
-
 From a source checkout, use `node scripts/changelog.mjs <version>` to extract
-release notes; that helper is not included in the published npm package. Follow
-the
+release notes; that helper is not included in the published npm package.
+
+### Tag-triggered releases
+
+After trusted publishing is configured, a signed tag `v<version>` that matches
+`package.json` and is reachable from `main` runs
+[`.github/workflows/release.yml`](https://github.com/vipentti/planlet/blob/main/.github/workflows/release.yml):
+verify the tagged source, pack once, publish or verify the exact npm artifact
+for `@vipentti/planlet` with provenance, then create or update the GitHub
+release from the changelog. Do not push a release tag until the version commit
+is on `main` and captain gates in the
 [release automation plan](https://github.com/vipentti/planlet/blob/main/plans/release-automation/plan.md)
-for captain gates and the phased landing that keeps the first npm bootstrap
-manual while tag-triggered automation lands separately.
+are satisfied.
+
+The first npm publication (`@vipentti/planlet@0.1.0`) was a manual bootstrap
+without `release.yml` on `main`. Later releases use the tag workflow above.
 
 ## Links
 
