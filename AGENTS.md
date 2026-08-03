@@ -92,7 +92,7 @@ accepting rather than restating the line count.
 - **Structured double-fault error.** When the operation and the release both fail, the operation's code and the lock path must survive. A bare `AggregateError` reaches the CLI as `internal_error` with nothing to act on, and `src/core/` writes no output, so stderr is not an alternative.
 - **Lock dependency injection** (`write`, `rename`, `remove`, `pid`). The seams for the acquire-failure and release-failure tests. Removing them removes those tests.
 - **`transactionHooks`** (`src/core/harness-installer.ts`, marked `@internal`). The rollback, recovery-directory, and cleanup-warning paths are unreachable through the public API. Three steps, one per distinct outcome.
-- **`--release-date`** (`scripts/assert-changelog-release-ready.mjs`). Not dead code because CI does not pass it: the caller is the human doing a release, per `README.md`. It is what stops a past-dated release. The duplicate-flag pre-scan stays for the same reason — silent last-wins would ship the wrong date.
+- **`--release-date`** (`scripts/assert-changelog-release-ready.mjs`). Not dead code because CI does not pass it: the caller is the human doing a release, per `RELEASING.md`. It is what stops a past-dated release. The duplicate-flag pre-scan stays for the same reason — silent last-wins would ship the wrong date.
 
 ## Architecture and implementation direction
 
@@ -148,8 +148,8 @@ installed skill copies and fails on drift. Workflow files are covered by `format
 
 ## Changelog and release maintenance
 
-Release and changelog guidance lives in [`README.md`](README.md); release gates
-and workflow contract live in
+Release and changelog guidance lives in [`RELEASING.md`](RELEASING.md); release
+gates and workflow contract live in
 [`plans/completed/2026-08-03-release-automation/plan.md`](plans/completed/2026-08-03-release-automation/plan.md). Do not
 publish, create release tags, or configure trusted publishing without the
 captain decisions required by that plan.

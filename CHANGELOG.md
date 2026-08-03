@@ -6,6 +6,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and thi
 
 ## [Unreleased]
 
+### Changed
+
+- Move changelog and tag-release guidance from `README.md` into `RELEASING.md`.
+
 ## [0.1.1] - 2026-08-03
 
 ### Added
