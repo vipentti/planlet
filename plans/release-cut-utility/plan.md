@@ -9,8 +9,10 @@ and PR into `main`) and `tag` (annotated signed tag, optional push). Remote
 publish stays with environment-gated `release.yml`. No auto-merge and no
 auto-tag after merge.
 
-Dry-run stays strictly non-mutating. `prepare` and `tag` each select **fresh**
-vs **resume** before applying fresh-only checks. Resume validates existing
+Dry-run stays strictly non-mutating. Both subcommands select their mode before
+applying fresh-only checks: `tag` chooses **fresh** vs **resume**, and
+`prepare` chooses **fresh**, **branch-backed resume**, or **PR-only history**.
+Resume validates existing
 objects against invariants (never by predicting SHAs or recreating tags). The
 assert helper is the sole changelog parser and exposes resolved dates through
 one fixed machine-readable CLI contract. Signature checks guarantee local
