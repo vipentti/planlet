@@ -160,9 +160,9 @@ Record user-visible changes under `Unreleased` in
 [`CHANGELOG.md`](https://github.com/vipentti/planlet/blob/main/CHANGELOG.md).
 At release time, move those entries into a dated version section and restore an
 empty `Unreleased` section. Ordinary CI runs
-`node scripts/assert-changelog-release-ready.mjs`, which allows Unreleased-only
-notes or a structurally valid dated `[0.1.0]` section. Explicit release
-verification uses
+`node scripts/assert-changelog-release-ready.mjs`, which requires exactly one
+`[Unreleased]` section and at most one structurally valid dated `[0.1.0]`
+section. Explicit release verification uses
 `node scripts/assert-changelog-release-ready.mjs --release-date YYYY-MM-DD`.
 
 ### Manual 0.1.0 bootstrap (before release automation)

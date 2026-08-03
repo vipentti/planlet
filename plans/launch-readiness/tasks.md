@@ -9,3 +9,8 @@
 - [x] T7 Split changelog gate into ordinary CI mode and explicit --release-date verification; update README
 - [x] T8 Add harness install commit point so post-commit cleanup failures never roll back published skills
 - [x] T9 Include safely coalesced unselected harness aliases without resolving escaping unselected paths
+- [x] T10 Extract owned-fs-lock helpers; conservative PID probe; wrap lock release/quarantine/mkdir errors
+- [x] T11 Harness rollback recovery leaves bak/tx; refuse leftover recovery dirs on retry; structured write_conflict details
+- [x] T12 Serialize harness installs with repository-wide __harness__ lock; nested install write_conflict tests
+- [x] T13 Ordinary changelog requires exactly one Unreleased; shared date/notes helper; ponytail cuts
+- [x] T14 Full verification, commit, push launch-readiness, refresh PR #6 description

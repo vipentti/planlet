@@ -14,8 +14,9 @@ export function renderUnexpectedError(
   readonly stderr: string;
   readonly exitCode: number;
 } {
+  const debug = debugEnabled(env);
   const details: Record<string, unknown> = {};
-  if (debugEnabled(env)) {
+  if (debug) {
     if (error instanceof Error) {
       details.name = error.name;
       details.message = error.message;
@@ -31,7 +32,7 @@ export function renderUnexpectedError(
       "An unexpected internal error occurred",
       {
         details,
-        ...(debugEnabled(env)
+        ...(debug
           ? {}
           : {
               next: "Re-run with PLANLET_DEBUG=1 for diagnostic details",

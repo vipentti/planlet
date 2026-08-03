@@ -106,6 +106,37 @@ test("ordinary CI allows Unreleased-only and structurally valid dated 0.1.0", ()
   );
   assert.equal(assertReady([dated.changelogPath, dated.packagePath]).status, 0);
 
+  const missingUnreleased = fixture(
+    "# Changelog\n\n## [0.1.0] - 2026-08-10\n\n### Added\n\n- Item\n",
+  );
+  assert.notEqual(
+    assertReady([
+      missingUnreleased.changelogPath,
+      missingUnreleased.packagePath,
+    ]).status,
+    0,
+  );
+
+  const duplicateUnreleased = fixture(
+    "# Changelog\n\n## [Unreleased]\n\n## [Unreleased]\n\n### Added\n\n- Item\n",
+  );
+  assert.notEqual(
+    assertReady([
+      duplicateUnreleased.changelogPath,
+      duplicateUnreleased.packagePath,
+    ]).status,
+    0,
+  );
+
+  const duplicateVersion = fixture(
+    "# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - 2026-08-10\n\n### Added\n\n- Item\n\n## [0.1.0] - 2026-08-11\n\n### Added\n\n- Other\n",
+  );
+  assert.notEqual(
+    assertReady([duplicateVersion.changelogPath, duplicateVersion.packagePath])
+      .status,
+    0,
+  );
+
   const invalidDay = fixture(
     "# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - 2026-02-30\n\n### Added\n\n- Item\n",
   );
@@ -119,6 +150,14 @@ test("ordinary CI allows Unreleased-only and structurally valid dated 0.1.0", ()
   );
   assert.notEqual(
     assertReady([emptyNotes.changelogPath, emptyNotes.packagePath]).status,
+    0,
+  );
+
+  const undated = fixture(
+    "# Changelog\n\n## [Unreleased]\n\n## [0.1.0]\n\n### Added\n\n- Item\n",
+  );
+  assert.notEqual(
+    assertReady([undated.changelogPath, undated.packagePath]).status,
     0,
   );
 });

@@ -1,4 +1,4 @@
-import { PlanletError, isPlanletError } from "../errors/planlet-error.js";
+import { PlanletError } from "../errors/planlet-error.js";
 import { resolveSafePath } from "./paths.js";
 
 export const HARNESS_ADAPTERS = Object.freeze([
@@ -118,10 +118,7 @@ export function resolveHarnessDestinations(
     let path: string;
     try {
       path = resolveSafePath(repositoryRoot, adapter.skillDirectory);
-    } catch (error) {
-      if (isPlanletError(error) && error.code === "unsafe_path") {
-        continue;
-      }
+    } catch {
       continue;
     }
     const aliases = aliasesByPath.get(path);

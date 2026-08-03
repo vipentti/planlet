@@ -19,6 +19,8 @@ import {
   type HarnessToolId,
 } from "./harnesses.js";
 import { resolveSafePath, tryLstat } from "./paths.js";
+import { withHarnessInstallLock } from "./planlet-lock.js";
+import type { PlanletLockDependencies } from "./planlet-lock.js";
 import {
   enumerateCanonicalSkills,
   sha256,
@@ -247,10 +249,38 @@ function sameRecord(
   );
 }
 
+function listRecoveryLeftovers(destinationPath: string): string[] {
+  if (pathKind(destinationPath) !== "directory") return [];
+  return readdirSync(destinationPath)
+    .filter(
+      (name) =>
+        name.startsWith(".planlet-bak-") || name.startsWith(".planlet-tx-"),
+    )
+    .sort();
+}
+
+function assertNoLeftoverRecoveryDirs(destinationPath: string): void {
+  const leftovers = listRecoveryLeftovers(destinationPath);
+  if (leftovers.length === 0) return;
+  const leftoverPaths = leftovers.map((name) => join(destinationPath, name));
+  throw new PlanletError(
+    "write_conflict",
+    `Harness destination has leftover recovery directories: ${destinationPath}`,
+    {
+      details: {
+        destination: destinationPath,
+        leftoverPaths,
+        next: `Inspect leftover .planlet-bak-* / .planlet-tx-* under ${destinationPath}, restore managed files from backup if needed, remove the leftover dirs only when no install is running, then retry`,
+      },
+    },
+  );
+}
+
 function inspectDestination(
   destination: HarnessDestination,
   source: CanonicalSkillSource,
 ): DestinationInspection {
+  assertNoLeftoverRecoveryDirs(destination.path);
   const manifestPath = join(destination.path, INSTALLATION_MANIFEST);
   const manifestKind = pathKind(manifestPath);
   if (manifestKind === "directory" || manifestKind === "symlink") {
@@ -395,7 +425,7 @@ function publishDestinationTransaction(
     ? actualSkillNames.filter((skill) => !desiredSkills.includes(skill))
     : [];
   const liveManifest = join(destinationPath, INSTALLATION_MANIFEST);
-  const mutated: string[] = [];
+  const mutated = new Set<string>();
   let backupReady = false;
   let committed = false;
 
@@ -404,8 +434,8 @@ function publishDestinationTransaction(
   };
 
   const rollback = (): void => {
-    emit("duringRollback");
     for (const name of [...mutated].reverse()) {
+      emit("duringRollback", name);
       const live = join(destinationPath, name);
       const backup = join(backupRoot, name);
       rmSync(live, { recursive: true, force: true });
@@ -437,7 +467,7 @@ function publishDestinationTransaction(
       const live = resolveSafePath(destinationPath, skill);
       if (pathKind(live) === "missing") continue;
       moveManagedEntry(live, join(backupRoot, skill));
-      mutated.push(skill);
+      mutated.add(skill);
       emit("afterBackup", skill);
     }
     if (obsoleteSkills.length > 0) {
@@ -445,20 +475,18 @@ function publishDestinationTransaction(
     }
     if (options.writeManifest && pathKind(liveManifest) !== "missing") {
       moveManagedEntry(liveManifest, join(backupRoot, INSTALLATION_MANIFEST));
-      mutated.push(INSTALLATION_MANIFEST);
+      mutated.add(INSTALLATION_MANIFEST);
     }
 
     for (const skill of desiredSkills) {
       moveManagedEntry(join(stageRoot, skill), join(destinationPath, skill));
-      if (!mutated.includes(skill)) mutated.push(skill);
+      mutated.add(skill);
       emit("afterReplaceSkill", skill);
     }
     if (options.writeManifest) {
       emit("beforeManifest");
       moveManagedEntry(join(stageRoot, INSTALLATION_MANIFEST), liveManifest);
-      if (!mutated.includes(INSTALLATION_MANIFEST)) {
-        mutated.push(INSTALLATION_MANIFEST);
-      }
+      mutated.add(INSTALLATION_MANIFEST);
     }
 
     // Commit point: live managed state is now the new installation.
@@ -469,17 +497,20 @@ function publishDestinationTransaction(
       try {
         rollback();
       } catch (rollbackError) {
-        try {
-          bestEffortRemove(stageRoot);
-          bestEffortRemove(backupRoot);
-        } catch {
-          // Preserve the rollback failure as the primary signal.
-        }
+        // Never delete backupRoot on rollback failure; leave stage for recovery.
         throw new PlanletError(
           "write_conflict",
           `Could not roll back harness installation: ${destinationPath}`,
           {
-            details: { destination: destinationPath, rollbackFailed: true },
+            details: {
+              destination: destinationPath,
+              rollbackFailed: true,
+              backupPath: backupRoot,
+              stagePath: stageRoot,
+              mutated: [...mutated],
+              manifestPublished: false,
+              next: `Do not delete ${backupRoot} until managed files are restored from it. Leftover recovery dirs: ${backupRoot}, ${stageRoot}. Restore manually if needed, remove leftover .planlet-bak-* / .planlet-tx-* only when no install is running, then retry`,
+            },
             cause: new AggregateError([error, rollbackError]),
           },
         );
@@ -526,6 +557,7 @@ export function installHarnessSkills(options: {
   readonly force?: boolean | undefined;
   readonly source?: CanonicalSkillSource | undefined;
   readonly transactionHooks?: InstallTransactionHooks | undefined;
+  readonly lock?: Partial<PlanletLockDependencies> | undefined;
 }): InstallationSummary {
   const selectedToolIds = normalizeToolSelector(options.tools);
   const destinations = resolveHarnessDestinations(
@@ -560,49 +592,60 @@ export function installHarnessSkills(options: {
     };
   }
 
-  const source = options.source ?? enumerateCanonicalSkills();
-  const inspections = destinations.map((destination) =>
-    inspectDestination(destination, source),
-  );
-  const actionable = inspections.filter(
-    (inspection) =>
-      options.operation === "init" || inspection.state !== "missing",
-  );
-  const conflicts = actionable.flatMap((inspection) =>
-    inspection.conflicts.map((path) => ({
-      destination: inspection.destination.relativePath,
-      path,
-    })),
-  );
-  if (conflicts.length > 0 && options.force !== true) {
-    throw new PlanletError(
-      "write_conflict",
-      `Harness installation has locally modified files: ${conflicts[0]!.destination}/${conflicts[0]!.path}`,
-      { details: { conflicts } },
-    );
-  }
-
-  const plansInitialized =
-    options.operation === "init" && plansKind === "missing";
-  if (plansInitialized) mkdirSync(plansPath, { recursive: true });
-  const summaries = inspections.map((inspection) =>
-    options.operation === "update" && inspection.state === "missing"
-      ? {
+  return withHarnessInstallLock(
+    options.repositoryRoot,
+    () => {
+      const source = options.source ?? enumerateCanonicalSkills();
+      const inspections = destinations.map((destination) =>
+        inspectDestination(destination, source),
+      );
+      const actionable = inspections.filter(
+        (inspection) =>
+          options.operation === "init" || inspection.state !== "missing",
+      );
+      const conflicts = actionable.flatMap((inspection) =>
+        inspection.conflicts.map((path) => ({
           destination: inspection.destination.relativePath,
-          tools: inspection.destination.selectedToolIds,
-          state: "missing" as const,
-          changed: false,
-          files: 0,
-        }
-      : applyInspectionWithSource(inspection, source, options.transactionHooks),
-  );
+          path,
+        })),
+      );
+      if (conflicts.length > 0 && options.force !== true) {
+        throw new PlanletError(
+          "write_conflict",
+          `Harness installation has locally modified files: ${conflicts[0]!.destination}/${conflicts[0]!.path}`,
+          { details: { conflicts } },
+        );
+      }
 
-  return {
-    operation: options.operation,
-    changed: plansInitialized || summaries.some((summary) => summary.changed),
-    plansInitialized,
-    destinations: summaries,
-  };
+      const plansInitialized =
+        options.operation === "init" && plansKind === "missing";
+      if (plansInitialized) mkdirSync(plansPath, { recursive: true });
+      const summaries = inspections.map((inspection) =>
+        options.operation === "update" && inspection.state === "missing"
+          ? {
+              destination: inspection.destination.relativePath,
+              tools: inspection.destination.selectedToolIds,
+              state: "missing" as const,
+              changed: false,
+              files: 0,
+            }
+          : applyInspectionWithSource(
+              inspection,
+              source,
+              options.transactionHooks,
+            ),
+      );
+
+      return {
+        operation: options.operation,
+        changed:
+          plansInitialized || summaries.some((summary) => summary.changed),
+        plansInitialized,
+        destinations: summaries,
+      };
+    },
+    options.lock,
+  );
 }
 
 function applyInspectionWithSource(

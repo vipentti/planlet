@@ -15,12 +15,15 @@ import test from "node:test";
 
 import { completePlanlet } from "../../src/core/planlet-completion.js";
 import {
+  defaultProbeProcess,
+  type OwnedLockHolder,
+} from "../../src/core/owned-fs-lock.js";
+import {
   PLANLET_LOCK_DIR,
   PLANLET_LOCK_HOLDER,
   acquirePlanletLock,
   planletLockPath,
   releasePlanletLock,
-  type PlanletLockHolder,
   withPlanletLock,
 } from "../../src/core/planlet-lock.js";
 import { updateTask } from "../../src/core/task-update.js";
@@ -47,7 +50,7 @@ function withRepo(run: (root: string, tasksPath: string) => void): void {
 function plantPlanletLock(
   repositoryRoot: string,
   slug: string,
-  holder: PlanletLockHolder,
+  holder: OwnedLockHolder,
 ): string {
   const root = join(repositoryRoot, "plans", PLANLET_LOCK_DIR);
   mkdirSync(root, { recursive: true });
@@ -65,7 +68,6 @@ test("competing task update fails with write_conflict while lock is held", () =>
   withRepo((root, tasksPath) => {
     plantPlanletLock(root, "fixture-plan", {
       pid: process.pid,
-      createdAt: new Date().toISOString(),
       token: "live-holder",
     });
 
@@ -77,7 +79,7 @@ test("competing task update fails with write_conflict while lock is held", () =>
           taskId: "T1",
           operation: "check",
           dependencies: {
-            lock: { isProcessAlive: () => true },
+            lock: { probeProcess: () => "alive" },
           },
         }),
       (error) =>
@@ -91,7 +93,6 @@ test("task update racing completion lock fails with write_conflict", () => {
   withRepo((root, tasksPath) => {
     plantPlanletLock(root, "fixture-plan", {
       pid: 1,
-      createdAt: new Date().toISOString(),
       token: "held",
     });
 
@@ -104,7 +105,7 @@ test("task update racing completion lock fails with write_conflict", () => {
           reason: "blocked",
           dependencies: {
             now: () => new Date("2026-07-22T12:00:00Z"),
-            lock: { isProcessAlive: () => true },
+            lock: { probeProcess: () => "alive" },
           },
         }),
       (error) =>
@@ -118,7 +119,7 @@ test("task update racing completion lock fails with write_conflict", () => {
           taskId: "T1",
           operation: "check",
           dependencies: {
-            lock: { isProcessAlive: () => true },
+            lock: { probeProcess: () => "alive" },
           },
         }),
       (error) =>
@@ -132,7 +133,6 @@ test("dead-holder locks are reclaimed so a later update can proceed", () => {
   withRepo((root, tasksPath) => {
     plantPlanletLock(root, "fixture-plan", {
       pid: 999_999_999,
-      createdAt: new Date().toISOString(),
       token: "dead",
     });
 
@@ -142,7 +142,7 @@ test("dead-holder locks are reclaimed so a later update can proceed", () => {
       taskId: "T1",
       operation: "check",
       dependencies: {
-        lock: { isProcessAlive: () => false },
+        lock: { probeProcess: () => "dead" },
       },
     });
     assert.equal(result.changed, true);
@@ -180,7 +180,6 @@ test("barrier-ordered contention refuses stale second write then applies both ch
   withRepo((root, tasksPath) => {
     const lockPath = plantPlanletLock(root, "fixture-plan", {
       pid: 1001,
-      createdAt: "2026-07-22T12:00:00.000Z",
       token: "a",
     });
 
@@ -192,7 +191,7 @@ test("barrier-ordered contention refuses stale second write then applies both ch
           taskId: "T2",
           operation: "check",
           dependencies: {
-            lock: { isProcessAlive: () => true },
+            lock: { probeProcess: () => "alive" },
           },
         }),
       (error) =>
@@ -287,7 +286,7 @@ test("corrupt holder metadata is not treated as reclaimable", () => {
           slug: "fixture-plan",
           taskId: "T1",
           operation: "check",
-          dependencies: { lock: { isProcessAlive: () => false } },
+          dependencies: { lock: { probeProcess: () => "dead" } },
         }),
       (error) =>
         error instanceof PlanletError && error.code === "write_conflict",
@@ -301,7 +300,6 @@ test("only one of two reclaimers wins the quarantine rename race", () => {
   withRepo((root) => {
     plantPlanletLock(root, "fixture-plan", {
       pid: 42,
-      createdAt: "2026-07-22T12:00:00.000Z",
       token: "stale",
     });
 
@@ -318,7 +316,7 @@ test("only one of two reclaimers wins the quarantine rename race", () => {
     };
 
     const first = acquirePlanletLock(root, "fixture-plan", {
-      isProcessAlive: () => false,
+      probeProcess: () => "dead",
       rename,
       createToken: () => `token-${renameCount + 1}`,
     });
@@ -327,7 +325,7 @@ test("only one of two reclaimers wins the quarantine rename race", () => {
     assert.throws(
       () =>
         acquirePlanletLock(root, "fixture-plan", {
-          isProcessAlive: () => false,
+          probeProcess: () => "dead",
           rename,
           createToken: () => "loser",
         }),
@@ -335,10 +333,9 @@ test("only one of two reclaimers wins the quarantine rename race", () => {
         error instanceof PlanletError && error.code === "write_conflict",
     );
 
-    // First owner's lock must still be present with its token.
     const holder = JSON.parse(
       readFileSync(join(first.path, PLANLET_LOCK_HOLDER), "utf8"),
-    ) as PlanletLockHolder;
+    ) as OwnedLockHolder;
     assert.equal(holder.token, first.token);
     releasePlanletLock(first);
   });
@@ -348,21 +345,19 @@ test("stale reclaimer cannot delete a newly acquired live lock on release", () =
   withRepo((root) => {
     plantPlanletLock(root, "fixture-plan", {
       pid: 7,
-      createdAt: "2026-07-22T12:00:00.000Z",
       token: "old",
     });
 
     const winner = acquirePlanletLock(root, "fixture-plan", {
-      isProcessAlive: () => false,
+      probeProcess: () => "dead",
       createToken: () => "winner-token",
     });
 
-    // Simulate a previous owner's finally-block releasing after losing reclaim.
     releasePlanletLock({ path: winner.path, token: "old" });
     assert.equal(existsSync(winner.path), true);
     const holder = JSON.parse(
       readFileSync(join(winner.path, PLANLET_LOCK_HOLDER), "utf8"),
-    ) as PlanletLockHolder;
+    ) as OwnedLockHolder;
     assert.equal(holder.token, "winner-token");
 
     releasePlanletLock(winner);
@@ -381,34 +376,6 @@ test("ownership-token mismatch during release leaves the replacement lock", () =
   });
 });
 
-test("isProcessAlive treats Windows-style dead PID codes as dead", () => {
-  withRepo((root, tasksPath) => {
-    plantPlanletLock(root, "fixture-plan", {
-      pid: 12345,
-      createdAt: new Date().toISOString(),
-      token: "win-dead",
-    });
-
-    const result = updateTask({
-      repositoryRoot: root,
-      slug: "fixture-plan",
-      taskId: "T1",
-      operation: "check",
-      dependencies: {
-        lock: {
-          isProcessAlive: (pid) => {
-            // Mimic default classification: EINVAL means dead on Windows.
-            void pid;
-            return false;
-          },
-        },
-      },
-    });
-    assert.equal(result.changed, true);
-    assert.match(readFileSync(tasksPath, "utf8"), /\[x\] T1/);
-  });
-});
-
 test("withPlanletLock releases only the caller's owned lock after a throw", () => {
   withRepo((root) => {
     assert.throws(
@@ -419,5 +386,87 @@ test("withPlanletLock releases only the caller's owned lock after a throw", () =
       (error) => error instanceof Error && error.message === "boom",
     );
     assert.equal(existsSync(planletLockPath(root, "fixture-plan")), false);
+  });
+});
+
+test("withPlanletLock preserves the operation error when release fails", () => {
+  withRepo((root) => {
+    assert.throws(
+      () =>
+        withPlanletLock(
+          root,
+          "fixture-plan",
+          () => {
+            throw new PlanletError("task_not_found", "missing");
+          },
+          {
+            remove: () => {
+              throw new Error("release failed");
+            },
+          },
+        ),
+      (error) =>
+        error instanceof PlanletError && error.code === "task_not_found",
+    );
+  });
+});
+
+test("defaultProbeProcess classifies alive, permission, dead, and unknown codes", () => {
+  assert.equal(defaultProbeProcess(process.pid), "alive");
+
+  const classify = (code: string): string => {
+    const original = process.kill;
+    (process as { kill: typeof process.kill }).kill = (() => {
+      const error = new Error(code) as NodeJS.ErrnoException;
+      error.code = code;
+      throw error;
+    }) as typeof process.kill;
+    try {
+      return defaultProbeProcess(1);
+    } finally {
+      process.kill = original;
+    }
+  };
+
+  assert.equal(classify("EPERM"), "alive");
+  assert.equal(classify("EACCES"), "alive");
+  assert.equal(classify("ESRCH"), "dead");
+  assert.equal(classify("ENOENT"), "dead");
+  assert.equal(classify("EINVAL"), "dead");
+  assert.equal(classify("EIO"), "alive");
+  assert.equal(classify("ENOSYS"), "alive");
+});
+
+test("unknown probe result leaves the lock untouched", () => {
+  withRepo((root, tasksPath) => {
+    const lockPath = plantPlanletLock(root, "fixture-plan", {
+      pid: 55,
+      token: "maybe-live",
+    });
+    let renamed = false;
+
+    assert.throws(
+      () =>
+        updateTask({
+          repositoryRoot: root,
+          slug: "fixture-plan",
+          taskId: "T1",
+          operation: "check",
+          dependencies: {
+            lock: {
+              probeProcess: () => "alive",
+              rename: (source, destination) => {
+                renamed = true;
+                renameSync(source, destination);
+              },
+            },
+          },
+        }),
+      (error) =>
+        error instanceof PlanletError && error.code === "write_conflict",
+    );
+    assert.equal(renamed, false);
+    assert.equal(existsSync(lockPath), true);
+    assert.equal(readFileSync(tasksPath, "utf8"), TASKS);
   });
 });

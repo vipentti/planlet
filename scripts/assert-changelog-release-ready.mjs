@@ -4,13 +4,14 @@
  * Changelog readiness checks for the unpublished 0.1.0 bootstrap.
  *
  * Ordinary CI (no flags):
- *   Allows Unreleased-only notes, or a structurally valid dated [0.1.0]
- *   section. Does not require --release-date.
+ *   Requires exactly one [Unreleased] section and at most one [0.1.0]
+ *   section. A dated [0.1.0] must use a real calendar date and non-empty
+ *   notes. Does not require --release-date.
  *
  * Release verification:
  *   node scripts/assert-changelog-release-ready.mjs --release-date YYYY-MM-DD
- *   Requires package 0.1.0, Unreleased present, matching dated [0.1.0] with
- *   non-empty notes and a real calendar date.
+ *   Requires package 0.1.0, exactly one Unreleased, exactly one dated [0.1.0]
+ *   matching --release-date with non-empty notes.
  */
 
 import { readFileSync } from "node:fs";
@@ -30,6 +31,18 @@ function isValidCalendarDate(value) {
 
 function hasNonEmptyNotes(sectionBody) {
   return /^\s*-\s+\S/m.test(sectionBody);
+}
+
+function assertValidDatedNotes(dated, sectionBody, label) {
+  if (dated === undefined) {
+    fail(`${label} [0.1.0] header must include - YYYY-MM-DD.`);
+  }
+  if (!isValidCalendarDate(dated)) {
+    fail(`${label} 0.1.0 date is not a valid calendar day: ${dated}`);
+  }
+  if (!hasNonEmptyNotes(sectionBody)) {
+    fail(`${label} 0.1.0 section is missing release notes.`);
+  }
 }
 
 function parseArgs(argv) {
@@ -72,10 +85,10 @@ if (pkg.version !== "0.1.0") {
   process.exit(0);
 }
 
-const unreleasedPresent = /^## \[Unreleased\]\s*$/m.test(changelog);
-const sectionMatch = /^## \[0\.1\.0\](?: - (\d{4}-\d{2}-\d{2}))?\s*$/m.exec(
-  changelog,
-);
+const unreleasedMatches = [...changelog.matchAll(/^## \[Unreleased\]\s*$/gm)];
+const versionMatches = [
+  ...changelog.matchAll(/^## \[0\.1\.0\](?: - (\d{4}-\d{2}-\d{2}))?\s*$/gm),
+];
 
 function sectionBodyAfter(headerMatch) {
   const start = headerMatch.index + headerMatch[0].length;
@@ -84,55 +97,48 @@ function sectionBodyAfter(headerMatch) {
   return (next === -1 ? rest : rest.slice(0, next)).trim();
 }
 
+if (unreleasedMatches.length !== 1) {
+  fail(
+    `Changelog must contain exactly one [Unreleased] section (found ${unreleasedMatches.length}).`,
+  );
+}
+
 if (releaseDate === undefined) {
-  // Ordinary CI: Unreleased-only is fine; a dated 0.1.0 must be structurally valid.
-  if (sectionMatch === null) {
-    process.exit(0);
-  }
-  const dated = sectionMatch[1];
-  if (dated === undefined) {
+  if (versionMatches.length > 1) {
     fail(
-      "Changelog has [0.1.0] without a release date; set YYYY-MM-DD before bootstrap.",
+      `Changelog must contain at most one [0.1.0] section (found ${versionMatches.length}).`,
     );
   }
-  if (!isValidCalendarDate(dated)) {
-    fail(`Changelog 0.1.0 date is not a valid calendar day: ${dated}`);
+  if (versionMatches.length === 0) {
+    process.exit(0);
   }
-  if (!hasNonEmptyNotes(sectionBodyAfter(sectionMatch))) {
-    fail("Changelog 0.1.0 section is missing release notes.");
-  }
+  const sectionMatch = versionMatches[0];
+  assertValidDatedNotes(
+    sectionMatch[1],
+    sectionBodyAfter(sectionMatch),
+    "Changelog",
+  );
   process.exit(0);
 }
 
 if (!isValidCalendarDate(releaseDate)) {
   fail(`--release-date is not a valid calendar day: ${releaseDate}`);
 }
-if (!unreleasedPresent) {
+if (versionMatches.length !== 1) {
   fail(
-    "Changelog must keep an [Unreleased] section during release verification.",
+    `Changelog must contain exactly one [0.1.0] section for release verification (found ${versionMatches.length}).`,
   );
 }
-if (sectionMatch === null) {
+const sectionMatch = versionMatches[0];
+assertValidDatedNotes(
+  sectionMatch[1],
+  sectionBodyAfter(sectionMatch),
+  "Changelog",
+);
+if (sectionMatch[1] !== releaseDate) {
   fail(
-    "Changelog is missing a [0.1.0] section required for release verification.",
+    `--release-date ${releaseDate} does not match changelog 0.1.0 date ${sectionMatch[1]}.`,
   );
-}
-const dated = sectionMatch[1];
-if (dated === undefined) {
-  fail(
-    "Changelog [0.1.0] header must include - YYYY-MM-DD for release verification.",
-  );
-}
-if (!isValidCalendarDate(dated)) {
-  fail(`Changelog 0.1.0 date is not a valid calendar day: ${dated}`);
-}
-if (dated !== releaseDate) {
-  fail(
-    `--release-date ${releaseDate} does not match changelog 0.1.0 date ${dated}.`,
-  );
-}
-if (!hasNonEmptyNotes(sectionBodyAfter(sectionMatch))) {
-  fail("Changelog 0.1.0 section is missing release notes.");
 }
 
 process.exit(0);
