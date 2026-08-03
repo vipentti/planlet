@@ -121,6 +121,23 @@ test("active incomplete overrides require recorded tasks to remain unchecked", (
   );
 });
 
+test("completed normal mode with unchecked tasks is invalid_plan", () => {
+  assert.throws(
+    () =>
+      validatePlanletStructure({
+        directoryName: "2026-07-22-cli-core",
+        location: "completed",
+        planMarkdown: "# CLI Core\n",
+        tasksMarkdown:
+          "# Tasks: CLI Core\n\n- [x] T1 First\n- [ ] T2 Later\n\n## Completion\n\n- Completed at: 2026-07-22T12:34:56Z\n- Mode: normal\n",
+      }),
+    (error) =>
+      error instanceof PlanletError &&
+      error.code === "invalid_plan" &&
+      error.message.includes("unchecked tasks without an override"),
+  );
+});
+
 test("incomplete overrides require exact remaining task IDs and a reason", () => {
   const tasksMarkdown =
     "# Tasks\n\n- [ ] T2 Later\n- [x] T3 Done\n\n## Completion\n\n- Completed at: 2026-07-22T12:34:56.000Z\n- Mode: incomplete override\n- Remaining tasks: T2\n- Reason: Deferred by approval\n";

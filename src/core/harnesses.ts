@@ -88,16 +88,26 @@ export function resolveHarnessDestinations(
   const selected = new Set<HarnessToolId>(selectedToolIds);
   // Group by resolved path, not directory name: codex and agents share a
   // directory, and a symlinked .claude/skills must coalesce the same way.
+  // Only selected adapters are resolved so an unselected escaping destination
+  // cannot fail the operation.
   const aliasesByPath = new Map<string, HarnessToolId[]>();
   const relativeByPath = new Map<string, string>();
   for (const adapter of HARNESS_ADAPTERS) {
+    if (!selected.has(adapter.id)) {
+      continue;
+    }
     const path = resolveSafePath(repositoryRoot, adapter.skillDirectory);
+    const peers = HARNESS_ADAPTERS.filter(
+      (candidate) => candidate.skillDirectory === adapter.skillDirectory,
+    ).map((candidate) => candidate.id);
     const aliases = aliasesByPath.get(path);
     if (aliases === undefined) {
-      aliasesByPath.set(path, [adapter.id]);
+      aliasesByPath.set(path, [...peers]);
       relativeByPath.set(path, adapter.skillDirectory);
     } else {
-      aliases.push(adapter.id);
+      for (const peer of peers) {
+        if (!aliases.includes(peer)) aliases.push(peer);
+      }
     }
   }
 
@@ -105,8 +115,12 @@ export function resolveHarnessDestinations(
     .map(([path, aliases]) => ({
       path,
       relativePath: relativeByPath.get(path)!,
-      selectedToolIds: aliases.filter((id) => selected.has(id)),
-      aliases,
+      selectedToolIds: HARNESS_ADAPTERS.map((adapter) => adapter.id).filter(
+        (id) => aliases.includes(id) && selected.has(id),
+      ),
+      aliases: HARNESS_ADAPTERS.map((adapter) => adapter.id).filter((id) =>
+        aliases.includes(id),
+      ),
     }))
     .filter((destination) => destination.selectedToolIds.length > 0);
 }

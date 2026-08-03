@@ -155,8 +155,15 @@ export function validatePlanletStructure(
       completion.mode === "normal" &&
       parsedTasks.remainingTaskIds.length > 0
     ) {
-      warnings.push(
+      throw new PlanletError(
+        "invalid_plan",
         "Completed planlet has unchecked tasks without an override",
+        {
+          details: {
+            mode: completion.mode,
+            remaining: parsedTasks.remainingTaskIds,
+          },
+        },
       );
     } else if (completion.mode === "incomplete override") {
       warnings.push("Completed planlet contains an incomplete-task override");

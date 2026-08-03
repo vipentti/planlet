@@ -3,8 +3,10 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
+  statSync,
   symlinkSync,
   unlinkSync,
   writeFileSync,
@@ -311,6 +313,160 @@ test("tool detection classifies malformed manifests as modified", () => {
         { id: "agents", state: "modified" },
         { id: "codex", state: "modified" },
       ],
+    );
+  });
+});
+
+function snapshotDestination(root: string): Record<string, string> {
+  const destination = join(root, ".agents", "skills");
+  const entries: Record<string, string> = {};
+  const visit = (directory: string, prefix: string): void => {
+    for (const name of readdirSync(directory).sort()) {
+      const path = join(directory, name);
+      const relative = prefix ? `${prefix}/${name}` : name;
+      if (statSync(path).isDirectory()) visit(path, relative);
+      else entries[relative] = readFileSync(path, "utf8");
+    }
+  };
+  if (existsSync(destination)) visit(destination, "");
+  return entries;
+}
+
+test("destination install rolls back to the exact pre-operation state on faults", () => {
+  withRoot((root) => {
+    const initial = source({
+      "planlet-old/SKILL.md": "# Old\n",
+      "planlet-example/SKILL.md": "# Example\n",
+    });
+    installHarnessSkills({
+      repositoryRoot: root,
+      operation: "init",
+      tools: "agents",
+      source: initial,
+    });
+    const unrelated = join(root, ".agents", "skills", "git-commit", "SKILL.md");
+    mkdirSync(join(root, ".agents", "skills", "git-commit"), {
+      recursive: true,
+    });
+    writeFileSync(unrelated, "# Keep\n");
+    const before = snapshotDestination(root);
+    const updated = source({
+      "planlet-example/SKILL.md": "# Updated\n",
+      "planlet-new/SKILL.md": "# New\n",
+    });
+
+    const fault = (
+      hooks: Parameters<typeof installHarnessSkills>[0]["transactionHooks"],
+    ) => {
+      assert.throws(
+        () =>
+          installHarnessSkills({
+            repositoryRoot: root,
+            operation: "update",
+            tools: "agents",
+            force: true,
+            source: updated,
+            transactionHooks: hooks,
+          }),
+        (error) =>
+          error instanceof PlanletError && error.code === "write_conflict",
+      );
+      assert.deepEqual(snapshotDestination(root), before);
+      assert.equal(readFileSync(unrelated, "utf8"), "# Keep\n");
+    };
+
+    fault({
+      afterStage: () => {
+        throw new Error("fail while staging");
+      },
+    });
+    fault({
+      afterReplaceSkill: (skill) => {
+        if (skill === "planlet-example") throw new Error("fail after skill");
+      },
+    });
+    fault({
+      afterRemoveObsolete: () => {
+        throw new Error("fail after obsolete removal");
+      },
+    });
+    fault({
+      beforeManifest: () => {
+        throw new Error("fail before manifest");
+      },
+    });
+
+    assert.throws(
+      () =>
+        installHarnessSkills({
+          repositoryRoot: root,
+          operation: "update",
+          tools: "agents",
+          force: true,
+          source: updated,
+          transactionHooks: {
+            beforeManifest: () => {
+              throw new Error("fail before manifest for rollback hook");
+            },
+            duringRollback: () => {
+              throw new Error("fail during rollback");
+            },
+          },
+        }),
+      (error) =>
+        error instanceof PlanletError &&
+        error.code === "write_conflict" &&
+        error.details.rollbackFailed === true,
+    );
+
+    const published = installHarnessSkills({
+      repositoryRoot: root,
+      operation: "update",
+      tools: "agents",
+      force: true,
+      source: updated,
+    });
+    assert.equal(published.changed, true);
+    assert.equal(
+      readFileSync(
+        join(root, ".agents", "skills", "planlet-example", "SKILL.md"),
+        "utf8",
+      ),
+      "# Updated\n",
+    );
+    assert.equal(
+      existsSync(join(root, ".agents", "skills", "planlet-old")),
+      false,
+    );
+    assert.equal(readFileSync(unrelated, "utf8"), "# Keep\n");
+
+    const again = source({
+      "planlet-example/SKILL.md": "# Updated again\n",
+      "planlet-new/SKILL.md": "# New\n",
+    });
+    assert.throws(
+      () =>
+        installHarnessSkills({
+          repositoryRoot: root,
+          operation: "update",
+          tools: "agents",
+          force: true,
+          source: again,
+          transactionHooks: {
+            afterPublish: () => {
+              throw new Error("fail after publish");
+            },
+          },
+        }),
+      (error) =>
+        error instanceof Error && error.message === "fail after publish",
+    );
+    assert.equal(
+      readFileSync(
+        join(root, ".agents", "skills", "planlet-example", "SKILL.md"),
+        "utf8",
+      ),
+      "# Updated again\n",
     );
   });
 });

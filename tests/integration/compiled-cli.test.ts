@@ -310,3 +310,52 @@ test("compiled init resolves and installs packaged canonical skills", () => {
     );
   });
 });
+
+test("compiled validate treats completed normal+unchecked as invalid_plan", () => {
+  withRepository((root) => {
+    const archive = join(root, "plans", "completed", "2026-07-22-bad-complete");
+    mkdirSync(archive, { recursive: true });
+    writeFileSync(join(archive, "plan.md"), "# Bad Complete\n");
+    writeFileSync(
+      join(archive, "tasks.md"),
+      "# Tasks: Bad Complete\n\n- [x] T1 Done\n- [ ] T2 Left\n\n## Completion\n\n- Completed at: 2026-07-22T12:00:00.000Z\n- Mode: normal\n",
+    );
+
+    const targeted = runCli(["validate", "bad-complete"], root);
+    assert.equal(targeted.exitCode, EXIT_CODES.invalidPlan);
+    assert.match(targeted.stdout, /invalid_plan/);
+    assert.match(targeted.stdout, /unchecked tasks without an override/);
+
+    const all = runCli(["validate", "--all"], root);
+    assert.equal(all.exitCode, EXIT_CODES.invalidPlan);
+    assert.match(all.stdout, /invalid_plan/);
+  });
+});
+
+test("production entry emits internal_error without stack by default", async () => {
+  const { runProductionEntry, renderUnexpectedError } =
+    await import("../../src/production-entry.js");
+  const rendered = renderUnexpectedError(new Error("boom /tmp/secret"), {});
+  assert.equal(rendered.exitCode, EXIT_CODES.operational);
+  assert.match(rendered.stderr, /internal_error/);
+  assert.doesNotMatch(rendered.stderr, /boom|\/tmp\/secret|stack/i);
+
+  const debug = renderUnexpectedError(new Error("boom /tmp/secret"), {
+    PLANLET_DEBUG: "1",
+  });
+  assert.match(debug.stderr, /boom \/tmp\/secret/);
+
+  const chunks: string[] = [];
+  const code = await runProductionEntry(
+    async () => {
+      throw new Error("unexpected path /home/secret");
+    },
+    {},
+    (chunk) => {
+      chunks.push(chunk);
+    },
+  );
+  assert.equal(code, EXIT_CODES.operational);
+  assert.match(chunks.join(""), /internal_error/);
+  assert.doesNotMatch(chunks.join(""), /\/home\/secret/);
+});

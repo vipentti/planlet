@@ -9,6 +9,10 @@ import {
 import { resolve } from "node:path";
 
 import type { PlanletTask } from "./models.js";
+import {
+  withPlanletLock,
+  type PlanletLockDependencies,
+} from "./planlet-lock.js";
 import { resolveSafePath, tryLstat } from "./paths.js";
 import { assertValidSlug } from "./slugs.js";
 import { parseTaskLine } from "./task-parser.js";
@@ -31,6 +35,7 @@ export interface UpdateTaskDependencies {
   readonly rename: (source: string, destination: string) => void;
   readonly remove: (path: string) => void;
   readonly temporaryName: (slug: string) => string;
+  readonly lock?: Partial<PlanletLockDependencies>;
 }
 
 export interface UpdateTaskResult {
@@ -127,9 +132,24 @@ function asWriteConflict(
 /**
  * Checks or unchecks one task by atomically replacing tasks.md with a prepared
  * sibling file. Already-satisfied updates return without touching the file.
+ * The full read-modify-write runs under the per-planlet write lock.
  */
 export function updateTask(options: UpdateTaskOptions): UpdateTaskResult {
   const slug = assertValidSlug(options.slug);
+  const dependencies = { ...DEFAULT_DEPENDENCIES, ...options.dependencies };
+  return withPlanletLock(
+    options.repositoryRoot,
+    slug,
+    () => updateTaskLocked(options, dependencies, slug),
+    dependencies.lock,
+  );
+}
+
+function updateTaskLocked(
+  options: UpdateTaskOptions,
+  dependencies: UpdateTaskDependencies,
+  slug: string,
+): UpdateTaskResult {
   const plansPath = resolveSafePath(options.repositoryRoot, "plans");
   const planletPath = resolve(plansPath, slug);
   assertActivePlanletDirectory(planletPath, slug);
@@ -181,7 +201,6 @@ export function updateTask(options: UpdateTaskOptions): UpdateTaskResult {
     tasksMarkdown: updatedMarkdown,
   });
 
-  const dependencies = { ...DEFAULT_DEPENDENCIES, ...options.dependencies };
   const temporaryPath = resolveSafePath(
     planletPath,
     dependencies.temporaryName(slug),

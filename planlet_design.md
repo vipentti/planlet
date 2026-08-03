@@ -505,7 +505,7 @@ The CLI should require a slug for mutating commands. It may provide a read-only 
 
 “One at a time” means one target per invocation or agent workflow. The MVP does not need a global active-plan pointer.
 
-Task-file writes should be atomic. Future support for multiple simultaneous agents may add optimistic concurrency, file hashes, or locks, but Planlet should initially document that a single planlet must not be implemented concurrently by several agents.
+Task-file writes should be atomic. Mutating CLI operations that rewrite `tasks.md` (`task check`, `task uncheck`, and `complete`) take an exclusive per-planlet lock under `plans/.planlet-locks/<slug>`. Competing writers fail with `write_conflict` rather than applying a stale read-modify-write. Stale lock directories whose recorded holder PID is dead may be reclaimed; live holders are never stolen. Editors and git can still rewrite `tasks.md` outside the CLI lock; treat that as ordinary version-control conflict resolution.
 
 ## 13. CLI Design
 
@@ -638,6 +638,7 @@ Suggested error codes:
 - `unsafe_path`
 - `unsupported_tool`
 - `write_conflict`
+- `internal_error`
 
 Suggested exit-code categories:
 
@@ -982,9 +983,9 @@ interface PlanSummary {
 - On partial failure, leave the source recoverable and report the exact state.
 - Do not infer authorization to delete abandoned or invalid plans.
 - Make task checking idempotent: checking an already checked task succeeds without duplicating changes.
-- Consider an optional precondition hash for future concurrent-agent safety.
+- Per-planlet CLI write locks cover concurrent `task check` / `task uncheck` / `complete` in one repository working tree. Cross-branch edits of `tasks.md` still surface as ordinary git merge conflicts on checkbox lines.
+- Optional precondition hashes remain a possible future hardening for non-CLI writers.
 - When completing a planlet, use a plain filesystem move even inside a git working tree. Git can detect the rename from the resulting delete-plus-add, while index management remains the user's responsibility. The CLI must not inspect working-tree cleanliness, stage, or commit on its own.
-- Because `tasks.md` is a plain, line-oriented checklist under normal version control, concurrent edits across branches are expected to surface as ordinary git merge conflicts on individual checkbox lines. This is an acceptable, low-ceremony failure mode: conflicts are resolved like any other text conflict and do not require dedicated tooling in the MVP.
 
 ## 19. Validation Rules
 

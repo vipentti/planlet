@@ -1,3 +1,3 @@
-import { main } from "./cli.js";
+import { runProductionEntry } from "./production-entry.js";
 
-process.exitCode = await main();
+process.exitCode = await runProductionEntry();

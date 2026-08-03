@@ -88,3 +88,22 @@ test("destination resolution rejects escaping symlinks", () => {
     rmSync(outside, { recursive: true, force: true });
   }
 });
+
+test("unselected escaping destinations do not block selected installs", () => {
+  const outside = mkdtempSync(join(tmpdir(), "planlet-harnesses-outside-"));
+  try {
+    withRoot((root) => {
+      mkdirSync(join(root, ".claude"));
+      symlinkSync(outside, join(root, ".claude", "skills"));
+      const destinations = resolveHarnessDestinations(
+        root,
+        normalizeToolSelector("agents"),
+      );
+      assert.equal(destinations.length, 1);
+      assert.equal(destinations[0]!.relativePath, ".agents/skills");
+      assert.deepEqual(destinations[0]!.selectedToolIds, ["agents"]);
+    });
+  } finally {
+    rmSync(outside, { recursive: true, force: true });
+  }
+});
