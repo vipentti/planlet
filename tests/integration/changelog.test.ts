@@ -162,15 +162,28 @@ test("ordinary CI allows Unreleased-only and structurally valid dated 0.1.0", ()
 });
 
 test("explicit release mode enforces dated non-empty matching 0.1.0 notes", () => {
-  const unreleased = fixture(
+  const copiedNotes = fixture(
+    `# Changelog\n\n## [Unreleased]\n\n### Added\n\n- Item\n\n## [0.1.0] - ${future}\n\n### Added\n\n- Item\n`,
+  );
+  assert.notEqual(
+    assertReady([
+      "--release-date",
+      future,
+      copiedNotes.changelogPath,
+      copiedNotes.packagePath,
+    ]).status,
+    0,
+  );
+
+  const unreleasedOnly = fixture(
     "# Changelog\n\n## [Unreleased]\n\n### Added\n\n- Item\n",
   );
   assert.notEqual(
     assertReady([
       "--release-date",
       future,
-      unreleased.changelogPath,
-      unreleased.packagePath,
+      unreleasedOnly.changelogPath,
+      unreleasedOnly.packagePath,
     ]).status,
     0,
   );

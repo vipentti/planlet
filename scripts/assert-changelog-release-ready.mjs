@@ -17,8 +17,8 @@
  *
  * Release verification:
  *   node scripts/assert-changelog-release-ready.mjs --release-date YYYY-MM-DD
- *   Requires exactly one Unreleased, exactly one correctly dated package
- *   version section matching --release-date with non-empty notes, and a
+ *   Requires exactly one empty Unreleased section, exactly one correctly dated
+ *   package version section matching --release-date with non-empty notes, and a
  *   --release-date that is today or later (UTC).
  */
 
@@ -159,6 +159,11 @@ if (releaseDate !== undefined) {
     fail(`--release-date is not a valid calendar day: ${releaseDate}`);
   }
   assertNotPast(releaseDate, "--release-date");
+  if (sectionBodyAfter(unreleased[0]) !== "") {
+    fail(
+      "Changelog [Unreleased] section must be empty for release verification (notes must be moved, not copied).",
+    );
+  }
   if (versionSections.length !== 1) {
     fail(
       `Changelog must contain exactly one [${version}] section for release verification (found ${versionSections.length}).`,
