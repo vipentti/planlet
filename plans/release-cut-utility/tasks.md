@@ -29,7 +29,9 @@
       helper on extracted paths; `verify-commit`; diff-tree vs parent; finally
       cleanup; never ambient worktree; never candidate scripts. Shared by fresh
       and resume
-- [ ] T6 Implement `prepare` fresh path: mode selection; clean-tree + `HEAD ==`
+- [ ] T6 Implement `prepare` fresh path: three-way mode selection requiring local
+      branch, remote branch, and every relevant open/closed-unmerged/merged PR to
+      be absent before fresh; clean-tree + `HEAD ==`
       remote main tip; changelog cut; update all three package/lock root versions
       (npm-supported or minimal JSON edits; no dependency rewrites); assert
       `--release-date`; `git commit -S`; shared validator; atomic
@@ -40,7 +42,8 @@
       namespaced fetch-ref (no overwrite); fetched SHA must equal observed;
       re-probe before PR; local-only SHA→ref push fail-closed on concurrent
       remote; no synchronize-push; finally cleanup only owned temp refs; shared
-      validator; PR-state handling; never force-update
+      validator; PR-state handling; never force-update. Branch-backed resume
+      behavior is unchanged by T13
 - [ ] T8 Implement `tag` fresh/resume: `HEAD ==` remote main tip; helper
       `--verify-release --print-release-date` (+ `--verify-release-date` when
       operator passes `--release-date`); fresh `git tag -a -s` then verify-tag then
@@ -55,8 +58,11 @@
       validation, lockfile root version contract, pinned remote probe/fetch/
       re-probe, temp fetch-ref cleanup, fresh/resume, PR states, and atomic
       expected-absence ref creation including lost-race recovery/collision notes
-      and that the lease never authorizes overwriting an existing ref
-- [ ] T10 Add fixture/subprocess tests covering T2–T8 and T12: prior cases plus lockfile
+      and that the lease never authorizes overwriting an existing ref; document
+      PR-only release history after head-branch deletion (merged = already
+      complete; closed-unmerged/open/conflicting = investigate) and that a
+      deleted branch never makes a merged or closed release fresh again
+- [ ] T10 Add fixture/subprocess tests covering T2–T8, T12, and T13: prior cases plus lockfile
       three-field align/stale/missing/malformed; fresh updates all three; resume
       refuses inconsistent lockfile; remote SHA stable vs moved between probe and
       fetch; fetched≠observed; post-validate remote move/disappear; exact SHA→ref
@@ -70,7 +76,18 @@
       rejected; concurrent tag at the same object rejected as pre-existing remote
       state; no tag moved/replaced/force-updated; unsupported lease semantics do
       not fall back to ordinary push; assert ordering probe absent → local
-      validation → atomic push → classification
+      validation → atomic push → classification. Stubbed-`gh` PR-only tests:
+      merged PR with remote branch deleted and no local branch reports already
+      complete; merged PR-only state recreates and pushes nothing; merged
+      PR-only state works when the historical head commit is unavailable
+      locally; closed-unmerged PR with deleted branch hard-refuses; open PR with
+      missing branch hard-refuses; no branch + merged PR never enters fresh
+      preparation; no branch + closed PR never creates a replacement PR;
+      multiple relevant PR-only records hard-refuse; PR head/base/version
+      mismatch hard-refuses; branch-backed resume still requires PR head SHA
+      equality and candidate validation; stale PR lookup changing during
+      classification restarts or fails closed; no `git push`, lease push, or
+      `gh pr create` in PR-only completed or refusal states
 - [ ] T11 Run format/lint/type-check/build/test and `git diff --check`; fix
       regressions in release helpers touched by this work
 - [ ] T12 Implement atomic expected-absence remote-ref creation shared by the
@@ -84,3 +101,15 @@
       invocation created the ref; unsupported or unparseable lease capability
       fails closed with diagnostics naming unguaranteed atomic creation, never an
       ordinary-push fallback
+- [ ] T13 Implement PR-only release-history classification for a deleted head
+      branch (precedes T6 fresh-mode entry): classify the complete open/closed/
+      merged `gh` lookup for exact head `release/v<version>` and base `main`
+      before requiring a branch-backed candidate; exactly one matching merged PR
+      with a concrete head SHA and no conflicting records reports already
+      complete with URL and head SHA, without recreating the branch, pushing, or
+      creating a PR, without requiring the historical object locally, and without
+      claiming revalidation that did not run; closed-unmerged, open-without-
+      branch, and conflicting/multiple/unusable-metadata states hard-refuse with
+      investigation guidance; never choose the newest PR heuristically; re-query
+      when the lookup may be stale and restart discovery once or fail closed on
+      change, never creating a branch in the stale pass

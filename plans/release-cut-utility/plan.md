@@ -26,7 +26,10 @@ branch or tag — is created through an **atomic expected-absence lease**
 (`--force-with-lease=<ref>:` plus a `--porcelain` new-ref status assertion),
 never an ordinary push, so a concurrently created ref is always a lost race
 rather than a silent accept or fast-forward. `tag` requires `HEAD` equal to the current
-remote `main` tip. Prepare PR lookup distinguishes open, merged,
+remote `main` tip. Mode selection classifies PR history **before** requiring a
+branch-backed candidate, so a release whose head branch was deleted after merge
+resolves as already-complete rather than falling back to fresh preparation.
+Prepare PR lookup distinguishes open, merged,
 closed-unmerged, and conflicting PR states. Remote-ref probes use exact
 `git ls-remote --exit-code` status classification.
 
@@ -52,6 +55,9 @@ In scope:
   (flags `--verify-release`, optional `--verify-release-date`, optional
   `--print-release-date`). Existing `--release-date` preparation mode and
   ordinary CI mode stay unchanged.
+- PR-only release-history classification for a deleted head branch (merged =
+  already complete; closed-unmerged, open, and conflicting = hard-refuse), with
+  fresh mode requiring the absence of every branch **and** every relevant PR.
 - `prepare` fresh / resume (branch + commit invariants; PR state handling;
   shared SHA-anchored candidate-commit validator via blob extraction; full
   package/lockfile root version contract including `packages[""].version`;
@@ -83,7 +89,7 @@ Out of scope:
 - Changing `.github/workflows/release.yml`, Environment `release`, tag rulesets,
   or npm trusted publishing.
 - Auto-merge of the version PR; auto-reopen of closed PRs; automatic post-merge
-  tag.
+  tag; recreating a deleted release branch from PR metadata.
 - Version selection / semver inference, changelog prose generation, prerelease
   channels, or direct `npm publish`.
 - Plain `--force` pushes; force-updating, moving, or deleting tags or release
@@ -438,15 +444,111 @@ Discover state for `--version`:
 2. Remote exact branch probe (found / absent / failed).
 3. `gh` lookup of open, closed, and merged PRs for head `release/v<version>`.
 
-**Fresh** — no local branch, remote branch, or relevant PR: clean worktree;
-`HEAD ==` remote main tip; then the ordered fresh path below.
+Classify **PR history before** requiring a branch-backed candidate. A release
+branch is routinely deleted after its PR merges, so branch absence alone never
+implies the release was never prepared.
 
-**Resume** — any of those exist: do not require `HEAD ==` main; resolve exactly
-one **candidate commit SHA** (below); run the shared SHA-anchored validator;
-finish push/PR per PR-state rules; never recreate commit; never
-delete/force-update; do not check out the release branch solely to validate.
+Mode selection is therefore three-way:
+
+**Fresh** — requires **all** of the following to be absent:
+
+1. local `refs/heads/release/v<version>`;
+2. remote `refs/heads/release/v<version>`;
+3. any relevant **open** PR;
+4. any relevant **closed-unmerged** PR;
+5. any relevant **merged** PR.
+
+Then: clean worktree; `HEAD ==` remote main tip; then the ordered fresh path
+below. A deleted branch does **not** make a previously merged or closed release
+fresh again.
+
+**Branch-backed resume** — a local or remote release branch exists: do not
+require `HEAD ==` main; resolve exactly one **candidate commit SHA** (below);
+require any relevant PR head SHA to equal that candidate; run the shared
+SHA-anchored validator; finish push/PR per PR-state rules; apply pinned remote
+fetch, re-probes, and atomic expected-absence creation as already specified;
+never recreate commit; never delete/force-update; do not check out the release
+branch solely to validate. Unchanged by this section.
+
+**PR-only history** — no local **and** no remote release branch, but at least
+one relevant PR exists. See below. These states must never fall through to
+fresh preparation, and must never produce an undefined “no candidate SHA” path.
+
+### PR-only release history (branch deleted)
+
+Applies only when neither a local nor a remote `release/v<version>` branch
+exists. Use the complete `gh` lookup for exact head branch
+`release/v<version>` and base exactly `main`, across open, closed, and merged
+PRs. Never pick the newest PR heuristically.
+
+#### Merged matching PR, branch absent
+
+An already-complete preparation state — not fresh, and not a recoverable branch
+state.
+
+Require:
+
+- exactly one relevant merged PR;
+- base exactly `main`;
+- recorded head branch exactly `release/v<version>`;
+- PR metadata exposes a concrete head SHA;
+- no conflicting open or closed-unmerged PR for the same release head/version.
+
+Behavior:
+
+- report preparation already merged and complete, with the merged PR URL and
+  recorded head SHA;
+- do **not** recreate the release branch, push, or create another PR;
+- do **not** require the historical head commit to be locally available merely
+  to report the already-complete state;
+- do **not** claim the historical commit was freshly revalidated when its
+  object is unavailable — say what was and was not checked.
+
+If the head object *is* already available locally, optional consistency
+validation may run. Failure to fetch or retain a deleted historical branch must
+never downgrade a clearly merged PR into fresh preparation.
+
+#### Closed-unmerged matching PR, branch absent
+
+Hard-refuse. Report that the previous release PR was closed without merge, that
+its head branch is absent, that automatic reopening / branch recreation /
+replacement-PR creation are out of scope, and that deliberate operator
+investigation is required. Do **not** enter fresh mode despite the missing
+branch.
+
+#### Open matching PR, branch absent
+
+Hard-refuse as inconsistent remote state. An open PR is expected to have a live
+head ref. Do **not** recreate the branch from the PR's recorded head SHA.
+Report that the PR remains open, its head branch cannot be found, no push or
+duplicate PR creation was attempted, and manual investigation is required.
+
+#### Conflicting or multiple PR-only history
+
+Hard-refuse when:
+
+- more than one relevant PR makes intent ambiguous;
+- merged and closed-unmerged records conflict;
+- head / base / version identity does not match exactly;
+- PR metadata lacks a usable state or head identity;
+- a different PR state appears during re-query.
+
+#### Re-query and race handling
+
+Before returning a PR-only result, re-query the relevant PR state if the
+lookup may be stale. If state changes during classification, restart discovery
+once or fail closed. Never transition from PR-only history into branch creation
+within the same stale pass.
+
+No remote mutation is required for any merged or closed-unmerged PR-only
+outcome; these paths issue no `git push`, no atomic lease push, and no
+`gh pr create`.
 
 ### Candidate commit selection
+
+Applies to **branch-backed resume** and to fresh post-creation validation. In
+PR-only history no branch-backed candidate exists; those states resolve through
+the PR-only rules above and never reach this table.
 
 Before content validation, resolve exactly one candidate release commit SHA.
 For a remote release branch, record the exact SHA from the initial exact-ref
@@ -461,6 +563,7 @@ fetch below.
 | Local and remote both present | Both must resolve to the **same** SHA; that SHA is the candidate |
 | Matching PR present | PR head SHA must equal the validated branch candidate SHA |
 | Disagreement / multiple plausible unequal SHAs | Hard-refuse |
+| Neither local nor remote branch, but a relevant PR exists | No branch-backed candidate; classify under PR-only release history |
 
 All subsequent release-commit invariant checks are anchored to this exact SHA,
 independent of the current checkout.
@@ -684,6 +787,16 @@ remote branch is involved:
 | Closed unmerged; same head identity | Hard-refuse; no reopen/replacement |
 | Conflicting (SHA differs, base ≠ `main`, multiple relevant PRs, etc.) | Hard-refuse |
 
+When no release branch exists at all, the same lookup is classified under
+PR-only release history instead of against a candidate SHA:
+
+| State (no local or remote branch) | Behavior |
+| --- | --- |
+| Exactly one merged PR; base `main`; head `release/v<version>`; concrete head SHA; no conflicting records | Report already merged/complete with URL + recorded head SHA; no branch recreation, push, or PR create; local availability of the head object not required; do not claim revalidation that did not happen |
+| Closed unmerged | Hard-refuse; no reopen, branch recreation, or replacement PR; investigation required |
+| Open | Hard-refuse as inconsistent remote state; never recreate the branch from the recorded head SHA |
+| Multiple relevant PRs, conflicting merged/closed records, identity mismatch, unusable metadata, or state changed during re-query | Hard-refuse; never pick the newest PR heuristically |
+
 Create PR only when full lookup finds no relevant open/closed/merged PR, and
 only after the pre-mutation re-probe confirms the remote branch (if any) still
 equals the validated SHA.
@@ -707,6 +820,12 @@ equals the validated SHA.
 | Concurrent remote branch appears at the identical candidate SHA | Porcelain status `=`, not `*` → lost creation race; fail closed; not reported as created here |
 | Lease capability unsupported or porcelain status unparseable | Fail closed naming unguaranteed atomic creation; never fall back to ordinary push |
 | Remote validated, no relevant PR | Create PR only after re-probe confirms SHA |
+| Merged PR, head branch auto-deleted by GitHub, no local branch | PR-only: report already complete; no branch recreation, push, or PR create |
+| Merged PR, branch absent, historical head commit not available locally | PR-only success; report without claiming revalidation; never downgrade to fresh |
+| Closed-unmerged PR, branch deleted | Hard refuse; never fresh; never replacement PR |
+| Open PR, remote head branch disappeared | Hard refuse as inconsistent remote state |
+| PR-only history with multiple or conflicting relevant PRs | Hard refuse |
+| PR state changes during PR-only classification | Restart discovery once or fail closed; never create a branch in the stale pass |
 | Local commit exists after post-creation verify failure (never pushed) | Resume: shared validator; if now valid, push/PR; if still invalid, refuse and leave untouched |
 | Signed commit with inconsistent lockfile root versions | Hard refuse |
 | Divergent local/remote tips | Hard refuse |
@@ -796,6 +915,13 @@ local-tag-then-push; atomic expected-absence creation of the release branch and
 tag, including the same-SHA lost-race case and the fail-closed capability rule;
 errors that leave unverified-but-created local objects for investigation.
 
+Document PR-only release history: that a merged release PR whose head branch
+GitHub auto-deleted reports as already complete rather than re-preparing; that
+a deleted branch never makes a merged or closed release fresh again; that
+closed-unmerged, open-without-branch, and conflicting PR-only states
+hard-refuse and require operator investigation; and that none of these paths
+push, recreate a branch, or open a replacement PR.
+
 Add recovery and collision notes covering: what a lost creation race looks like
 to the operator, that the utility deliberately does not adopt a ref another
 actor created, how to reclassify by rerunning discovery, and that
@@ -850,6 +976,23 @@ to overwrite an existing branch or tag.
   dry-run does not claim future objects are already verified.
 - Fresh/resume prepare and tag behaviors, PR states, and remote-tag refusal as
   specified.
+- Fresh mode requires local branch, remote branch, and every relevant open,
+  closed-unmerged, and merged PR to be absent. A deleted branch never makes a
+  merged or closed release fresh again.
+- PR history is classified before a branch-backed candidate is required. With
+  no branch present: exactly one matching merged PR (base `main`, head
+  `release/v<version>`, concrete head SHA, no conflicting records) reports
+  already-complete with URL and head SHA, without requiring the historical
+  object locally and without claiming revalidation that did not run;
+  closed-unmerged, open-without-branch, and conflicting/multiple/unusable-
+  metadata states hard-refuse; newest-PR heuristics are never used.
+- PR-only completed and refusal states perform no `git push`, no atomic lease
+  push, and no `gh pr create`. Stale state detected during classification
+  restarts discovery once or fails closed, never creating a branch in the stale
+  pass.
+- Branch-backed resume is unchanged: candidate SHA resolution, PR head SHA
+  equality, shared validator, pinned fetch/re-probe, and atomic creation all
+  still apply.
 - ls-remote: exit `0` found (with peel-pair OK), exit `2` absent, else failed;
   fixture tests for found/absent/inaccessible/malformed URL/peel pair/prefix
   nonmatch; remote main absent fail-closed.
@@ -902,7 +1045,18 @@ created when remote tag stays absent**; **concurrent tag at a different object
 rejected**; **concurrent tag at the same object rejected and reported as
 pre-existing remote state**; **no tag moved, replaced, or force-updated**;
 **unsupported lease semantics do not fall back to ordinary push**; **command
-ordering probe absent → local validation → atomic push → classification**. Live
+ordering probe absent → local validation → atomic push → classification**;
+**merged PR with deleted remote branch and no local branch reports already
+complete**; **merged PR-only state recreates and pushes nothing**; **merged
+PR-only state works when the historical head commit is not available locally**;
+**closed-unmerged PR with deleted branch hard-refuses**; **open PR with missing
+branch hard-refuses**; **no branch + merged PR never enters fresh
+preparation**; **no branch + closed PR never creates a replacement PR**;
+**multiple relevant PR-only records hard-refuse**; **PR head/base/version
+mismatch hard-refuses**; **branch-backed resume still requires PR head SHA
+equality and candidate validation**; **stale PR lookup changing during
+classification restarts or fails closed**; **no `git push`, lease push, or
+`gh pr create` in PR-only completed or refusal states**. Live
 signing/`gh`/push remain operator gates. Concurrency tests use bare local
 remotes mutated between probe and push; no live GitHub.
 
@@ -943,3 +1097,15 @@ remotes mutated between probe and push; no live GitHub.
   guarantee honest, at the cost of refusing to operate on unsupported setups.
 - Remote tag presence stays non-resumable automatically.
 - PR lookup must include closed/merged to avoid duplicate replacements.
+- Auto-deleting the head branch on merge is a common default, so
+  merged-PR-with-no-branch is the *normal* post-release state, not an edge
+  case. Treating branch absence as the fresh signal would re-prepare an
+  already-released version; classifying PR history first is load-bearing.
+- Deleted branches also mean the historical head commit may be unreachable
+  locally. Requiring a fetchable object before reporting an already-merged
+  release would convert a clean completed state into a failure or a false
+  fresh, so reporting is allowed without revalidation — stated explicitly so
+  operators are not misled about what was verified.
+- Recreating a branch from PR-recorded head metadata would reintroduce refs the
+  maintainers deliberately deleted, and for an open PR would mask a real remote
+  inconsistency; both stay refuse-only.
