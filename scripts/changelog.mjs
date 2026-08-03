@@ -16,8 +16,7 @@ const section = changelog
   .split(/\n## /)
   .find((entry) => entry.startsWith(`[${version}] - `))
   ?.split(/\n\[[^\]]+\]:/)[0];
-const newline = section?.indexOf("\n") ?? -1;
-const notes = (newline === -1 ? "" : section.slice(newline + 1)).trim();
+const notes = section?.split("\n").slice(1).join("\n").trim() ?? "";
 if (!notes || !/^\s*-\s+\S/m.test(notes)) {
   console.error(`Missing or empty changelog section: ${version}`);
   process.exit(1);
