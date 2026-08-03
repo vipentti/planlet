@@ -34,3 +34,5 @@
 - 2026-08-03 — Registry verified `@vipentti/planlet@0.1.0` with dist.integrity matching approved artifact `sha512-JvtLGRJbmXlmfWGLnI+4Byr5G/ly4ncAd6h4GISweNkrOQv8AxER3WpjDHN4J3XPIQ1uHTMqk2Epm82rr/FCfg==` (T8 publish complete).
 - 2026-08-03 — Created annotated tag `v0.1.0` at `53eb188e753503564206abb5ca6118d5aa201e5f` and GitHub release from dated 0.1.0 changelog notes while `release.yml` absent from default branch (T12).
 - 2026-08-03 — GitHub repository homepage set to `https://www.npmjs.com/package/@vipentti/planlet`.
+- 2026-08-03 — Captain configured npm trusted publisher for package `@vipentti/planlet` on GitHub repository `vipentti/planlet` with workflow filename `release.yml`, no GitHub environment, publishing access requiring 2FA and disallowing bypass-2FA tokens (T13).
+- 2026-08-03 — Squash-merged Slice B to `main` as `0c3d63985989e252d11fcdcf64b51c71c4e27fb3` (`release.yml` present); only existing release tag remained `v0.1.0` (no new tag during merge) (T14).
