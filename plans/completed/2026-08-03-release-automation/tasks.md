@@ -8,7 +8,7 @@
 - [x] T6 Document prepublication source-only install and changelog upkeep in `README.md`, and point release guidance at this planlet
 - [x] T7 Review full history, refs intended for exposure, commit metadata, and stored objects for secrets/credentials, licensing or third-party provenance, and personal data; resolve every finding and record captain sign-off before visibility changes
 - [x] T8 Before packing, set the `[0.1.0]` changelog header date to the intended publish day on `main` if it still differs; then from captain-approved clean `origin/main` SHA, reproduce and record exact 0.1.0 package metadata, file list, integrity, shasum, and SHA-256; inspect the tarball; then publish only that approved `.tgz` and verify registry state
-- [ ] T9 On `main`, prepare `@vipentti/planlet@0.1.1`, push its reviewed commit before its exact tag, run the automated `release.yml` workflow, and record workflow conclusion, npm provenance/integrity, installed package, rendered release body, and safe rerun evidence
+- [x] T9 On `main`, prepare `@vipentti/planlet@0.1.1`, push its reviewed commit before its exact tag, run the automated `release.yml` workflow, and record workflow conclusion, npm provenance/integrity, installed package, rendered release body, and safe rerun evidence
 - [x] T10 Immediately before bootstrap, verify npm name availability, authenticated account and 2FA/auth readiness, intended owner identity, package ownership state, and public-access capability; record failure/retry response without claiming the name
 - [x] T11 After T7 and captain public-release authorization, make `vipentti/planlet` public and independently verify anonymous repository and full-history visibility
 - [x] T12 After verified T8 publication and while release workflow is absent from default branch, create `v0.1.0` at exact approved SHA and create matching GitHub release from the dated 0.1.0 changelog notes at that SHA
@@ -41,3 +41,9 @@
 - 2026-08-03 — Captain must update npm trusted publisher Environment name from empty to `release` to match workflow before the next automated publish (T13 sync / T19).
 - 2026-08-03 — Hardening implemented on branch (pending merge + npm env sync): `release.yml` uses Environment `release`, rejects non-create tag pushes, verifies GitHub-reported signed annotated tags, packs with `--ignore-scripts`, re-validates registry after publish, applies `--release-date` on first publish, upgrades to `npm@^11.5.1`, and hardens pack/view JSON parsing (T19 in progress).
 - 2026-08-03 — Captain set npm trusted publisher Environment name to `release` for `@vipentti/planlet` / `release.yml`, matching workflow Environment (T13 sync / T19).
+- 2026-08-03 — Automated `@vipentti/planlet@0.1.1` from signed annotated tag `v0.1.1` at `5f2b52e9aaf229eb8feacca2425aff8bd2176ec8`: registry name/version/repository.url match; `dist.integrity` `sha512-bMOd8g6x72nVF7QbN1AgDc9vamkuNbVr6XDYN21miZxmE2QnySui0a7Xw17hLJ4q2A0iC9HU6sUOEIsqHyHyaA==`; `dist.shasum` `f884750985cc60fb40918ab932594805702e0e5f`; tarball `https://registry.npmjs.org/@vipentti/planlet/-/planlet-0.1.1.tgz`; npm attestations `https://registry.npmjs.org/-/npm/v1/attestations/@vipentti%2fplanlet@0.1.1` (publish + SLSA provenance v1; Sigstore logIndex `2335600272`); Release https://github.com/vipentti/planlet/actions/runs/30831243484 attempt 1 SUCCESS (first publish + provenance) and attempt 2 SUCCESS (existing package integrity verified, no republish); GitHub release https://github.com/vipentti/planlet/releases/tag/v0.1.1; install smoke `planlet --version` → `0.1.1`.
+
+## Completion
+
+- Completed at: 2026-08-03T16:25:33.914Z
+- Mode: normal

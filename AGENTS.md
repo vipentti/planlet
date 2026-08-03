@@ -1,7 +1,9 @@
 # Planlet Agent Guide
 
 ## Token efficiency
+
 Respond like smart caveman. Cut all filler, keep technical substance.
+
 - Drop articles (a, an, the), filler (just, really, basically, actually).
 - Drop pleasantries (sure, certainly, happy to).
 - No hedging. Fragments fine. Short synonyms.
@@ -86,7 +88,7 @@ accepting rather than restating the line count.
 - **Lock ownership token + rename-aside release** (`src/core/planlet-lock.ts`). Not PID-reuse insurance — a dead process never releases. The token makes the recovery our own error text invites survivable: a user who removes a lock that turned out to be live lets a second holder in, and a read-then-unlink release would delete that holder's lock mid-write. Release renames aside and deletes only on a matching quarantined token.
 - **No automatic stale-lock reclaim.** Remove-then-create admits two writers on one dead holder. Manual removal only, until `flock(2)`/`LockFileEx`.
 - **Hashed lock-directory name.** A readable encoding of the checkout path exceeds the 255-byte filename limit on deep checkouts and publishes the user's directory layout into a world-readable `/tmp`.
-- **Release-failure warning plumbing** (`OwnedLockRunResult.releaseWarning`). A lock that outlives a *successful* operation silently wedges the next run. Letting it throw turns success into failure; catching at the CLI boundary cannot tell whether the operation ran.
+- **Release-failure warning plumbing** (`OwnedLockRunResult.releaseWarning`). A lock that outlives a _successful_ operation silently wedges the next run. Letting it throw turns success into failure; catching at the CLI boundary cannot tell whether the operation ran.
 - **Structured double-fault error.** When the operation and the release both fail, the operation's code and the lock path must survive. A bare `AggregateError` reaches the CLI as `internal_error` with nothing to act on, and `src/core/` writes no output, so stderr is not an alternative.
 - **Lock dependency injection** (`write`, `rename`, `remove`, `pid`). The seams for the acquire-failure and release-failure tests. Removing them removes those tests.
 - **`transactionHooks`** (`src/core/harness-installer.ts`, marked `@internal`). The rollback, recovery-directory, and cleanup-warning paths are unreachable through the public API. Three steps, one per distinct outcome.
@@ -117,14 +119,14 @@ For code work, run the repository commands below. Do not add guessed commands to
 
 Node.js 22 or newer. Install dependencies with `npm install`.
 
-| Command | Purpose |
-| --- | --- |
-| `npm run format` | Rewrite supported files with Prettier. |
-| `npm run format:check` | Fail on files that do not match Prettier style. |
-| `npm run lint` | Run ESLint over `src/` and `tests/`. |
-| `npm run type-check` | Run `tsc --noEmit`. |
-| `npm run build` | Bundle the CLI to `dist/planlet.mjs`. |
-| `npm test` | Run the TypeScript test suite via `tsx` atop `node:test`. |
+| Command                | Purpose                                                   |
+| ---------------------- | --------------------------------------------------------- |
+| `npm run format`       | Rewrite supported files with Prettier.                    |
+| `npm run format:check` | Fail on files that do not match Prettier style.           |
+| `npm run lint`         | Run ESLint over `src/` and `tests/`.                      |
+| `npm run type-check`   | Run `tsc --noEmit`.                                       |
+| `npm run build`        | Bundle the CLI to `dist/planlet.mjs`.                     |
+| `npm test`             | Run the TypeScript test suite via `tsx` atop `node:test`. |
 
 Full verification suite, in order:
 
@@ -148,7 +150,7 @@ installed skill copies and fails on drift. Workflow files are covered by `format
 
 Release and changelog guidance lives in [`README.md`](README.md); release gates
 and workflow contract live in
-[`plans/release-automation/plan.md`](plans/release-automation/plan.md). Do not
+[`plans/completed/2026-08-03-release-automation/plan.md`](plans/completed/2026-08-03-release-automation/plan.md). Do not
 publish, create release tags, or configure trusted publishing without the
 captain decisions required by that plan.
 
