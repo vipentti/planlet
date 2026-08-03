@@ -21,7 +21,11 @@ are preliminary only. Prepare release-commit content checks are always
 **SHA-anchored** to one resolved candidate commit (blob extraction into a temp
 dir; never the ambient worktree), including all canonical root package/lockfile
 version fields. Remote-only resume pins `observedRemoteReleaseSha` through
-fetch and re-probes before PR. `tag` requires `HEAD` equal to the current
+fetch and re-probes before PR. Every remote ref this utility creates — release
+branch or tag — is created through an **atomic expected-absence lease**
+(`--force-with-lease=<ref>:` plus a `--porcelain` new-ref status assertion),
+never an ordinary push, so a concurrently created ref is always a lost race
+rather than a silent accept or fast-forward. `tag` requires `HEAD` equal to the current
 remote `main` tip. Prepare PR lookup distinguishes open, merged,
 closed-unmerged, and conflicting PR states. Remote-ref probes use exact
 `git ls-remote --exit-code` status classification.
@@ -63,6 +67,9 @@ In scope:
   `tag` and still requires `--execute`. Prepare has no separate `--push`.
 - Remote-ref probes use the exact found / absent / failed classification under
   Approach.
+- Atomic expected-absence remote-ref creation for both `refs/heads/release/v<version>`
+  and `refs/tags/v<version>`, with fail-closed behavior when the required
+  compare-and-swap semantics are unavailable.
 - Update `RELEASING.md` for the scripted operator path and these contracts;
   leave workflow / trusted-publishing narrative authoritative for the remote
   job.
@@ -79,7 +86,12 @@ Out of scope:
   tag.
 - Version selection / semver inference, changelog prose generation, prerelease
   channels, or direct `npm publish`.
-- Force-updating, moving, or deleting tags or release branches.
+- Plain `--force` pushes; force-updating, moving, or deleting tags or release
+  branches. (An exact expected-absence lease is a create-if-absent operation
+  only and is not an exception to this; see Remote-ref race model.)
+- GitHub-specific REST ref-creation, or any new dependency, as the atomicity
+  mechanism unless the standard Git mechanism provably cannot satisfy the
+  contract.
 - New runtime dependencies.
 - Predicting/regenerating commit or tag object IDs for idempotency.
 - Independent changelog regex/parsing inside `release.mjs`.
@@ -125,7 +137,7 @@ Out of scope:
 | Remote read-only | `git ls-remote`, `gh` read APIs | Allowed | Allowed |
 | Local Git metadata mutation | `git fetch`, writing `FETCH_HEAD`, creating remote-tracking or temporary refs under an implementation-owned namespace | Forbidden | Allowed when required; prefer `--no-write-fetch-head` where useful; never force-update a conflicting existing local/user ref; temporary fetch refs are created only under `--execute` and cleaned up |
 | Worktree / index mutation | editing files, `git add` / `commit`, creating local branches/tags, checking out the release branch | Forbidden | Allowed for intended steps only; candidate validation must **not** require checking out the candidate |
-| Remote mutation | `git push`, `gh pr create` | Forbidden | Allowed for intended steps |
+| Remote mutation | `git push`, `gh pr create` | Forbidden | Allowed for intended steps only. Every ref-creating push (release branch, tag) must use the atomic expected-absence lease form below; ordinary non-lease pushes and plain `--force` are never issued |
 | Process-ephemeral temp files | OS temp dir extracts of candidate blobs | Allowed (create/delete outside the repo) | Allowed; always cleaned up |
 
 Dry-run acceptance is mechanically testable: after dry-run, worktree, index,
@@ -161,6 +173,84 @@ Rules:
 Fixture tests must assert: found ref; absent ref (exit 2); inaccessible remote;
 malformed remote URL; exact annotated tag plus peeled `^{}` line; similarly
 prefixed nonmatching refs do not count as found.
+
+### Remote-ref race model (atomic expected-absence creation)
+
+A probe is a point-in-time read. Between the probe that classified a ref as
+**absent** and the push that creates it, another actor may create that ref. An
+ordinary push does not fail closed in that window: if the concurrently created
+ref is an ancestor of the candidate, the push fast-forwards it; if it already
+points at the same object, the push reports `Everything up-to-date` and exits
+`0`. Both outcomes silently accept or mutate remote state this invocation never
+classified. Shrinking the window with a final re-probe does not close it.
+
+Therefore every remote ref this utility **creates** is created with a
+server-side compare-and-swap whose expected value is *ref does not exist*.
+
+#### Mechanism and the same-SHA gap
+
+The Git mechanism is the empty-expect lease, `--force-with-lease=<ref>:`.
+
+Verified behavior on Git 2.54 against a bare local remote:
+
+| Situation | `--force-with-lease=<ref>:` alone | Sufficient? |
+| --- | --- | --- |
+| Ref still absent | Creates ref, porcelain status `*` | Yes |
+| Ref appeared at a different, non-ancestor SHA | Rejected, `stale info` | Yes |
+| Ref appeared at an ancestor of the candidate | Rejected, `stale info` (no fast-forward) | Yes |
+| Ref appeared at the **same** object | `Everything up-to-date`, **exit 0** | **No** |
+
+The last row is load-bearing: Git evaluates no lease when there is no update to
+apply, so the lease alone cannot distinguish "we created this ref" from
+"someone else created it at the same object first". The contract therefore
+requires **both** conditions:
+
+1. the expected-absence lease, and
+2. a `--porcelain` per-ref status assertion that the ref status flag is
+   exactly `*` (new ref).
+
+Any other porcelain status — notably `=` (up to date) — is a **lost creation
+race**, not a success, even on exit `0`.
+
+#### Required creation form
+
+```sh
+git push --porcelain \
+  --force-with-lease=<exact-ref>: \
+  origin \
+  <exact-source>:<exact-ref>
+```
+
+Rules, applying identically to branches and tags:
+
+- The expected value is explicitly "ref does not exist". Creation must fail if
+  the ref exists at **any** SHA, including the validated candidate SHA itself.
+- Success requires exit `0` **and** porcelain status `*` for that exact ref.
+- Never retry with a broader lease, a relaxed lease, or plain `--force`.
+- Never derive a lease from a possibly stale remote-tracking ref; always state
+  the expected value explicitly in the flag.
+- On lease failure or a non-`*` status, restart read-only discovery and
+  reclassify the now-existing ref (and, for branches, the PR state), or fail
+  closed. Never report the original invocation as having created the ref.
+- This is a create-if-absent primitive only. It never authorizes changing,
+  moving, replacing, or deleting an existing ref.
+
+Ordering is fixed, and the final re-probe is diagnostic only:
+
+```text
+probe absent → local validation → atomic expected-absence push → post-result classification
+```
+
+#### Capability failure
+
+- The utility must confirm the chosen invocation actually provides
+  expected-absence semantics on the project's supported Git versions.
+- If the lease capability is unsupported, rejected, or the porcelain status
+  cannot be parsed, **fail closed**.
+- Never fall back to an ordinary push.
+- Diagnostics must say specifically that atomic remote-ref creation could not
+  be guaranteed, rather than reporting a generic push failure.
+- Tests prove the semantics against a bare local remote; no live GitHub.
 
 ### Assert helper contract (exact CLI)
 
@@ -531,11 +621,28 @@ branch:
 - Push the **exact validated candidate SHA** to the **exact** destination ref
   `refs/heads/release/v<version>` (SHA-to-ref form), not an ambiguous
   current-branch push.
-- If the remote branch appeared or changed after the earlier absence check, the
-  push must fail closed rather than overwrite; never force-update.
+- The push must use the atomic expected-absence lease per Remote-ref race
+  model:
+
+```sh
+git push --porcelain \
+  --force-with-lease=refs/heads/release/v<version>: \
+  origin \
+  <validated-candidate-sha>:refs/heads/release/v<version>
+```
+
+- Success requires exit `0` **and** porcelain status `*` for
+  `refs/heads/release/v<version>`.
+- If the remote branch appeared after the earlier absence check, creation fails
+  closed for every variant: different SHA, ancestor SHA (no fast-forward), and
+  the identical candidate SHA (porcelain `=` is a lost race, not a success).
+- On failure, restart read-only discovery and reclassify the branch and PR
+  state, or fail closed. Do not report the branch as created by this
+  invocation, and do not proceed to PR creation on the assumption it was.
+- Never plain `--force`; never retry with a relaxed lease.
 - For an **existing** remote branch, the utility must **not** push merely to
-  “synchronize” after validation; once the exact remote ref is confirmed
-  unchanged, only create or report the PR.
+  “synchronize” after validation — and must not push at all; once the exact
+  remote ref is confirmed unchanged, only create or report the PR.
 
 ### Fresh prepare ordering (post-creation verify before push)
 
@@ -547,7 +654,9 @@ prechecks (incl. preliminary signing diagnostics)
 → resolve exact new commit SHA
 → shared SHA-anchored validator(candidate-sha)
    (blob extract + full lockfile contract + helper + verify-commit + diff-tree)
-→ only then: push exact SHA to refs/heads/release/v<version>
+→ only then: atomic expected-absence push of exact SHA to
+   refs/heads/release/v<version> (--force-with-lease=<ref>: + porcelain `*`)
+→ classify push result; lease failure or non-`*` status → reclassify or fail closed
 → re-probe remote as needed; only then: gh pr create (per PR-state rules)
 ```
 
@@ -587,13 +696,16 @@ equals the validated SHA.
 | Clean worktree files differ from candidate commit | Candidate wins; validate extracted blobs only |
 | Candidate valid, current checkout invalid | Resume succeeds validation |
 | Current checkout valid, candidate invalid | Hard refuse |
-| Local validated, no remote | Push exact SHA → exact destination ref; then PR handling |
+| Local validated, no remote | Atomic expected-absence push of exact SHA → exact destination ref; then PR handling |
 | Remote-only; object already local at `observedRemoteReleaseSha` | Validate that SHA; no blind checkout |
 | Remote-only; object not local (dry-run) | No fetch; report need `--execute`; exit nonzero |
 | Remote-only; `--execute` | Temp-ref fetch pinned to `observedRemoteReleaseSha`; mismatch → refuse/restart; validate; re-probe before PR; cleanup temp ref |
 | Remote moved between ls-remote and fetch | Refuse or restart discovery; do not validate the unexpected SHA |
 | Remote moved/disappeared after validation before PR | Refuse |
-| Concurrent remote branch appears during local-only push | Fail closed; never force-overwrite |
+| Concurrent remote branch appears during local-only push, at a different SHA | Lease rejects; fail closed; never force-overwrite |
+| Concurrent remote branch appears at an ancestor of the candidate | Lease rejects; never fast-forwarded |
+| Concurrent remote branch appears at the identical candidate SHA | Porcelain status `=`, not `*` → lost creation race; fail closed; not reported as created here |
+| Lease capability unsupported or porcelain status unparseable | Fail closed naming unguaranteed atomic creation; never fall back to ordinary push |
 | Remote validated, no relevant PR | Create PR only after re-probe confirms SHA |
 | Local commit exists after post-creation verify failure (never pushed) | Resume: shared validator; if now valid, push/PR; if still invalid, refuse and leave untouched |
 | Signed commit with inconsistent lockfile root versions | Hard refuse |
@@ -623,8 +735,33 @@ prechecks (incl. preliminary signing diagnostics)
 → resolve exact tag via refs/tags/v<version>
 → validate local-tag invariants (annotated; name; message; peeled target == HEAD;
    git verify-tag exits 0)
-→ only then, if --push: git push origin refs/tags/v<version>
+→ only then, if --push: atomic expected-absence tag push
 ```
+
+The tag push, fresh or resumed, is always:
+
+```sh
+git push --porcelain \
+  --force-with-lease=refs/tags/v<version>: \
+  origin \
+  refs/tags/v<version>:refs/tags/v<version>
+```
+
+Requirements:
+
+- The exact local tag must already have passed all tag invariants and
+  `git verify-tag` before this runs.
+- Creation succeeds only if the remote tag ref is still absent: exit `0` **and**
+  porcelain status `*` for `refs/tags/v<version>`.
+- A remote tag existing at a **different** object fails the lease. A remote tag
+  existing at the **same** tag object yields porcelain `=` and is likewise a
+  failure — a pre-existing remote tag, reported as investigation-required, never
+  as this invocation's successful push.
+- No retry with `--force` or a relaxed lease. On failure, re-probe and report
+  remote-tag presence as investigation-required.
+- Expected-absence leasing never permits moving, replacing, or deleting an
+  existing tag.
+- Unsupported lease capability fails closed; no ordinary-push fallback.
 
 There is **no** path that creates a tag and pushes without verification in
 between. Signing failure during create must leave no lightweight tag. If
@@ -643,7 +780,8 @@ post-creation validation or `verify-tag` fails:
 Validate: name `v<version>`; annotated (not lightweight); `git verify-tag`
 exit `0`; peeled target is exact current `HEAD`; `HEAD` still remote main tip;
 message exactly `v<version>`; package + helper verify still pass. Without
-`--push`: report exists, success. With `--push --execute`: push that tag only.
+`--push`: report exists, success. With `--push --execute`: push that tag only,
+through the same atomic expected-absence form above.
 Never recreate/move/delete/force. **Invalid local tag:** hard-refuse.
 
 ### Documentation (`RELEASING.md`)
@@ -654,8 +792,15 @@ policy (crypto validity only); mandatory post-creation verify before push;
 SHA-anchored candidate validation (not worktree); full package/lockfile root
 version contract; pinned remote-only probe/fetch/re-probe; temporary fetch-ref
 cleanup; prepare/tag fresh/resume; PR states; ls-remote exit classification;
-local-tag-then-push; errors that leave unverified-but-created local objects
-for investigation.
+local-tag-then-push; atomic expected-absence creation of the release branch and
+tag, including the same-SHA lost-race case and the fail-closed capability rule;
+errors that leave unverified-but-created local objects for investigation.
+
+Add recovery and collision notes covering: what a lost creation race looks like
+to the operator, that the utility deliberately does not adopt a ref another
+actor created, how to reclassify by rerunning discovery, and that
+`--force-with-lease=<ref>:` here means create-if-absent and is never permission
+to overwrite an existing branch or tag.
 
 ## Acceptance Criteria
 
@@ -686,6 +831,18 @@ for investigation.
   local-only push is SHA→exact-ref, fail closed on concurrent appearance; no
   force; no synchronize-push of an already-validated remote branch; temp refs
   cleaned up (only refs created by this invocation).
+- Release-branch and tag creation both use the atomic expected-absence lease
+  (`--force-with-lease=<ref>:`) and require exit `0` **plus** porcelain status
+  `*`. Concurrent creation at a different SHA, at an ancestor SHA, or at the
+  identical SHA all fail closed as lost creation races; no fast-forward, no
+  plain `--force`, no relaxed-lease retry, and no claim that this invocation
+  created the ref. Lease failure triggers rediscovery/reclassification or a
+  clear fail-closed result. Ordering is probe absent → local validation →
+  atomic push → post-result classification; a final re-probe is diagnostic only
+  and never substitutes for the lease.
+- Unsupported or unverifiable lease semantics fail closed with diagnostics
+  naming unguaranteed atomic creation; never an ordinary-push fallback.
+- Expected-absence leasing never moves, replaces, or deletes an existing ref.
 - Fresh tag / `--execute --push`: create tag → full invariant + `verify-tag` →
   only then optional push. Same leave-local / resume behavior on failure. No
   create-then-push without verify.
@@ -736,8 +893,18 @@ prep updates all three**; **resume refuses inconsistent lockfile commit**;
 ls-remote and fetch**; **fetched SHA ≠ observed**; **remote moves/disappears
 after validation before PR**; **local-only exact SHA→ref push**; **concurrent
 branch appearance refuses overwrite**; **temp fetch-ref cleanup including
-pre-existing same-name collision and failure-path cleanup**. Live
-signing/`gh`/push remain operator gates.
+pre-existing same-name collision and failure-path cleanup**; **branch created
+when remote stays absent**; **concurrent branch at a different SHA rejected**;
+**concurrent branch at the identical SHA rejected as a lost creation race**;
+**concurrently created ancestor branch not fast-forwarded**; **no plain force
+push ever issued**; **lease failure reclassifies or fails closed**; **tag
+created when remote tag stays absent**; **concurrent tag at a different object
+rejected**; **concurrent tag at the same object rejected and reported as
+pre-existing remote state**; **no tag moved, replaced, or force-updated**;
+**unsupported lease semantics do not fall back to ordinary push**; **command
+ordering probe absent → local validation → atomic push → classification**. Live
+signing/`gh`/push remain operator gates. Concurrency tests use bare local
+remotes mutated between probe and push; no live GitHub.
 
 ## Risks and Considerations
 
@@ -762,5 +929,17 @@ signing/`gh`/push remain operator gates.
   rather than skipping.
 - ls-remote exit `2` is the only “absent” signal; treating other nonzeros as
   absent would proceed under outages.
+- An ordinary push is not a safe create: it fast-forwards a concurrently
+  created ancestor branch and reports exit `0` / `Everything up-to-date` when
+  the ref already points at the same object. The expected-absence lease closes
+  the first case; only the porcelain `*` status check closes the second, which
+  is why both conditions are required rather than the lease alone.
+- `--force-with-lease` is named for overwriting, and readers may take its
+  presence as license to relax it into a force push. The empty-expect form is a
+  distinct primitive — create-if-absent — and the plan prohibits every broader
+  variant.
+- Lease support can vary across Git versions and server implementations;
+  failing closed rather than degrading to an ordinary push keeps the race
+  guarantee honest, at the cost of refusing to operate on unsupported setups.
 - Remote tag presence stays non-resumable automatically.
 - PR lookup must include closed/merged to avoid duplicate replacements.

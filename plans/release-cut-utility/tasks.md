@@ -32,8 +32,9 @@
 - [ ] T6 Implement `prepare` fresh path: mode selection; clean-tree + `HEAD ==`
       remote main tip; changelog cut; update all three package/lock root versions
       (npm-supported or minimal JSON edits; no dependency rewrites); assert
-      `--release-date`; `git commit -S`; shared validator; push exact SHA → exact
-      ref; re-probe then PR; on verify failure leave local commit
+      `--release-date`; `git commit -S`; shared validator; atomic
+      expected-absence push of exact SHA → exact ref; re-probe then PR; on verify
+      failure leave local commit
 - [ ] T7 Implement `prepare` resume with pinned remote flow: record
       `observedRemoteReleaseSha`; PR classify vs that SHA; dry-run no-fetch; temp
       namespaced fetch-ref (no overwrite); fetched SHA must equal observed;
@@ -43,17 +44,43 @@
 - [ ] T8 Implement `tag` fresh/resume: `HEAD ==` remote main tip; helper
       `--verify-release --print-release-date` (+ `--verify-release-date` when
       operator passes `--release-date`); fresh `git tag -a -s` then verify-tag then
-      optional `--push`; leave local tag on verify failure; resume
-      validates/refuses; remote tag found = hard refuse
+      optional `--push` via the T12 atomic expected-absence creation of
+      `refs/tags/v<version>` (remote tag at the same object = lost race, reported
+      as pre-existing remote state, never as this invocation's push); leave local
+      tag on verify failure; resume
+      validates/refuses; remote tag found = hard refuse; never move, replace, or
+      force-update a tag
 - [ ] T9 Add `release:prepare` and `release:tag` to `package.json`; update
       `RELEASING.md` for assert flags, signing, post-creation verify, SHA-anchored
       validation, lockfile root version contract, pinned remote probe/fetch/
-      re-probe, temp fetch-ref cleanup, fresh/resume, and PR states
-- [ ] T10 Add fixture/subprocess tests covering T2–T8: prior cases plus lockfile
+      re-probe, temp fetch-ref cleanup, fresh/resume, PR states, and atomic
+      expected-absence ref creation including lost-race recovery/collision notes
+      and that the lease never authorizes overwriting an existing ref
+- [ ] T10 Add fixture/subprocess tests covering T2–T8 and T12: prior cases plus lockfile
       three-field align/stale/missing/malformed; fresh updates all three; resume
       refuses inconsistent lockfile; remote SHA stable vs moved between probe and
       fetch; fetched≠observed; post-validate remote move/disappear; exact SHA→ref
       push; concurrent branch appearance; temp-ref cleanup including same-name
-      collision and failure path
+      collision and failure path. Deterministic bare-local-remote concurrency
+      tests: branch created when remote stays absent; concurrent branch at a
+      different SHA rejected; concurrent branch at the identical SHA rejected as a
+      lost creation race; concurrently created ancestor branch not fast-forwarded;
+      no plain force push issued; lease failure reclassifies or fails closed; tag
+      created when remote tag absent; concurrent tag at a different object
+      rejected; concurrent tag at the same object rejected as pre-existing remote
+      state; no tag moved/replaced/force-updated; unsupported lease semantics do
+      not fall back to ordinary push; assert ordering probe absent → local
+      validation → atomic push → classification
 - [ ] T11 Run format/lint/type-check/build/test and `git diff --check`; fix
       regressions in release helpers touched by this work
+- [ ] T12 Implement atomic expected-absence remote-ref creation shared by the
+      branch and tag pushes (precedes T6, T7, T8):
+      `git push --porcelain --force-with-lease=<exact-ref>: origin <src>:<exact-ref>`
+      with success requiring exit `0` **and** porcelain status `*`; treat `=`
+      (up to date) as a lost creation race; no fast-forward of a concurrently
+      created ancestor; no plain `--force`, no relaxed-lease retry, no
+      remote-tracking-derived lease; lease failure triggers rediscovery and
+      reclassification or a clear fail-closed result without claiming this
+      invocation created the ref; unsupported or unparseable lease capability
+      fails closed with diagnostics naming unguaranteed atomic creation, never an
+      ordinary-push fallback
