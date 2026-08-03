@@ -22,32 +22,43 @@
       config fails closed; preliminary signing prechecks are diagnostics only;
       mandatory verify of the exact new object before any push. Fixture/stub:
       valid, invalid, unsigned/lightweight, tooling missing
-- [ ] T5 Implement `prepare` mode selection then fresh path: discover
+- [ ] T5 Implement shared SHA-anchored release-commit validator: resolve one
+      candidate SHA; `git show` blob-extract `CHANGELOG.md` / `package.json` /
+      `package-lock.json` to OS temp dir; helper on extracted paths (argv array);
+      version equality; `verify-commit`; diff-tree vs parent; finally cleanup;
+      never validate ambient worktree; never execute candidate scripts. Use for
+      both fresh post-creation and resume
+- [ ] T6 Implement `prepare` mode selection then fresh path: discover
       local/remote branch and open/closed/merged PRs first; fresh clean-tree +
       `HEAD ==` remote main tip; changelog cut; package/lock alignment; assert
-      `--release-date`; notes smoke; `git commit -S`; resolve SHA; full
-      release-commit invariants including `verify-commit`; only then push/PR; on
-      verify failure leave local commit, no push/PR, clear not-pushed error
-- [ ] T6 Implement `prepare` resume: commit invariants including verify-commit;
-      helper `--verify-release --print-release-date` for changelog; PR-state
-      handling (open/merged/closed-unmerged/conflicting); resume after local
-      post-creation-verify failure; never recreate SHAs; never delete/force-update
-- [ ] T7 Implement `tag` fresh/resume: `HEAD ==` remote main tip; helper
+      `--release-date`; notes smoke; `git commit -S`; shared validator on new SHA;
+      only then push/PR; on verify failure leave local commit, no push/PR, clear
+      not-pushed error
+- [ ] T7 Implement `prepare` resume: candidate selection (local/remote/PR SHA
+      agreement); shared validator; remote-only dry-run no-fetch/no-false-success;
+      execute controlled fetch without force/checkout; PR-state handling; resume
+      after local post-creation-verify failure; never recreate SHAs; never
+      delete/force-update
+- [ ] T8 Implement `tag` fresh/resume: `HEAD ==` remote main tip; helper
       `--verify-release --print-release-date` (+ `--verify-release-date` when
       operator passes `--release-date`); fresh `git tag -a -s` then full local-tag
       invariants including `verify-tag` then optional `--push` (create → verify →
       push only); on verify failure leave local tag, no push, clear error; resume
       validates or refuses existing local tag; remote tag found = hard refuse;
       never recreate/force-update
-- [ ] T8 Add `release:prepare` and `release:tag` to `package.json`; update
+- [ ] T9 Add `release:prepare` and `release:tag` to `package.json`; update
       `RELEASING.md` with exact assert flags, crypto-validity-only signing,
-      post-creation verify-before-push, ls-remote exit classification,
-      fresh/resume flows, and PR states
-- [ ] T9 Add fixture/subprocess tests covering T2–T7 (temp repos, bare remotes,
+      post-creation verify-before-push, SHA-anchored candidate validation,
+      remote-only resume limits, ls-remote exit classification, fresh/resume
+      flows, and PR states
+- [ ] T10 Add fixture/subprocess tests covering T2–T8 (temp repos, bare remotes,
       stubbed `gh`/verify): dry-run purity; prepare/tag resume; PR states; tag
-      push-fail retry; ls-remote matrix; later-UTC-day tag; fresh commit/tag
-      verify-success→push; verify-fail→no remote mutation + local object retained;
-      rerun resume after failed post-creation verify; `--execute --push` ordering;
-      no cleanup/force after verify failure
-- [ ] T10 Run format/lint/type-check/build/test and `git diff --check`; fix
+      push-fail retry; ls-remote matrix; later-UTC-day tag; post-creation
+      verify-success→push and verify-fail→retain; resume on `main` with branch
+      elsewhere; worktree≠candidate; candidate-valid/checkout-invalid;
+      checkout-valid/candidate-invalid; remote-only fetch+validate; dry-run
+      remote-only unavailable; missing/malformed candidate paths; shared
+      validator; helper gets extracted paths; temp cleanup; no candidate script
+      execution; `--execute --push` ordering
+- [ ] T11 Run format/lint/type-check/build/test and `git diff --check`; fix
       regressions in release helpers touched by this work
