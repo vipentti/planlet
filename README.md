@@ -32,6 +32,15 @@ Or run it without installing:
 npx planlet <command>
 ```
 
+Until the first npm publication is complete, npm commands may return 404. Use a
+source checkout instead:
+
+```sh
+npm ci
+npm run build
+node dist/planlet.mjs <command>
+```
+
 ## Set up a repository
 
 ```sh
@@ -138,6 +147,17 @@ the question and installs every destination, so agents and CI are unaffected.
 | `npm run build`         | Build the executable at `dist/planlet.mjs`      |
 | `npm run skills:update` | Build CLI and refresh installed Planlet skills  |
 | `npm test`              | Run TypeScript tests with `tsx` and `node:test` |
+
+## Changelog and releases
+
+Record user-visible changes under `Unreleased` in
+[`CHANGELOG.md`](https://github.com/vipentti/planlet/blob/main/CHANGELOG.md).
+At release time, move those entries into a dated version section and restore an
+empty `Unreleased` section. Use `node scripts/changelog.mjs <version>` to
+extract release notes. Follow the
+[release automation plan](https://github.com/vipentti/planlet/blob/main/plans/release-automation/plan.md)
+for publication gates and the phased landing that keeps the first npm bootstrap
+manual while tag-triggered automation lands separately.
 
 ## Links
 
