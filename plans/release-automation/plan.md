@@ -106,9 +106,11 @@ No external step proceeds until captain records all choices:
    source SHA, reviewed artifact hash/file list, and irreversible 0.1.0 publish.
 
 README must present source-checkout install as the only prepublication path and
-must tell readers not to use `npm install -g planlet` or `npx planlet` until the
-official package is published and verified. Do not claim bootstrap success until
-registry check passes.
+must tell readers not to use `npm install -g @vipentti/planlet` or
+`npx @vipentti/planlet` until the official package is published and verified. Do
+not claim bootstrap success until registry check passes. The published package
+name is `@vipentti/planlet` (unscoped `planlet` failed npm's similarity check
+against `blanket`); the CLI binary name remains `planlet`.
 
 ### Exact bootstrap artifact procedure
 
