@@ -5,36 +5,36 @@
       `--push`; strict/duplicate-flag rejection; dry-run default; clear stderr
       errors naming the failed operation; no worktree, local-ref, or remote-write
       mutations without `--execute`
-- [ ] T2 Extend `assert-changelog-release-ready.mjs` with mutually exclusive
-      `--verify-release-date YYYY-MM-DD` historical mode (empty Unreleased,
-      matching version section, valid date, non-empty notes, exact date match;
-      no not-in-the-past). Preserve `--release-date` prepare-time semantics
-      including past-date rejection. Add helper tests for past reject, earlier-day
-      verify accept, and verify mismatch reject
-- [ ] T3 Implement shared remote-read helpers and dry-run purity: `git ls-remote`
-      for remote `main` and exact tag/branch refs; mutation classes; dry-run never
-      `git fetch` or falsely claims identity when unproven; `--execute` fetches
-      explicitly before mutating
+- [ ] T2 Extend `assert-changelog-release-ready.mjs` as sole changelog parser:
+      historical verify (no not-in-the-past); optional explicit date or derive;
+      stable machine-readable resolved-date output (e.g. `--print-release-date`
+      or small JSON); mutually exclusive with prep `--release-date`; preserve CI
+      and prep modes. Helper tests: derive/print, match, mismatch,
+      malformed/duplicate sections, stable output, unchanged CI/prep including
+      past-date rejection
+- [ ] T3 Implement remote-ref probe helper classifying found / absent / failed
+      for main, release branch, and tags; dry-run purity (`ls-remote` only, no
+      fetch); `--execute` fetches explicitly; tests for absent vs broken remote
 - [ ] T4 Implement `prepare` mode selection then fresh path: discover
-      local/remote branch and PR first; fresh-only clean-tree + `HEAD ==` remote
-      main tip; changelog cut; package/lock alignment; assert `--release-date`;
-      `changelog.mjs` smoke; create `release/v<version>` signed commit
-- [ ] T5 Implement `prepare` resume path: validate existing release commit against
-      invariants (single parent/base, message, signature, release-files-only diff,
-      versions, changelog via verify mode as needed, local/remote SHA agreement);
-      resume push and/or PR only; refuse divergent/ambiguous states; never
-      recreate/predict SHAs; never delete/force-update; matching PR idempotent
-- [ ] T6 Implement `tag`: require `HEAD ==` current remote main tip; derive date
-      from changelog; assert `--verify-release-date`; exact remote tag collision
-      via `ls-remote` before local tag; `git tag -a -s`; optional `--push`; refuse
-      stale ancestors when main advanced, force/delete/unsigned/publish
+      local/remote branch and open/closed/merged PRs first; fresh-only clean-tree
+      + `HEAD ==` remote main tip; changelog cut; package/lock alignment; assert
+      `--release-date`; notes smoke; create `release/v<version>` signed commit
+- [ ] T5 Implement `prepare` resume: commit invariants; push resume; PR-state
+      handling (open matching report, merged matching already-complete, closed
+      unmerged refuse, conflicting/ambiguous refuse, create only when no relevant
+      PR); never recreate SHAs; never delete/force-update
+- [ ] T6 Implement `tag` fresh/resume: `HEAD ==` remote main tip; invoke helper
+      historical verify and consume machine-readable date (no changelog parse in
+      `release.mjs`); fresh create annotated signed tag; resume validate local-only
+      tag then idempotent report or `--push`; remote tag found = hard refuse;
+      never recreate/force-update tags
 - [ ] T7 Add `release:prepare` and `release:tag` scripts to `package.json`; update
-      `RELEASING.md` for fresh/resume prepare, `--verify-release-date` tag path,
-      main-tip tagging, and dry-run remote-read semantics
+      `RELEASING.md` for fresh/resume prepare and tag, helper-owned dates, PR
+      states, ls-remote found/absent/failed, and local-tag-then-push workflow
 - [ ] T8 Add fixture/subprocess tests (temp repos, bare remotes, stubbed `gh` /
-      signing): dry-run purity; fresh prepare; resume after commit-without-push and
-      push-without-PR; divergent branch refused; matching PR idempotence;
-      remote-only tag collision; stale main-tip refused; tag on later UTC day than
-      prepare
+      signing): dry-run purity; fresh prepare; resume push/PR; PR open/merged/
+      closed-unmerged/conflicting; tag push-fail then retry; local-only tag
+      idempotent; local+push once; invalid local tag refuse; remote tag refuse; no
+      force/recreate; ls-remote absent vs failed; stale main tip; later-UTC-day tag
 - [ ] T9 Run format/lint/type-check/build/test and `git diff --check`; fix
       regressions in release helpers touched by this work
