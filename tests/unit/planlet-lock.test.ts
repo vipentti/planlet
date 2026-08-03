@@ -478,8 +478,11 @@ test("a failed release surfaces through the production entry with its code", () 
       thrown = error;
     }
     const rendered = renderUnexpectedError(thrown, {});
+    // The rendered path is escaped per platform, so match the recovery hint
+    // rather than the raw path; the sibling test pins the path in `next`.
     assert.match(rendered.stderr, /task_not_found/);
-    assert.ok(rendered.stderr.includes(lockPathFor(root, "fixture-plan")));
+    assert.match(rendered.stderr, /lockReleaseFailed/);
+    assert.match(rendered.stderr, /only if no process still holds it/);
     assert.doesNotMatch(rendered.stderr, /internal_error/);
   });
 });
