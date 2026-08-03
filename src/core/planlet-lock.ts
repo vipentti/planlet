@@ -1,10 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
 import {
-  linkSync,
   mkdirSync,
   readFileSync,
   realpathSync,
-  renameSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -29,12 +27,9 @@ export interface OwnedLockHandle {
 
 export interface PlanletLockDependencies {
   readonly write: (path: string, contents: string) => void;
-  readonly link: (source: string, destination: string) => void;
-  readonly rename: (source: string, destination: string) => void;
   readonly remove: (path: string) => void;
   readonly isProcessAlive: (pid: number) => boolean;
   readonly pid: number;
-  readonly createToken: () => string;
 }
 
 export interface OwnedLockRunResult<T> {
@@ -67,12 +62,9 @@ function removeTree(path: string): void {
 export const DEFAULT_PLANLET_LOCK_DEPENDENCIES: PlanletLockDependencies = {
   write: (path, contents) =>
     writeFileSync(path, contents, { encoding: "utf8", flag: "wx" }),
-  link: (source, destination) => linkSync(source, destination),
-  rename: (source, destination) => renameSync(source, destination),
   remove: removeTree,
   isProcessAlive,
   pid: process.pid,
-  createToken: () => randomUUID(),
 };
 
 function isAlreadyExists(error: unknown): boolean {
@@ -123,16 +115,10 @@ function tryReclaimDeadLock(
     return false;
   }
 
-  const quarantinePath = `${lockPath}.quarantine-${dependencies.createToken()}`;
   try {
-    dependencies.rename(lockPath, quarantinePath);
+    dependencies.remove(lockPath);
   } catch {
     return false;
-  }
-  try {
-    dependencies.remove(quarantinePath);
-  } catch {
-    // Leave orphan quarantine; caller may retry publishing the lock path.
   }
   return true;
 }
@@ -167,15 +153,14 @@ export function planletLockRoot(repositoryRoot: string): string {
 }
 
 /**
- * Acquires an exclusive ownership-token lock. The lock is a holder file that is
- * written to a unique staging path first and published with an atomic link, so
- * a crash mid-acquisition can never leave a lock without readable ownership.
- * Contending live holders fail with write_conflict. Dead holders are reclaimed
- * via atomic quarantine rename.
+ * Acquires an exclusive ownership-token lock. The lock is a holder file created
+ * with an atomic exclusive write, so ownership is readable the moment the lock
+ * exists. Contending live holders fail with write_conflict; a dead holder's lock
+ * is removed and re-acquired.
  *
- * ponytail: link() publication needs a filesystem with hard links. The default
- * lock root is the OS temp directory, which always has them; a caller passing a
- * root on FAT/exFAT gets write_conflict instead of a lock.
+ * The ownership token is what makes reclaim safe: a holder whose lock was
+ * reclaimed as stale finds a token mismatch on release and leaves the new
+ * holder's lock alone.
  */
 export function acquireOwnedLock(
   rootDir: string,
@@ -200,19 +185,9 @@ export function acquireOwnedLock(
   assertNotSymlink(lockPath, label);
 
   const attempt = (): OwnedLockHandle => {
-    const token = resolved.createToken();
+    const token = randomUUID();
     const holder: OwnedLockHolder = { pid: resolved.pid, token };
-    const stagingPath = `${lockPath}.staging-${token}`;
-    resolved.write(stagingPath, `${JSON.stringify(holder)}\n`);
-    try {
-      resolved.link(stagingPath, lockPath);
-    } finally {
-      try {
-        resolved.remove(stagingPath);
-      } catch {
-        // Leave orphan staging file; it never blocks the canonical lock path.
-      }
-    }
+    resolved.write(lockPath, `${JSON.stringify(holder)}\n`);
     return { path: lockPath, token };
   };
 

@@ -44,7 +44,6 @@ export interface HarnessInstallationSummary {
   readonly state: HarnessState;
   readonly changed: boolean;
   readonly files: number;
-  readonly warnings?: readonly string[];
 }
 
 export interface InstallationSummary {
@@ -52,8 +51,12 @@ export interface InstallationSummary {
   readonly changed: boolean;
   readonly plansInitialized: boolean;
   readonly destinations: readonly HarnessInstallationSummary[];
-  /** Repository-wide diagnostics, such as a failed harness lock release. */
-  readonly warnings?: readonly string[];
+}
+
+/** Summary for stdout plus diagnostics for stderr, never mixed into the data. */
+export interface InstallationOutcome {
+  readonly data: InstallationSummary;
+  readonly warnings: readonly string[];
 }
 
 export interface DetectedHarness {
@@ -549,7 +552,7 @@ export function installHarnessSkills(options: {
   readonly source?: CanonicalSkillSource | undefined;
   readonly transactionHooks?: InstallTransactionHooks | undefined;
   readonly lock?: Partial<PlanletLockDependencies> | undefined;
-}): InstallationSummary {
+}): InstallationOutcome {
   const selectedToolIds = normalizeToolSelector(options.tools);
   const destinations = resolveHarnessDestinations(
     options.repositoryRoot,
@@ -576,13 +579,17 @@ export function installHarnessSkills(options: {
       options.operation === "init" && plansKind === "missing";
     if (plansInitialized) mkdirSync(plansPath, { recursive: true });
     return {
-      operation: options.operation,
-      changed: plansInitialized,
-      plansInitialized,
-      destinations: [],
+      data: {
+        operation: options.operation,
+        changed: plansInitialized,
+        plansInitialized,
+        destinations: [],
+      },
+      warnings: [],
     };
   }
 
+  const warnings: string[] = [];
   const { value, releaseWarning } = withHarnessInstallLock(
     options.repositoryRoot,
     () => {
@@ -623,6 +630,7 @@ export function installHarnessSkills(options: {
           : applyInspectionWithSource(
               inspection,
               source,
+              warnings,
               options.transactionHooks,
             ),
       );
@@ -638,21 +646,20 @@ export function installHarnessSkills(options: {
     options.lock,
   );
 
-  // The harness lock is repository-wide, so its release warning belongs beside
-  // the result rather than on an arbitrary destination.
-  return releaseWarning === undefined
-    ? value
-    : { ...value, warnings: [releaseWarning] };
+  if (releaseWarning !== undefined) warnings.push(releaseWarning);
+  return { data: value, warnings };
 }
 
 function applyInspectionWithSource(
   inspection: DestinationInspection,
   source: CanonicalSkillSource,
+  warnings: string[],
   hooks: InstallTransactionHooks = {},
 ): HarnessInstallationSummary {
   const changed = inspection.publishSkills || inspection.writeManifest;
-  const warnings = changed
-    ? publishDestinationTransaction(
+  if (changed) {
+    warnings.push(
+      ...publishDestinationTransaction(
         inspection.destination.path,
         source,
         inspection.desiredManifestText,
@@ -668,8 +675,9 @@ function applyInspectionWithSource(
           writeManifest: inspection.writeManifest,
           hooks,
         },
-      )
-    : [];
+      ),
+    );
+  }
 
   return {
     destination: inspection.destination.relativePath,
@@ -677,7 +685,6 @@ function applyInspectionWithSource(
     state: "installed" as const,
     changed,
     files: source.files.length,
-    ...(warnings.length > 0 ? { warnings } : {}),
   };
 }
 

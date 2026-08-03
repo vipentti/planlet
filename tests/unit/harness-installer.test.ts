@@ -108,10 +108,10 @@ test("init coalesces shared targets, preserves unrelated skills, and is idempote
       source: BASE_SOURCE,
     });
 
-    assert.equal(first.destinations.length, 1);
-    assert.deepEqual(first.destinations[0]?.tools, ["agents", "codex"]);
-    assert.equal(first.changed, true);
-    assert.equal(second.changed, false);
+    assert.equal(first.data.destinations.length, 1);
+    assert.deepEqual(first.data.destinations[0]?.tools, ["agents", "codex"]);
+    assert.equal(first.data.changed, true);
+    assert.equal(second.data.changed, false);
     assert.equal(readFileSync(unrelated, "utf8"), "# Keep\n");
     assert.equal(
       readFileSync(
@@ -140,8 +140,8 @@ test("init with none creates plans without resolving or installing skills", () =
       tools: "none",
     });
 
-    assert.equal(result.plansInitialized, true);
-    assert.deepEqual(result.destinations, []);
+    assert.equal(result.data.plansInitialized, true);
+    assert.deepEqual(result.data.destinations, []);
     assert.equal(existsSync(join(root, "plans")), true);
     assert.equal(existsSync(join(root, ".agents")), false);
   });
@@ -171,10 +171,10 @@ test("update adopts matching legacy trees and never creates missing targets", ()
       source: BASE_SOURCE,
     });
 
-    assert.equal(adopted.changed, true);
+    assert.equal(adopted.data.changed, true);
     assert.equal(existsSync(manifest), true);
-    assert.equal(missing.destinations[0]?.state, "missing");
-    assert.equal(missing.changed, false);
+    assert.equal(missing.data.destinations[0]?.state, "missing");
+    assert.equal(missing.data.changed, false);
     assert.equal(existsSync(join(root, ".claude")), false);
   });
 });
@@ -231,7 +231,7 @@ test("local and stale modifications conflict globally unless forced", () => {
       force: true,
       source: updated,
     });
-    assert.equal(forced.changed, true);
+    assert.equal(forced.data.changed, true);
     assert.equal(existsSync(stale), false);
     assert.equal(readFileSync(claudeSkill, "utf8"), "# Updated\n");
   });
@@ -497,7 +497,7 @@ test("destination install rolls back to the exact pre-operation state on faults"
       force: true,
       source: updated,
     });
-    assert.equal(published.changed, true);
+    assert.equal(published.data.changed, true);
     assert.equal(
       readFileSync(
         join(root, ".agents", "skills", "planlet-example", "SKILL.md"),
@@ -653,7 +653,7 @@ test("nested harness installs serialize on the repository-wide lock", () => {
           },
         },
       });
-      assert.equal(result.changed, true);
+      assert.equal(result.data.changed, true);
       assert.equal(
         readFileSync(
           join(root, ".agents", "skills", "planlet-example", "SKILL.md"),
@@ -716,7 +716,7 @@ test("nested claude install against coalesced agents destination cannot mutate w
         },
       },
     });
-    assert.equal(result.changed, true);
+    assert.equal(result.data.changed, true);
     assert.equal(
       readFileSync(
         join(root, ".agents", "skills", "planlet-example", "SKILL.md"),
@@ -809,7 +809,7 @@ test("post-commit cleanup failure preserves published skills and leaves backup",
       },
     });
 
-    assert.equal(result.changed, true);
+    assert.equal(result.data.changed, true);
     assert.equal(
       readFileSync(
         join(root, ".agents", "skills", "planlet-example", "SKILL.md"),
@@ -826,7 +826,7 @@ test("post-commit cleanup failure preserves published skills and leaves backup",
     );
     assert.equal(readFileSync(unrelated, "utf8"), "# Keep\n");
     assert.ok(
-      result.destinations[0]?.warnings?.some((warning) =>
+      result.warnings.some((warning) =>
         warning.includes("cleanup was incomplete"),
       ),
     );
@@ -853,7 +853,7 @@ test("safe symlink coalesces unselected aliases for selected-only init", () => {
       tools: "claude",
       source: BASE_SOURCE,
     });
-    assert.equal(installed.changed, true);
+    assert.equal(installed.data.changed, true);
     const manifest = parseInstallationManifest(
       readFileSync(
         join(root, ".claude", "skills", INSTALLATION_MANIFEST),
@@ -878,7 +878,7 @@ test("safe symlink coalesces unselected aliases for selected-only init", () => {
       tools: "agents",
       source: BASE_SOURCE,
     });
-    assert.equal(updated.changed, false);
+    assert.equal(updated.data.changed, false);
     assert.deepEqual(
       parseInstallationManifest(
         readFileSync(

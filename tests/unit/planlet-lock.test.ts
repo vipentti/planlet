@@ -4,7 +4,6 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
-  renameSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -311,16 +310,14 @@ test("failed publication leaves no lock and a later acquire succeeds", () => {
     assert.throws(
       () =>
         acquirePlanletLock(root, "fixture-plan", {
-          link: () => {
+          write: () => {
             throw new Error("interrupted");
           },
-          createToken: () => "abandoned",
         }),
       (error) =>
         error instanceof PlanletError && error.code === "write_conflict",
     );
     assert.equal(existsSync(lockPath), false);
-    assert.equal(existsSync(`${lockPath}.staging-abandoned`), false);
 
     const handle = acquirePlanletLock(root, "fixture-plan");
     assert.equal(existsSync(lockPath), true);
@@ -329,48 +326,29 @@ test("failed publication leaves no lock and a later acquire succeeds", () => {
   });
 });
 
-test("only one of two reclaimers wins the quarantine rename race", () => {
+test("a reclaim that cannot remove the dead holder reports contention", () => {
   withRepo((root) => {
-    plantPlanletLock(root, "fixture-plan", {
+    const lockPath = plantPlanletLock(root, "fixture-plan", {
       pid: 42,
       token: "stale",
     });
-
-    let renameCount = 0;
-    const rename = (source: string, destination: string): void => {
-      renameCount += 1;
-      if (renameCount === 1) {
-        renameSync(source, destination);
-        return;
-      }
-      const error = new Error("busy") as NodeJS.ErrnoException;
-      error.code = "ENOENT";
-      throw error;
-    };
-
-    const first = acquirePlanletLock(root, "fixture-plan", {
-      isProcessAlive: () => false,
-      rename,
-      createToken: () => `token-${renameCount + 1}`,
-    });
-    assert.equal(existsSync(first.path), true);
 
     assert.throws(
       () =>
         acquirePlanletLock(root, "fixture-plan", {
           isProcessAlive: () => false,
-          rename,
-          createToken: () => "loser",
+          remove: () => {
+            throw new Error("busy");
+          },
         }),
       (error) =>
         error instanceof PlanletError && error.code === "write_conflict",
     );
 
     const holder = JSON.parse(
-      readFileSync(first.path, "utf8"),
+      readFileSync(lockPath, "utf8"),
     ) as OwnedLockHolder;
-    assert.equal(holder.token, first.token);
-    releaseOwnedLock(first);
+    assert.equal(holder.token, "stale");
   });
 });
 
@@ -383,7 +361,6 @@ test("stale reclaimer cannot delete a newly acquired live lock on release", () =
 
     const winner = acquirePlanletLock(root, "fixture-plan", {
       isProcessAlive: () => false,
-      createToken: () => "winner-token",
     });
 
     releaseOwnedLock({ path: winner.path, token: "old" });
@@ -391,7 +368,7 @@ test("stale reclaimer cannot delete a newly acquired live lock on release", () =
     const holder = JSON.parse(
       readFileSync(winner.path, "utf8"),
     ) as OwnedLockHolder;
-    assert.equal(holder.token, "winner-token");
+    assert.equal(holder.token, winner.token);
 
     releaseOwnedLock(winner);
     assert.equal(existsSync(winner.path), false);
@@ -400,9 +377,7 @@ test("stale reclaimer cannot delete a newly acquired live lock on release", () =
 
 test("ownership-token mismatch during release leaves the replacement lock", () => {
   withRepo((root) => {
-    const handle = acquirePlanletLock(root, "fixture-plan", {
-      createToken: () => "owner-a",
-    });
+    const handle = acquirePlanletLock(root, "fixture-plan");
     releaseOwnedLock({ path: handle.path, token: "someone-else" });
     assert.equal(existsSync(handle.path), true);
     releaseOwnedLock(handle);
@@ -477,7 +452,7 @@ test("a failed release surfaces through the production entry with its code", () 
     } catch (error) {
       thrown = error;
     }
-    const rendered = renderUnexpectedError(thrown, {});
+    const rendered = renderUnexpectedError(thrown);
     // The rendered path is escaped per platform, so match the recovery hint
     // rather than the raw path; the sibling test pins the path in `next`.
     assert.match(rendered.stderr, /task_not_found/);
@@ -571,7 +546,7 @@ test("unknown probe result leaves the lock untouched", () => {
       pid: 55,
       token: "maybe-live",
     });
-    let renamed = false;
+    let removed = false;
 
     assert.throws(
       () =>
@@ -583,9 +558,9 @@ test("unknown probe result leaves the lock untouched", () => {
           dependencies: {
             lock: {
               isProcessAlive: () => true,
-              rename: (source, destination) => {
-                renamed = true;
-                renameSync(source, destination);
+              remove: (path) => {
+                removed = true;
+                rmSync(path, { recursive: true, force: true });
               },
             },
           },
@@ -593,7 +568,7 @@ test("unknown probe result leaves the lock untouched", () => {
       (error) =>
         error instanceof PlanletError && error.code === "write_conflict",
     );
-    assert.equal(renamed, false);
+    assert.equal(removed, false);
     assert.equal(existsSync(lockPath), true);
     assert.equal(readFileSync(tasksPath, "utf8"), TASKS);
   });

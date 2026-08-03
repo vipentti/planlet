@@ -2,7 +2,6 @@ import { createPlanlet } from "../core/creation.js";
 import {
   detectHarnesses,
   installHarnessSkills,
-  type InstallationSummary,
 } from "../core/harness-installer.js";
 import type { PlanletState, PlanSummary } from "../core/models.js";
 import { completePlanlet } from "../core/planlet-completion.js";
@@ -74,32 +73,6 @@ function warningsFromSummaries(summaries: readonly PlanSummary[]): string[] {
   return summaries.flatMap((summary) => summary.warnings);
 }
 
-/** Strip warnings from stdout data; return them for stderr diagnostics. */
-export function harnessInstallOutcome(result: InstallationSummary): {
-  readonly data: InstallationSummary;
-  readonly warnings: readonly string[];
-} {
-  const strip = <T extends { warnings?: readonly string[] }>(
-    value: T,
-  ): Omit<T, "warnings"> => {
-    const copy = { ...value };
-    delete copy.warnings;
-    return copy;
-  };
-  return {
-    data: {
-      ...strip(result),
-      destinations: result.destinations.map(strip),
-    },
-    warnings: [
-      ...result.destinations.flatMap(
-        (destination) => destination.warnings ?? [],
-      ),
-      ...(result.warnings ?? []),
-    ],
-  };
-}
-
 function compactSummary(
   summary: PlanSummary,
 ): Readonly<Record<string, unknown>> {
@@ -139,13 +112,11 @@ export function handleHarnessInit(
   context: ExecutionContext,
 ): ExitCode {
   return emit(context, () =>
-    harnessInstallOutcome(
-      installHarnessSkills({
-        repositoryRoot: context.root,
-        operation: "init",
-        ...arguments_,
-      }),
-    ),
+    installHarnessSkills({
+      repositoryRoot: context.root,
+      operation: "init",
+      ...arguments_,
+    }),
   );
 }
 
@@ -154,13 +125,11 @@ export function handleHarnessUpdate(
   context: ExecutionContext,
 ): ExitCode {
   return emit(context, () =>
-    harnessInstallOutcome(
-      installHarnessSkills({
-        repositoryRoot: context.root,
-        operation: "update",
-        ...arguments_,
-      }),
-    ),
+    installHarnessSkills({
+      repositoryRoot: context.root,
+      operation: "update",
+      ...arguments_,
+    }),
   );
 }
 

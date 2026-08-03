@@ -335,15 +335,18 @@ test("compiled validate treats completed normal+unchecked as invalid_plan", () =
 test("production entry emits internal_error without stack by default", async () => {
   const { runProductionEntry, renderUnexpectedError } =
     await import("../../src/production-entry.js");
-  const rendered = renderUnexpectedError(new Error("boom /tmp/secret"), {});
+  const rendered = renderUnexpectedError(new Error("boom /tmp/secret"));
   assert.equal(rendered.exitCode, EXIT_CODES.operational);
   assert.match(rendered.stderr, /internal_error/);
   assert.doesNotMatch(rendered.stderr, /boom|\/tmp\/secret|stack/i);
 
-  const debug = renderUnexpectedError(new Error("boom /tmp/secret"), {
-    PLANLET_DEBUG: "1",
-  });
-  assert.match(debug.stderr, /boom \/tmp\/secret/);
+  process.env.PLANLET_DEBUG = "1";
+  try {
+    const debug = renderUnexpectedError(new Error("boom /tmp/secret"));
+    assert.match(debug.stderr, /boom \/tmp\/secret/);
+  } finally {
+    delete process.env.PLANLET_DEBUG;
+  }
 
   const { PlanletError } = await import("../../src/errors/planlet-error.js");
   const passthrough = renderUnexpectedError(
@@ -351,22 +354,25 @@ test("production entry emits internal_error without stack by default", async () 
       details: { slug: "missing" },
       next: "planlet list",
     }),
-    {},
   );
   assert.match(passthrough.stderr, /plan_not_found/);
   assert.match(passthrough.stderr, /planlet list/);
   assert.doesNotMatch(passthrough.stderr, /internal_error/);
 
   const chunks: string[] = [];
-  const code = await runProductionEntry(
-    async () => {
+  const write = process.stderr.write.bind(process.stderr);
+  process.stderr.write = ((chunk: string) => {
+    chunks.push(String(chunk));
+    return true;
+  }) as typeof process.stderr.write;
+  let code: number;
+  try {
+    code = await runProductionEntry(async () => {
       throw new Error("unexpected path /home/secret");
-    },
-    {},
-    (chunk) => {
-      chunks.push(chunk);
-    },
-  );
+    });
+  } finally {
+    process.stderr.write = write;
+  }
   assert.equal(code, EXIT_CODES.operational);
   assert.match(chunks.join(""), /internal_error/);
   assert.doesNotMatch(chunks.join(""), /\/home\/secret/);

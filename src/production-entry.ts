@@ -2,10 +2,7 @@ import { main } from "./cli.js";
 import { isPlanletError, PlanletError } from "./errors/planlet-error.js";
 import { renderToonError } from "./output/toon.js";
 
-export function renderUnexpectedError(
-  error: unknown,
-  env: NodeJS.ProcessEnv = process.env,
-): {
+export function renderUnexpectedError(error: unknown): {
   readonly stderr: string;
   readonly exitCode: number;
 } {
@@ -13,7 +10,7 @@ export function renderUnexpectedError(
     return renderToonError(error.toStructuredError());
   }
 
-  const debug = env.PLANLET_DEBUG === "1";
+  const debug = process.env.PLANLET_DEBUG === "1";
   const details: Record<string, unknown> = {};
   if (debug) {
     if (error instanceof Error) {
@@ -41,16 +38,12 @@ export function renderUnexpectedError(
 
 export async function runProductionEntry(
   runMain: () => Promise<number> = main,
-  env: NodeJS.ProcessEnv = process.env,
-  writeStderr: (chunk: string) => void = (chunk) => {
-    process.stderr.write(chunk);
-  },
 ): Promise<number> {
   try {
     return await runMain();
   } catch (error) {
-    const rendered = renderUnexpectedError(error, env);
-    writeStderr(rendered.stderr);
+    const rendered = renderUnexpectedError(error);
+    process.stderr.write(rendered.stderr);
     return rendered.exitCode;
   }
 }
