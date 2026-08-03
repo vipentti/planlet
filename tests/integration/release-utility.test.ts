@@ -3,6 +3,7 @@ import { spawnSync } from "node:child_process";
 import {
   chmodSync,
   copyFileSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -173,6 +174,11 @@ function makeRepo(options: MakeOptions = {}): Repo {
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     PATH: join(base, "bin") + delimiter + process.env.PATH,
+    PLANLET_TEST_REPO: dir,
+    // Stop the git-for-windows MSYS runtime from rewriting the absolute hook
+    // and node paths embedded in fixture commit hooks.
+    MSYS2_ARG_CONV_EXCL: "*",
+    MSYS_NO_PATHCONV: "1",
   };
   return {
     dir,
@@ -405,27 +411,14 @@ test("prepare refuses an already current version, existing changelog section, an
 
 test("prepare refuses before push when a post-commit hook mutates an allowed release file", () => {
   const repo = makeRepo();
-  // The mutator lives outside the worktree so it does not dirty it.
-  const mutator = join(repo.log, "mutate.mjs");
-  writeFileSync(
-    mutator,
-    [
-      'import { readFileSync, writeFileSync } from "node:fs";',
-      'const p = JSON.parse(readFileSync("package.json", "utf8"));',
-      'p.version = "9.9.9";',
-      'writeFileSync("package.json", JSON.stringify(p, null, 2) + "\\n");',
-      "",
-    ].join("\n"),
-  );
-  const hooks = join(repo.dir, ".git", "hooks");
-  mkdirSync(hooks, { recursive: true });
-  const hook = join(hooks, "post-commit");
-  writeFileSync(
-    hook,
-    ["#!/bin/sh", `node ${mutator.replace(/\\\\/g, "/")}`].join("\n") + "\n",
-  );
-  chmodSync(hook, 0o755);
-
+  const diag = installHook(repo, [
+    'import { readFileSync, writeFileSync } from "node:fs";',
+    "const d = process.env.PLANLET_TEST_REPO;",
+    'const p = JSON.parse(readFileSync(d + "/package.json", "utf8"));',
+    'p.version = "9.9.9";',
+    'writeFileSync(d + "/package.json", JSON.stringify(p, null, 2) + "\\n");',
+    "",
+  ]);
   const out = release(
     repo,
     "prepare",
@@ -435,33 +428,65 @@ test("prepare refuses before push when a post-commit hook mutates an allowed rel
     today,
     "--execute",
   );
-  assert.notEqual(out.status, 0);
-  // No push, no PR.
-  assert.equal(
-    git(repo, "ls-remote", "--exit-code", "origin", "refs/heads/release/v1.2.3")
-      .status,
-    2,
-  );
-  assert.deepEqual(
-    ghCalls(repo).filter((c) => c.startsWith("pr create")),
-    [],
-  );
+  assertHookRefused(repo, out, diag);
   // The signed commit was left in place for inspection.
   assert.equal(git(repo, "rev-parse", "--verify", "release/v1.2.3").status, 0);
 });
 
-function withPostCommitHook(repo: Repo, mutator: string[]): void {
+interface HookDiag {
+  readonly marker: string;
+  readonly errlog: string;
+}
+
+function installHook(repo: Repo, mutatorBody: string[]): HookDiag {
   const mutatorPath = join(repo.log, "mutate.mjs");
-  writeFileSync(mutatorPath, mutator.join("\n"));
+  writeFileSync(mutatorPath, mutatorBody.join("\n"));
+  const marker = join(repo.log, "hook-ran");
+  const errlog = join(repo.log, "hook-err.log");
   const hooks = join(repo.dir, ".git", "hooks");
   mkdirSync(hooks, { recursive: true });
   const hook = join(hooks, "post-commit");
+  const node = process.execPath.replace(/\\/g, "/");
   writeFileSync(
     hook,
-    ["#!/bin/sh", `node ${mutatorPath.replace(/\\\\/g, "/")}`].join("\n") +
-      "\n",
+    [
+      "#!/bin/sh",
+      `echo ran > "${marker.replace(/\\/g, "/")}"`,
+      `"${node}" "${mutatorPath.replace(/\\/g, "/")}" 2>> "${errlog.replace(
+        /\\/g,
+        "/",
+      )}"`,
+      "",
+    ].join("\n"),
   );
   chmodSync(hook, 0o755);
+  return { marker, errlog };
+}
+
+function assertHookRefused(
+  repo: Repo,
+  out: ReturnType<typeof release>,
+  diag: HookDiag,
+): void {
+  const marker = existsSync(diag.marker)
+    ? readFileSync(diag.marker, "utf8").trim()
+    : "(missing)";
+  const err = existsSync(diag.errlog)
+    ? readFileSync(diag.errlog, "utf8")
+    : "(none)";
+  const detail = `hook-ran=${marker} hook-err=${err} stdout=${out.stdout} stderr=${out.stderr}`;
+  assert.notEqual(out.status, 0, detail);
+  assert.equal(
+    git(repo, "ls-remote", "--exit-code", "origin", "refs/heads/release/v1.2.3")
+      .status,
+    2,
+    detail,
+  );
+  assert.deepEqual(
+    ghCalls(repo).filter((c) => c.startsWith("pr create")),
+    [],
+    detail,
+  );
 }
 
 const HOOK_VARIANTS: ReadonlyArray<[string, string[]]> = [
@@ -469,9 +494,10 @@ const HOOK_VARIANTS: ReadonlyArray<[string, string[]]> = [
     "mutates package-lock.json.version",
     [
       'import { readFileSync, writeFileSync } from "node:fs";',
-      'const p = JSON.parse(readFileSync("package-lock.json", "utf8"));',
+      "const d = process.env.PLANLET_TEST_REPO;",
+      'const p = JSON.parse(readFileSync(d + "/package-lock.json", "utf8"));',
       'p.version = "9.9.9";',
-      'writeFileSync("package-lock.json", JSON.stringify(p, null, 2) + "\\n");',
+      'writeFileSync(d + "/package-lock.json", JSON.stringify(p, null, 2) + "\\n");',
       "",
     ],
   ],
@@ -479,7 +505,7 @@ const HOOK_VARIANTS: ReadonlyArray<[string, string[]]> = [
     "creates an untracked file",
     [
       'import { writeFileSync } from "node:fs";',
-      'writeFileSync("unexpected.txt", "boom\\n");',
+      'writeFileSync(process.env.PLANLET_TEST_REPO + "/unexpected.txt", "boom\\n");',
       "",
     ],
   ],
@@ -488,8 +514,9 @@ const HOOK_VARIANTS: ReadonlyArray<[string, string[]]> = [
     [
       'import { writeFileSync } from "node:fs";',
       'import { spawnSync } from "node:child_process";',
-      'writeFileSync("staged.txt", "boom\\n");',
-      'spawnSync("git", ["add", "staged.txt"], { stdio: "ignore" });',
+      "const d = process.env.PLANLET_TEST_REPO;",
+      'writeFileSync(d + "/staged.txt", "boom\\n");',
+      'spawnSync("git", ["add", "staged.txt"], { cwd: d, stdio: "ignore" });',
       "",
     ],
   ],
@@ -498,7 +525,7 @@ const HOOK_VARIANTS: ReadonlyArray<[string, string[]]> = [
 for (const [label, mutator] of HOOK_VARIANTS) {
   test(`prepare refuses when a post-commit hook ${label}`, () => {
     const repo = makeRepo();
-    withPostCommitHook(repo, mutator);
+    const diag = installHook(repo, mutator);
     const out = release(
       repo,
       "prepare",
@@ -508,21 +535,7 @@ for (const [label, mutator] of HOOK_VARIANTS) {
       today,
       "--execute",
     );
-    assert.notEqual(out.status, 0);
-    assert.equal(
-      git(
-        repo,
-        "ls-remote",
-        "--exit-code",
-        "origin",
-        "refs/heads/release/v1.2.3",
-      ).status,
-      2,
-    );
-    assert.deepEqual(
-      ghCalls(repo).filter((c) => c.startsWith("pr create")),
-      [],
-    );
+    assertHookRefused(repo, out, diag);
   });
 }
 
