@@ -6,29 +6,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and thi
 
 ## [Unreleased]
 
+First release. Everything below is new, so these notes describe what Planlet is rather than how it changed.
+
 ### Added
 
-- Repository-local planlets with deterministic create, inspect, validate, task, and completion commands.
-- Portable planning, implementation, and completion skills for Agent Skills-compatible tools and Claude Code.
-- Project-local skill installation and update support for `agents`, `claude`, and `codex` destinations.
-- Bundled `planlet` executable for Node.js 22 and newer.
-- Write locks for concurrent `task check` / `task uncheck` / `complete` and harness installs, kept in a per-owner, per-repository directory in the OS temp directory so they never appear in `git status`. Locks carry an ownership token, reclaim dead holders, and report a failed release as a warning or in the operation's own structured error.
-- Structured `internal_error` production boundary with optional `PLANLET_DEBUG` diagnostics.
-- Changelog release-date gate (`scripts/assert-changelog-release-ready.mjs`) for unpublished 0.1.0.
+- Repository-local planlets: a plan and its tasks as two Markdown files under `plans/<slug>/`, with `plans/completed/<YYYY-MM-DD>-<slug>/` for finished work.
+- `planlet` CLI for creating, inspecting, validating, and completing planlets, checking and unchecking tasks, and reporting progress. Deterministic output and structured error codes throughout.
+- Planning, implementation, and completion skills for Claude Code and other Agent Skills-compatible tools, installable per project with `planlet init` and refreshed with `planlet update`. `planlet init` prompts for destinations when run interactively and stays deterministic when it is not.
+- Bundled executable requiring only Node.js 22 or newer.
+- Concurrent `task check`, `task uncheck`, `complete`, and skill installs are serialized by write locks held outside the repository, so a lock never appears in `git status`. A competing run fails with `write_conflict` and guidance rather than applying a stale read-modify-write.
+- Interrupted work is recoverable: skill installation rolls back to its exact prior state, an interrupted completion keeps its audit record so the move can be resumed, and unrelated skills in a shared destination are never touched.
+- Unexpected failures surface as a structured `internal_error` with no stack or path leakage; set `PLANLET_DEBUG=1` for diagnostic detail.
+- Planlet and repository paths reject directory traversal and symlink escape, and file writes are atomic or recoverable.
 
-### Changed
-
-- Interactive `planlet init` prompts for skill destinations while non-interactive use remains deterministic.
-- Documentation now leads with the skill-first workflow and complete CLI reference.
-- Harness install/update publishes a destination transactionally, rolls back on failure, and reports incomplete cleanup and leftover recovery directories as stderr diagnostics with recovery guidance.
-- Selected harness tool installs no longer resolve unselected adapter paths.
-- Completed planlets with normal completion and unchecked tasks are `invalid_plan`.
-- Failed completion moves leave the audit record in place for resume instead of rewriting `tasks.md`.
-
-### Security
-
-- Repository and planlet paths reject traversal and symlink escape.
-- Planlet creation, task updates, skill updates, and completion use recoverable or atomic filesystem operations.
-- CI pins GitHub Actions to reviewed commit SHAs; Dependabot watches Actions updates.
-
-[Unreleased]: https://github.com/vipentti/planlet/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/vipentti/planlet/commits/main
