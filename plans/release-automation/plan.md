@@ -203,13 +203,12 @@ git status --porcelain
 ```
 
 Also run focused extractor cases against root and an isolated temp changelog,
-inspect workflow YAML
-and packed file list, validate Planlet through built CLI, and require protected
-pull-request CI to pass before merge. Dry runs cannot prove OIDC, provenance,
-GitHub release mutation, or public visibility. Routine run results stay in Git,
-tests, pull-request review, and CI. Add evidence to `tasks.md` only for a durable
-fact ordinary history cannot reconstruct; keep each line write-once and
-non-self-referential.
+inspect workflow YAML and packed file list, validate Planlet through built CLI,
+and require protected pull-request CI to pass before merge. Dry runs cannot prove
+OIDC, provenance, GitHub release mutation, or public visibility. Routine run
+results stay in Git, tests, pull-request review, and CI. Add evidence to
+`tasks.md` only for a durable fact ordinary history cannot reconstruct; keep
+each line write-once and non-self-referential.
 
 ## Risks and Considerations
 
