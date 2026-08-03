@@ -5,5 +5,5 @@
 - [ ] T3 Replace `planlet_design.md` §14.1 “Ask only questions…” with the Scope draft richer-discovery responsibility (or equivalent); keep §8.1 step list numbering and precise-request fast-path paragraph
 - [ ] T4 Update `tests/fixtures/skills/scenarios.json` vague-planning and precise-planning evidence (including batch/recommendation substrings); keep existing expectedDecision labels unless a rename is unavoidable
 - [ ] T5 Update `evaluations/skills/scenarios.md` S1/S2 expected decisions to the hybrid discovery stance
-- [ ] T6 Build CLI, run `node dist/planlet.mjs update`, confirm installed `.agents` / `.claude` planlet-plan copies match canonical sources
+- [ ] T6 Build CLI, run `node dist/planlet.mjs update`, then `node dist/planlet.mjs tools` and confirm every planlet skill destination reports as `installed`
 - [ ] T7 Run full verification suite including `git status --porcelain`; touch `tests/skills/skill-contract.test.ts` only if decision labels must change, and fix any remaining contract/scenario failures
