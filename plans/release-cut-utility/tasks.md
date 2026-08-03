@@ -17,12 +17,21 @@
       version already current, changelog already containing the release, or
       existing remote tag; require clean worktree and `HEAD ==` remote `main` tip;
       cut the changelog; update `package.json.version`, `package-lock.json.version`,
-      and `package-lock.json.packages[""].version`; validate the edited worktree
-      via the helper; `git commit -S`; post-commit checks on the exact new SHA
-      (message, one parent, `git verify-commit`, changed paths limited to the
-      release files); probe the remote ref then ordinary explicit non-force push;
-      verify the remote ref; `gh pr create` only after a successful push; leave
-      local state untouched on failure with recovery guidance
+      and `package-lock.json.packages[""].version`; run one small
+      `validateReleaseContents()` (three root version fields, `packages[""]` an
+      object, changelog helper) on the edited worktree; `git commit -S`;
+      post-commit checks on the exact new SHA (message, one parent,
+      `git verify-commit`, changed paths limited to the release files); then
+      repository-state checks (`HEAD` equals the new SHA, no staged changes, no
+      unstaged changes, no unexpected untracked hook-created state) and a second
+      `validateReleaseContents()` run on the committed checkout, so a commit hook
+      cannot alter an allowed release file undetected; probe the remote ref then
+      ordinary explicit non-force push;
+      verify the remote ref; `gh pr create` only after a successful push; on any
+      post-commit failure leave the branch, commit, index, and worktree untouched
+      (never reset, amend, clean, restore, or rerun the commit) and report that
+      the signed commit was created but post-commit validation failed, with
+      manual recovery guidance
 - [ ] T4 Implement `tag`: clean worktree, `HEAD ==` remote `main` tip, package
       version match, helper historical validation; refuse when the remote tag
       exists; fresh `git tag -a -s` then `git verify-tag`; existing-local-tag
@@ -36,5 +45,7 @@
       statement that there is no automatic prepare resume
 - [ ] T6 Add focused fixture/subprocess tests (temp repos, bare local remotes,
       stubbed `gh` and signing) covering the cases listed under Tests in
-      `plan.md`; run `npm run format:check`, `npm run lint`, `npm run type-check`,
+      `plan.md`, including fixture commit hooks that mutate a release file, leave
+      staged or unstaged changes, or create untracked state after `git commit`,
+      each refusing before any push or PR; run `npm run format:check`, `npm run lint`, `npm run type-check`,
       `npm run build`, `npm test`, and `git diff --check`

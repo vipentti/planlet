@@ -144,17 +144,20 @@ guards (above)
 → cut the changelog release section (date defaults to today UTC)
 → set package.json.version, package-lock.json.version,
    and package-lock.json.packages[""].version to <version>
-→ validate the edited worktree:
-     node scripts/assert-changelog-release-ready.mjs --release-date <D>
-     plus all three root version fields equal <version>,
-     with packages[""] present as an object
+→ validateReleaseContents() on the edited worktree
 → git commit -S -m "release: <version>" on branch release/v<version>
 → resolve the exact new commit SHA
-→ post-commit checks on that SHA (Git plumbing):
+→ commit metadata checks on that SHA (Git plumbing):
      message exactly "release: <version>"
      exactly one parent
      git verify-commit <sha> exits 0
      changed paths are only CHANGELOG.md, package.json, package-lock.json
+→ repository-state checks:
+     HEAD equals the resolved new commit SHA
+     no staged changes in the index
+     no unstaged changes in the worktree
+     no untracked release files or other unexpected hook-created state
+→ validateReleaseContents() again, on the now-committed checkout
 → probe the remote branch ref; refuse if it now exists
 → git push origin <sha>:refs/heads/release/v<version>
 → verify the remote ref points at <sha>
@@ -170,12 +173,40 @@ Since there is no resume mode, the worktree *is* the thing being validated —
 there is no candidate-versus-ambient ambiguity, and no blob extraction to a
 temporary directory.
 
+`validateReleaseContents()` is one small function, run twice against the
+worktree, checking:
+
+- `package.json.version === <version>`;
+- `package-lock.json.version === <version>`;
+- `package-lock.json.packages[""].version === <version>`;
+- `package-lock.json.packages[""]` exists and is an object;
+- `node scripts/assert-changelog-release-ready.mjs --release-date <D>` succeeds.
+
+#### Why it runs twice
+
+Commit hooks run during `git commit` and can modify the index or worktree. A
+hook could rewrite one of the three allowed release files — a version field, or
+the changelog — and the commit would still have the expected message, one
+parent, a valid signature, and a changed-path list containing nothing but
+`CHANGELOG.md`, `package.json`, and `package-lock.json`. Metadata checks alone
+cannot see that.
+
+The second run closes this. Because the repository-state checks require the
+worktree and index to be clean and equal to the new `HEAD`, validating the
+checked-out files *is* validating the committed contents — no blob extraction
+or candidate-SHA machinery needed.
+
 #### On failure
 
-If any post-commit check fails: no push, no PR. Leave the local branch and
-commit untouched — no reset, rewrite, or delete. The error states that the
-commit was created locally but not pushed, and names what failed. The
-maintainer inspects, fixes or deletes the branch, and reruns.
+If any post-commit check fails — metadata, repository state, or the second
+content validation — then: no push, no PR. Leave the local branch, commit,
+index, and worktree untouched. Never reset, amend, clean, restore, or rerun the
+commit automatically.
+
+The error states that the signed commit was created but its post-commit
+contents or repository state failed validation, names what failed, and tells
+the maintainer to inspect and then resolve or delete the local release branch
+manually before rerunning.
 
 ### `tag`
 
@@ -252,6 +283,7 @@ utility never repairs, reconstructs, reconciles, or resumes.
 | Merged PR exists | Version already released; pick the next version |
 | Closed-unmerged PR exists | Decide deliberately; delete stale refs; rerun |
 | Commit created but verification failed | Inspect the branch; fix signing; delete the branch and rerun |
+| Commit created but post-commit contents or state failed validation | Inspect the branch and any commit hook; resolve or delete the branch manually, then rerun |
 | Push rejected | Re-probe; resolve the remote state manually |
 | Tag created but verification failed | Inspect it; delete it manually and rerun |
 | Remote tag exists | Already released, or investigate |
@@ -273,6 +305,22 @@ elaborate concurrency fixtures.
 - Commit signature verifies before push; verification failure causes no push
   and leaves the local commit.
 - The commit changes only the intended release files.
+- Post-commit revalidation, with fixture commit hooks in temp repos:
+  - normal commit — post-commit content validation succeeds;
+  - hook changes `package.json.version` → refuse before push;
+  - hook changes `package-lock.json.version` → refuse before push;
+  - hook changes `package-lock.json.packages[""].version` → refuse before push;
+  - hook makes the changelog an invalid release → refuse before push;
+  - hook leaves staged changes after commit → refuse;
+  - hook leaves unstaged changes after commit → refuse;
+  - hook creates unexpected untracked state → refuse per the clean-state
+    contract;
+  - hook modifies an *allowed* release file, so changed-path validation alone
+    would pass, but the second content validation catches it;
+  - every post-commit validation failure results in no `git push` and no
+    `gh pr create`;
+  - the successful path still uses the ordinary explicit non-force push after
+    all checks pass.
 - Branch push rejection is reported safely.
 - PR creation happens only after a successful push.
 - Historical changelog validation, and the exact `YYYY-MM-DD\n` printed date.
@@ -294,6 +342,10 @@ elaborate concurrency fixtures.
 - All three root version fields are written and verified.
 - Commit and tag are verified after creation and before any push; failure
   leaves local state intact and pushes nothing.
+- Release contents are validated twice — before `git commit` and again on the
+  committed checkout, with the worktree and index required clean and equal to
+  the new `HEAD` — so a commit hook cannot slip modified release files past the
+  metadata checks.
 - Pushes are explicit and non-force; the remote ref is verified afterwards.
 - The assertion helper remains the sole changelog parser and can validate an
   existing release and print its date.
