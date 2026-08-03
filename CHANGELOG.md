@@ -22,6 +22,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and thi
 - Harness post-commit cleanup warnings emit as stderr diagnostics.
 - Changelog gate counts malformed `Unreleased` / version headings before validating syntax.
 - Successful lock operations warn when lock release fails instead of silent success.
+- Locks publish ownership metadata atomically, so an interrupted acquisition cannot leave an unreclaimable lock.
+- Changelog gate rejects release dates earlier than today (UTC) in ordinary and `--release-date` modes.
 
 ### Changed
 

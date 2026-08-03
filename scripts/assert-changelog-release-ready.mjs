@@ -5,14 +5,15 @@
  *
  * Ordinary CI (no flags):
  *   Requires exactly one [Unreleased] section and at most one [pkg.version]
- *   section. A dated version section must use a real calendar date and
- *   non-empty notes. Malformed headings that mention Unreleased or the
- *   package version still count toward cardinality.
+ *   section. A dated version section must use a real calendar date that is not
+ *   in the past (UTC) and non-empty notes. Malformed headings that mention
+ *   Unreleased or the package version still count toward cardinality.
  *
  * Release verification:
  *   node scripts/assert-changelog-release-ready.mjs --release-date YYYY-MM-DD
  *   Requires exactly one Unreleased, exactly one correctly dated package
- *   version section matching --release-date with non-empty notes.
+ *   version section matching --release-date with non-empty notes, and a
+ *   --release-date that is today or later (UTC).
  */
 
 import { readFileSync } from "node:fs";
@@ -31,6 +32,14 @@ function isValidCalendarDate(value) {
   return instant.toISOString().slice(0, 10) === value;
 }
 
+const todayUtc = new Date().toISOString().slice(0, 10);
+
+function assertNotPast(date, description) {
+  if (date < todayUtc) {
+    fail(`${description} ${date} is earlier than today ${todayUtc} (UTC).`);
+  }
+}
+
 function hasNonEmptyNotes(sectionBody) {
   return /^\s*-\s+\S/m.test(sectionBody);
 }
@@ -42,6 +51,7 @@ function assertValidDatedNotes(dated, sectionBody, label, version) {
   if (!isValidCalendarDate(dated)) {
     fail(`${label} ${version} date is not a valid calendar day: ${dated}`);
   }
+  assertNotPast(dated, `${label} ${version} release date`);
   if (!hasNonEmptyNotes(sectionBody)) {
     fail(`${label} ${version} section is missing release notes.`);
   }
@@ -142,6 +152,7 @@ if (releaseDate !== undefined) {
   if (!isValidCalendarDate(releaseDate)) {
     fail(`--release-date is not a valid calendar day: ${releaseDate}`);
   }
+  assertNotPast(releaseDate, "--release-date");
   if (versionSections.length !== 1) {
     fail(
       `Changelog must contain exactly one [${version}] section for release verification (found ${versionSections.length}).`,

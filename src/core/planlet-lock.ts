@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import {
+  linkSync,
   mkdirSync,
   readFileSync,
   renameSync,
@@ -12,7 +13,6 @@ import { PlanletError } from "../errors/planlet-error.js";
 import { resolveSafePath, tryLstat } from "./paths.js";
 
 export const PLANLET_LOCK_DIR = ".planlet-locks";
-export const PLANLET_LOCK_HOLDER = "holder.json";
 /** Reserved lock name for repository-wide harness install serialization. */
 export const HARNESS_INSTALL_LOCK_NAME = "__harness__";
 
@@ -27,7 +27,8 @@ export interface OwnedLockHandle {
 }
 
 export interface PlanletLockDependencies {
-  readonly mkdir: (path: string) => void;
+  readonly write: (path: string, contents: string) => void;
+  readonly link: (source: string, destination: string) => void;
   readonly rename: (source: string, destination: string) => void;
   readonly remove: (path: string) => void;
   readonly isProcessAlive: (pid: number) => boolean;
@@ -69,7 +70,9 @@ function removeTree(path: string): void {
 }
 
 export const DEFAULT_PLANLET_LOCK_DEPENDENCIES: PlanletLockDependencies = {
-  mkdir: (path) => mkdirSync(path),
+  write: (path, contents) =>
+    writeFileSync(path, contents, { encoding: "utf8", flag: "wx" }),
+  link: (source, destination) => linkSync(source, destination),
   rename: (source, destination) => renameSync(source, destination),
   remove: removeTree,
   isProcessAlive,
@@ -114,20 +117,13 @@ export function readOwnedLockHolder(path: string): OwnedLockHolder | null {
   }
 }
 
-function writeHolder(path: string, holder: OwnedLockHolder): void {
-  writeFileSync(path, `${JSON.stringify(holder)}\n`, {
-    encoding: "utf8",
-    flag: "wx",
-  });
-}
-
 function tryReclaimDeadLock(
   lockPath: string,
   label: string,
   dependencies: PlanletLockDependencies,
 ): boolean {
   assertNotSymlink(lockPath, label);
-  const holder = readOwnedLockHolder(join(lockPath, PLANLET_LOCK_HOLDER));
+  const holder = readOwnedLockHolder(lockPath);
   if (holder === null || dependencies.isProcessAlive(holder.pid)) {
     return false;
   }
@@ -141,7 +137,7 @@ function tryReclaimDeadLock(
   try {
     dependencies.remove(quarantinePath);
   } catch {
-    // Leave orphan quarantine; caller may retry mkdir on the lock path.
+    // Leave orphan quarantine; caller may retry publishing the lock path.
   }
   return true;
 }
@@ -151,8 +147,15 @@ function lockRoot(repositoryRoot: string): string {
 }
 
 /**
- * Acquires an exclusive ownership-token lock. Contending live holders fail with
- * write_conflict. Dead holders are reclaimed via atomic quarantine rename.
+ * Acquires an exclusive ownership-token lock. The lock is a holder file that is
+ * written to a unique staging path first and published with an atomic link, so
+ * a crash mid-acquisition can never leave a lock without readable ownership.
+ * Contending live holders fail with write_conflict. Dead holders are reclaimed
+ * via atomic quarantine rename.
+ *
+ * ponytail: link() publication needs a filesystem with hard links; on FAT/exFAT
+ * checkouts acquisition fails with write_conflict instead of locking. Swap in an
+ * O_EXCL staging rename if that ever needs supporting.
  */
 export function acquireOwnedLock(
   rootDir: string,
@@ -177,14 +180,18 @@ export function acquireOwnedLock(
   assertNotSymlink(lockPath, label);
 
   const attempt = (): OwnedLockHandle => {
-    resolved.mkdir(lockPath);
     const token = resolved.createToken();
     const holder: OwnedLockHolder = { pid: resolved.pid, token };
+    const stagingPath = `${lockPath}.staging-${token}`;
+    resolved.write(stagingPath, `${JSON.stringify(holder)}\n`);
     try {
-      writeHolder(join(lockPath, PLANLET_LOCK_HOLDER), holder);
-    } catch (error) {
-      resolved.remove(lockPath);
-      throw error;
+      resolved.link(stagingPath, lockPath);
+    } finally {
+      try {
+        resolved.remove(stagingPath);
+      } catch {
+        // Leave orphan staging file; it never blocks the canonical lock path.
+      }
     }
     return { path: lockPath, token };
   };
@@ -232,7 +239,7 @@ export function releaseOwnedLock(
 ): void {
   const remove =
     dependencies.remove ?? DEFAULT_PLANLET_LOCK_DEPENDENCIES.remove;
-  const holder = readOwnedLockHolder(join(handle.path, PLANLET_LOCK_HOLDER));
+  const holder = readOwnedLockHolder(handle.path);
   if (holder === null || holder.token !== handle.token) {
     return;
   }

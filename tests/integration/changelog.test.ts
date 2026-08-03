@@ -14,12 +14,10 @@ const releaseReady = join(
   "assert-changelog-release-ready.mjs",
 );
 
-function extract(version: string, changelogPath?: string) {
-  return spawnSync(
-    process.execPath,
-    [script, version, ...(changelogPath ? [changelogPath] : [])],
-    { encoding: "utf8" },
-  );
+function extract(version: string, changelogPath: string) {
+  return spawnSync(process.execPath, [script, version, changelogPath], {
+    encoding: "utf8",
+  });
 }
 
 function assertReady(args: readonly string[], env: NodeJS.ProcessEnv = {}) {
@@ -38,17 +36,18 @@ function fixture(changelog: string, version = "0.1.0") {
   return { changelogPath, packagePath };
 }
 
-test("repository changelog keeps 0.1.0 notes under Unreleased until dated", () => {
-  const known = extract("0.1.0");
-  assert.notEqual(known.status, 0);
-  assert.ok(known.stderr.includes("0.1.0"), known.stderr);
+// Release dates are relative to the day the suite runs: the readiness script
+// rejects past dates, so fixed dates would rot as the calendar advances.
+function utcDay(offsetDays: number): string {
+  return new Date(Date.now() + offsetDays * 86_400_000)
+    .toISOString()
+    .slice(0, 10);
+}
 
-  for (const version of ["9.9.9", "Unreleased"]) {
-    const result = extract(version);
-    assert.notEqual(result.status, 0);
-    assert.ok(result.stderr.includes(version), result.stderr);
-  }
-});
+const yesterday = utcDay(-1);
+const today = utcDay(0);
+const future = utcDay(1);
+const later = utcDay(2);
 
 test("extracts one non-empty version and rejects empty sections from an isolated file", () => {
   const dir = mkdtempSync(join(tmpdir(), "planlet-changelog-"));
@@ -102,12 +101,12 @@ test("ordinary CI allows Unreleased-only and structurally valid dated 0.1.0", ()
   );
 
   const dated = fixture(
-    "# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - 2026-08-10\n\n### Added\n\n- Item\n",
+    `# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - ${future}\n\n### Added\n\n- Item\n`,
   );
   assert.equal(assertReady([dated.changelogPath, dated.packagePath]).status, 0);
 
   const missingUnreleased = fixture(
-    "# Changelog\n\n## [0.1.0] - 2026-08-10\n\n### Added\n\n- Item\n",
+    `# Changelog\n\n## [0.1.0] - ${future}\n\n### Added\n\n- Item\n`,
   );
   assert.notEqual(
     assertReady([
@@ -129,7 +128,7 @@ test("ordinary CI allows Unreleased-only and structurally valid dated 0.1.0", ()
   );
 
   const duplicateVersion = fixture(
-    "# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - 2026-08-10\n\n### Added\n\n- Item\n\n## [0.1.0] - 2026-08-11\n\n### Added\n\n- Other\n",
+    `# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - ${future}\n\n### Added\n\n- Item\n\n## [0.1.0] - ${later}\n\n### Added\n\n- Other\n`,
   );
   assert.notEqual(
     assertReady([duplicateVersion.changelogPath, duplicateVersion.packagePath])
@@ -146,7 +145,7 @@ test("ordinary CI allows Unreleased-only and structurally valid dated 0.1.0", ()
   );
 
   const emptyNotes = fixture(
-    "# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - 2026-08-10\n\n### Added\n",
+    `# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - ${future}\n\n### Added\n`,
   );
   assert.notEqual(
     assertReady([emptyNotes.changelogPath, emptyNotes.packagePath]).status,
@@ -169,7 +168,7 @@ test("explicit release mode enforces dated non-empty matching 0.1.0 notes", () =
   assert.notEqual(
     assertReady([
       "--release-date",
-      "2026-08-10",
+      future,
       unreleased.changelogPath,
       unreleased.packagePath,
     ]).status,
@@ -182,7 +181,7 @@ test("explicit release mode enforces dated non-empty matching 0.1.0 notes", () =
   assert.notEqual(
     assertReady([
       "--release-date",
-      "2026-08-10",
+      future,
       undated.changelogPath,
       undated.packagePath,
     ]).status,
@@ -190,12 +189,12 @@ test("explicit release mode enforces dated non-empty matching 0.1.0 notes", () =
   );
 
   const mismatch = fixture(
-    "# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - 2026-08-11\n\n### Added\n\n- Item\n",
+    `# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - ${later}\n\n### Added\n\n- Item\n`,
   );
   assert.notEqual(
     assertReady([
       "--release-date",
-      "2026-08-10",
+      future,
       mismatch.changelogPath,
       mismatch.packagePath,
     ]).status,
@@ -216,12 +215,12 @@ test("explicit release mode enforces dated non-empty matching 0.1.0 notes", () =
   );
 
   const emptyNotes = fixture(
-    "# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - 2026-08-10\n\n### Added\n",
+    `# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - ${future}\n\n### Added\n`,
   );
   assert.notEqual(
     assertReady([
       "--release-date",
-      "2026-08-10",
+      future,
       emptyNotes.changelogPath,
       emptyNotes.packagePath,
     ]).status,
@@ -229,12 +228,12 @@ test("explicit release mode enforces dated non-empty matching 0.1.0 notes", () =
   );
 
   const good = fixture(
-    "# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - 2026-08-10\n\n### Added\n\n- Item\n",
+    `# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - ${future}\n\n### Added\n\n- Item\n`,
   );
   assert.equal(
     assertReady([
       "--release-date",
-      "2026-08-10",
+      future,
       good.changelogPath,
       good.packagePath,
     ]).status,
@@ -242,13 +241,13 @@ test("explicit release mode enforces dated non-empty matching 0.1.0 notes", () =
   );
 
   const otherVersion = fixture(
-    "# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - 2026-08-10\n\n### Added\n\n- Item\n",
+    `# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - ${future}\n\n### Added\n\n- Item\n`,
     "0.2.0",
   );
   assert.notEqual(
     assertReady([
       "--release-date",
-      "2026-08-10",
+      future,
       otherVersion.changelogPath,
       otherVersion.packagePath,
     ]).status,
@@ -260,14 +259,51 @@ test("explicit release mode enforces dated non-empty matching 0.1.0 notes", () =
   );
 });
 
+test("dated 0.1.0 must not be released with a past date", () => {
+  const dated = (date: string) =>
+    fixture(
+      `# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - ${date}\n\n### Added\n\n- Item\n`,
+    );
+
+  const current = dated(today);
+  assert.equal(
+    assertReady([current.changelogPath, current.packagePath]).status,
+    0,
+  );
+  assert.equal(
+    assertReady([
+      "--release-date",
+      today,
+      current.changelogPath,
+      current.packagePath,
+    ]).status,
+    0,
+  );
+
+  const stale = dated(yesterday);
+  assert.notEqual(
+    assertReady([stale.changelogPath, stale.packagePath]).status,
+    0,
+  );
+  assert.notEqual(
+    assertReady([
+      "--release-date",
+      yesterday,
+      stale.changelogPath,
+      stale.packagePath,
+    ]).status,
+    0,
+  );
+});
+
 test("malformed Unreleased and version headings still count and fail", () => {
   const cases = [
     "# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - TBD\n\n### Added\n\n- Item\n",
     "# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - 2026-8-10\n\n### Added\n\n- Item\n",
-    "# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - 2026-08-10 extra\n\n### Added\n\n- Item\n",
-    "# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - 2026-08-10\n\n### Added\n\n- Item\n\n## [0.1.0] - TBD\n\n### Added\n\n- Dup\n",
+    `# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - ${future} extra\n\n### Added\n\n- Item\n`,
+    `# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - ${future}\n\n### Added\n\n- Item\n\n## [0.1.0] - TBD\n\n### Added\n\n- Dup\n`,
     "# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - TBD\n\n### Added\n\n- A\n\n## [0.1.0] - TBD\n\n### Added\n\n- B\n",
-    "# Changelog\n\n## [Unreleased]\n\n## [Unreleased] - 2026-08-10\n\n### Added\n\n- Item\n",
+    `# Changelog\n\n## [Unreleased]\n\n## [Unreleased] - ${future}\n\n### Added\n\n- Item\n`,
   ];
   for (const changelog of cases) {
     const files = fixture(changelog);
@@ -279,7 +315,7 @@ test("malformed Unreleased and version headings still count and fail", () => {
     assert.notEqual(
       assertReady([
         "--release-date",
-        "2026-08-10",
+        future,
         files.changelogPath,
         files.packagePath,
       ]).status,
@@ -289,13 +325,13 @@ test("malformed Unreleased and version headings still count and fail", () => {
   }
 
   const good = fixture(
-    "# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - 2026-08-10\n\n### Added\n\n- Item\n",
+    `# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - ${future}\n\n### Added\n\n- Item\n`,
   );
   assert.equal(assertReady([good.changelogPath, good.packagePath]).status, 0);
   assert.equal(
     assertReady([
       "--release-date",
-      "2026-08-10",
+      future,
       good.changelogPath,
       good.packagePath,
     ]).status,
@@ -303,14 +339,14 @@ test("malformed Unreleased and version headings still count and fail", () => {
   );
 
   const dupFlag = fixture(
-    "# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - 2026-08-10\n\n### Added\n\n- Item\n",
+    `# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - ${future}\n\n### Added\n\n- Item\n`,
   );
   assert.notEqual(
     assertReady([
       "--release-date",
-      "2026-08-10",
+      future,
       "--release-date",
-      "2026-08-11",
+      later,
       dupFlag.changelogPath,
       dupFlag.packagePath,
     ]).status,
@@ -318,7 +354,7 @@ test("malformed Unreleased and version headings still count and fail", () => {
   );
 
   const extraPositional = fixture(
-    "# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - 2026-08-10\n\n### Added\n\n- Item\n",
+    `# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - ${future}\n\n### Added\n\n- Item\n`,
   );
   assert.notEqual(
     assertReady([

@@ -16,7 +16,6 @@ import test from "node:test";
 import { completePlanlet } from "../../src/core/planlet-completion.js";
 import {
   PLANLET_LOCK_DIR,
-  PLANLET_LOCK_HOLDER,
   acquireOwnedLock,
   isProcessAlive,
   releaseOwnedLock,
@@ -56,12 +55,10 @@ function plantPlanletLock(
   const root = join(repositoryRoot, "plans", PLANLET_LOCK_DIR);
   mkdirSync(root, { recursive: true });
   const lockPath = lockPathFor(repositoryRoot, slug);
-  mkdirSync(lockPath);
-  writeFileSync(
-    join(lockPath, PLANLET_LOCK_HOLDER),
-    `${JSON.stringify(holder)}\n`,
-    { encoding: "utf8", flag: "wx" },
-  );
+  writeFileSync(lockPath, `${JSON.stringify(holder)}\n`, {
+    encoding: "utf8",
+    flag: "wx",
+  });
   return lockPath;
 }
 
@@ -245,7 +242,7 @@ test("injected acquire failure surfaces as write_conflict", () => {
           operation: "check",
           dependencies: {
             lock: {
-              mkdir: () => {
+              write: () => {
                 const error = new Error("disk full") as NodeJS.ErrnoException;
                 error.code = "ENOSPC";
                 throw error;
@@ -290,8 +287,7 @@ test("corrupt holder metadata is not treated as reclaimable", () => {
   withRepo((root, tasksPath) => {
     const lockPath = lockPathFor(root, "fixture-plan");
     mkdirSync(join(root, "plans", PLANLET_LOCK_DIR), { recursive: true });
-    mkdirSync(lockPath);
-    writeFileSync(join(lockPath, PLANLET_LOCK_HOLDER), "{not-json\n");
+    writeFileSync(lockPath, "{not-json\n");
 
     assert.throws(
       () =>
@@ -307,6 +303,30 @@ test("corrupt holder metadata is not treated as reclaimable", () => {
     );
     assert.equal(readFileSync(tasksPath, "utf8"), TASKS);
     assert.equal(existsSync(lockPath), true);
+  });
+});
+
+test("failed publication leaves no lock and a later acquire succeeds", () => {
+  withRepo((root) => {
+    const lockPath = lockPathFor(root, "fixture-plan");
+    assert.throws(
+      () =>
+        acquirePlanletLock(root, "fixture-plan", {
+          link: () => {
+            throw new Error("interrupted");
+          },
+          createToken: () => "abandoned",
+        }),
+      (error) =>
+        error instanceof PlanletError && error.code === "write_conflict",
+    );
+    assert.equal(existsSync(lockPath), false);
+    assert.equal(existsSync(`${lockPath}.staging-abandoned`), false);
+
+    const handle = acquirePlanletLock(root, "fixture-plan");
+    assert.equal(existsSync(lockPath), true);
+    releaseOwnedLock(handle);
+    assert.equal(existsSync(lockPath), false);
   });
 });
 
@@ -348,7 +368,7 @@ test("only one of two reclaimers wins the quarantine rename race", () => {
     );
 
     const holder = JSON.parse(
-      readFileSync(join(first.path, PLANLET_LOCK_HOLDER), "utf8"),
+      readFileSync(first.path, "utf8"),
     ) as OwnedLockHolder;
     assert.equal(holder.token, first.token);
     releaseOwnedLock(first);
@@ -370,7 +390,7 @@ test("stale reclaimer cannot delete a newly acquired live lock on release", () =
     releaseOwnedLock({ path: winner.path, token: "old" });
     assert.equal(existsSync(winner.path), true);
     const holder = JSON.parse(
-      readFileSync(join(winner.path, PLANLET_LOCK_HOLDER), "utf8"),
+      readFileSync(winner.path, "utf8"),
     ) as OwnedLockHolder;
     assert.equal(holder.token, "winner-token");
 
