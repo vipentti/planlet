@@ -1,11 +1,11 @@
 # Tasks: Release-cut maintainer utility
 
-- [ ] T1 Add `scripts/release.mjs` with `prepare` and `tag` subcommands: required
+- [x] T1 Add `scripts/release.mjs` with `prepare` and `tag` subcommands: required
       `--version`, optional `--release-date`, `--execute`, `--help`, `tag`-only
       `--push`; dry-run default; reject unknown flags, duplicate value flags, and
       a missing or malformed subcommand; subprocess failures name the operation
       and surface stderr without echoing credentials
-- [ ] T2 Extend `assert-changelog-release-ready.mjs` with historical mode:
+- [x] T2 Extend `assert-changelog-release-ready.mjs` with historical mode:
       `--verify-release`, optional `--date YYYY-MM-DD`, optional `--print-date`
       (stdout exactly `YYYY-MM-DD\n`); verification-only options require
       `--verify-release`; preparation and historical modes cannot combine;
@@ -15,7 +15,7 @@
       tests for validate, expected-date match and mismatch, exact printed date,
       past historical date accepted, illegal combos, and unchanged CI/past-date
       rejection
-- [ ] T3 Implement fresh `prepare`: refuse on local or remote `release/v<version>`,
+- [x] T3 Implement fresh `prepare`: refuse on local or remote `release/v<version>`,
       matching open/merged/closed-unmerged PR, multiple or conflicting PR matches,
       version already current, changelog already containing the release, or
       existing remote tag; require clean worktree and `HEAD ==` remote `main` tip;
@@ -35,7 +35,7 @@
       (never reset, amend, clean, restore, or rerun the commit) and report that
       the signed commit was created but post-commit validation failed, with
       manual recovery guidance
-- [ ] T4 Implement `tag`: clean worktree, `HEAD ==` remote `main` tip, package
+- [x] T4 Implement `tag`: clean worktree, `HEAD ==` remote `main` tip, package
       version match; resolve the release date only through historical helper mode
       — `--verify-release --print-date`, plus `--date D` when the operator passes
       `tag --release-date D`, never the helper's strict `--release-date` — and
@@ -51,10 +51,10 @@
       with `--push`; verify the remote tag afterwards; never move, recreate,
       replace, delete, or force-update a tag; leave the local tag on verification
       failure
-- [ ] T5 Add `release:prepare` and `release:tag` npm aliases; update `RELEASING.md`
+- [x] T5 Add `release:prepare` and `release:tag` npm aliases; update `RELEASING.md`
       with the scripted happy path, manual recovery guidance, and an explicit
       statement that there is no automatic prepare resume
-- [ ] T6 Add focused fixture/subprocess tests (temp repos, bare local remotes,
+- [x] T6 Add focused fixture/subprocess tests (temp repos, bare local remotes,
       stubbed `gh` and signing) covering the cases listed under Tests in
       `plan.md`, including fixture commit hooks that mutate a release file, leave
       staged or unstaged changes, or create untracked state after `git commit`,
