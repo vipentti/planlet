@@ -12,8 +12,8 @@
 - [x] T10 Immediately before bootstrap, verify npm name availability, authenticated account and 2FA/auth readiness, intended owner identity, package ownership state, and public-access capability; record failure/retry response without claiming the name
 - [x] T11 After T7 and captain public-release authorization, make `vipentti/planlet` public and independently verify anonymous repository and full-history visibility
 - [x] T12 After verified T8 publication and while release workflow is absent from default branch, create `v0.1.0` at exact approved SHA and create matching GitHub release from the dated 0.1.0 changelog notes at that SHA
-- [ ] T13 After bootstrap package ownership is verified, configure npm trusted publisher for package `@vipentti/planlet` on GitHub repository `vipentti/planlet` with workflow `.github/workflows/release.yml`, then independently verify configuration
-- [ ] T14 Land Slice B (`release.yml` plus T18 docs) on `main` only after T12-T13, verify fast-forward source and green main CI, and confirm no release tag was pushed during merge
+- [x] T13 After bootstrap package ownership is verified, configure npm trusted publisher for package `@vipentti/planlet` on GitHub repository `vipentti/planlet` with workflow `.github/workflows/release.yml`, then independently verify configuration
+- [x] T14 Land Slice B (`release.yml` plus T18 docs) on `main` only after T12-T13, verify fast-forward source and green main CI, and confirm no release tag was pushed during merge
 - [x] T15 Record captain release-governance choice: accept current strict CI, signed-commit, linear-history, no-force-push/no-deletion, administrator-not-enforced `main` protection, or implement and verify additional tag controls and/or a protected GitHub environment before T13
 - [x] T16 Record captain bootstrap authorization naming npm owner/account, exact clean source SHA, reviewed artifact identity/hash, and permission for irreversible 0.1.0 publication
 - [x] T17 Reconcile Slice B onto current `main` as source of truth: keep main planlet evidence and completed bootstrap tasks, add adapted `release.yml` (not stale unscoped Slice A content), align docs without rewriting write-once evidence, and pass focused, full-suite, generated-skill parity, and packaging checks
@@ -34,3 +34,5 @@
 - 2026-08-03 — Registry verified `@vipentti/planlet@0.1.0` with dist.integrity matching approved artifact `sha512-JvtLGRJbmXlmfWGLnI+4Byr5G/ly4ncAd6h4GISweNkrOQv8AxER3WpjDHN4J3XPIQ1uHTMqk2Epm82rr/FCfg==` (T8 publish complete).
 - 2026-08-03 — Created annotated tag `v0.1.0` at `53eb188e753503564206abb5ca6118d5aa201e5f` and GitHub release from dated 0.1.0 changelog notes while `release.yml` absent from default branch (T12).
 - 2026-08-03 — GitHub repository homepage set to `https://www.npmjs.com/package/@vipentti/planlet`.
+- 2026-08-03 — Captain configured npm trusted publisher for package `@vipentti/planlet` on GitHub repository `vipentti/planlet` with workflow filename `release.yml`, no GitHub environment, publishing access requiring 2FA and disallowing bypass-2FA tokens (T13).
+- 2026-08-03 — Squash-merged Slice B to `main` as `0c3d63985989e252d11fcdcf64b51c71c4e27fb3` (`release.yml` present); only existing release tag remained `v0.1.0` (no new tag during merge) (T14).
