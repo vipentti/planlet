@@ -36,8 +36,8 @@ function fixture(changelog: string, version = "0.1.0") {
   return { changelogPath, packagePath };
 }
 
-// Release dates are relative to the day the suite runs: the readiness script
-// rejects past dates, so fixed dates would rot as the calendar advances.
+// Release dates are relative to the day the suite runs: --release-date rejects
+// past dates, so fixed dates would rot as the calendar advances.
 function utcDay(offsetDays: number): string {
   return new Date(Date.now() + offsetDays * 86_400_000)
     .toISOString()
@@ -259,7 +259,7 @@ test("explicit release mode enforces dated non-empty matching 0.1.0 notes", () =
   );
 });
 
-test("dated 0.1.0 must not be released with a past date", () => {
+test("a past release date fails release verification but not ordinary CI", () => {
   const dated = (date: string) =>
     fixture(
       `# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - ${date}\n\n### Added\n\n- Item\n`,
@@ -280,11 +280,11 @@ test("dated 0.1.0 must not be released with a past date", () => {
     0,
   );
 
+  // Ordinary CI must stay green on an already-shipped version: package.json
+  // sits on that version until the next release is prepared, so a past date is
+  // the normal steady state, not a defect.
   const stale = dated(yesterday);
-  assert.notEqual(
-    assertReady([stale.changelogPath, stale.packagePath]).status,
-    0,
-  );
+  assert.equal(assertReady([stale.changelogPath, stale.packagePath]).status, 0);
   assert.notEqual(
     assertReady([
       "--release-date",

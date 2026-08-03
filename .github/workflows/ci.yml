@@ -37,6 +37,6 @@ jobs:
         run: |
           node dist/planlet.mjs update --tools all
           git diff --exit-code
-      - name: unpublished 0.1.0 changelog must not carry a past release date
+      - name: changelog sections are structurally release-ready
         if: matrix.os == 'ubuntu-latest' && matrix.node == 22
         run: node scripts/assert-changelog-release-ready.mjs

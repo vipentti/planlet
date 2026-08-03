@@ -13,6 +13,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
+import { renderUnexpectedError } from "../../src/production-entry.js";
 import { completePlanlet } from "../../src/core/planlet-completion.js";
 import {
   acquireOwnedLock,
@@ -437,14 +438,49 @@ test("withPlanletLock reports both the operation error and a failed release", ()
             },
           },
         ),
-      (error) =>
-        error instanceof AggregateError &&
-        error.message.includes(lockPathFor(root, "fixture-plan")) &&
-        error.errors[0] instanceof PlanletError &&
-        error.errors[0].code === "task_not_found" &&
-        error.errors[1] instanceof Error &&
-        error.errors[1].message === "release failed",
+      (error) => {
+        // Must stay a PlanletError: a bare AggregateError reaches the CLI
+        // boundary as internal_error and the lock path is never printed.
+        assert.ok(error instanceof PlanletError);
+        assert.equal(error.code, "task_not_found");
+        assert.equal(error.message, "missing");
+        assert.equal(error.details.lockPath, lockPathFor(root, "fixture-plan"));
+        assert.equal(error.details.lockReleaseFailed, true);
+        assert.ok(error.next?.includes(lockPathFor(root, "fixture-plan")));
+        const cause = error.cause;
+        assert.ok(cause instanceof AggregateError);
+        assert.ok(cause.errors[0] instanceof PlanletError);
+        assert.equal(cause.errors[0].code, "task_not_found");
+        assert.equal(cause.errors[1].message, "release failed");
+        return true;
+      },
     );
+  });
+});
+
+test("a failed release surfaces through the production entry with its code", () => {
+  withRepo((root) => {
+    let thrown: unknown;
+    try {
+      withPlanletLock(
+        root,
+        "fixture-plan",
+        () => {
+          throw new PlanletError("task_not_found", "missing");
+        },
+        {
+          remove: () => {
+            throw new Error("release failed");
+          },
+        },
+      );
+    } catch (error) {
+      thrown = error;
+    }
+    const rendered = renderUnexpectedError(thrown, {});
+    assert.match(rendered.stderr, /task_not_found/);
+    assert.ok(rendered.stderr.includes(lockPathFor(root, "fixture-plan")));
+    assert.doesNotMatch(rendered.stderr, /internal_error/);
   });
 });
 

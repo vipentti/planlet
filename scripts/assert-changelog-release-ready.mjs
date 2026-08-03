@@ -5,9 +5,15 @@
  *
  * Ordinary CI (no flags):
  *   Requires exactly one [Unreleased] section and at most one [pkg.version]
- *   section. A dated version section must use a real calendar date that is not
- *   in the past (UTC) and non-empty notes. Malformed headings that mention
- *   Unreleased or the package version still count toward cardinality.
+ *   section. A dated version section must use a real calendar date and
+ *   non-empty notes. Malformed headings that mention Unreleased or the package
+ *   version still count toward cardinality.
+ *
+ *   The date is deliberately NOT required to be today or later here. Once a
+ *   version ships, its section keeps the date it shipped on, and package.json
+ *   stays on that version until the next release is prepared; enforcing a
+ *   future date in ordinary CI would turn main red the day after every release.
+ *   Staleness is a release-time concern, enforced under --release-date below.
  *
  * Release verification:
  *   node scripts/assert-changelog-release-ready.mjs --release-date YYYY-MM-DD
@@ -51,7 +57,6 @@ function assertValidDatedNotes(dated, sectionBody, label, version) {
   if (!isValidCalendarDate(dated)) {
     fail(`${label} ${version} date is not a valid calendar day: ${dated}`);
   }
-  assertNotPast(dated, `${label} ${version} release date`);
   if (!hasNonEmptyNotes(sectionBody)) {
     fail(`${label} ${version} section is missing release notes.`);
   }
@@ -59,7 +64,9 @@ function assertValidDatedNotes(dated, sectionBody, label, version) {
 
 const releaseDateFlags = process.argv
   .slice(2)
-  .filter((arg) => arg === "--release-date");
+  .filter(
+    (arg) => arg === "--release-date" || arg.startsWith("--release-date="),
+  );
 if (releaseDateFlags.length > 1) {
   fail("Duplicate --release-date option.");
 }

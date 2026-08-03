@@ -23,8 +23,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and thi
 - Changelog gate counts malformed `Unreleased` / version headings before validating syntax.
 - Successful lock operations warn when lock release fails instead of silent success.
 - Locks publish ownership metadata atomically, so an interrupted acquisition cannot leave an unreclaimable lock.
-- Changelog gate rejects release dates earlier than today (UTC) in ordinary and `--release-date` modes.
-- A failed lock release is reported as an `AggregateError` alongside the operation error instead of being dropped when both fail.
+- Changelog gate rejects release dates earlier than today (UTC) under `--release-date`; ordinary CI accepts a shipped version's past date instead of turning red the day after a release.
+- A failed lock release keeps the operation's structured error code and reports the lock path in `next`, instead of surfacing as an unexpected internal error.
+- Lock namespaces key on the canonical repository root, so two symlinked paths to one checkout no longer take separate locks.
+- `planlet-lock.ts` uses a `\0` escape rather than a literal NUL byte, so git treats the file as text and can diff it.
 - Harness lock release warnings are reported repository-wide instead of being attached to the first destination.
 
 ### Changed
