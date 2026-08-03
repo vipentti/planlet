@@ -167,15 +167,19 @@ release notes; that helper is not included in the published npm package.
 
 ### Tag-triggered releases
 
-After trusted publishing is configured, a signed tag `v<version>` that matches
-`package.json` and is reachable from `main` runs
-[`.github/workflows/release.yml`](https://github.com/vipentti/planlet/blob/main/.github/workflows/release.yml):
-verify the tagged source, pack once, publish or verify the exact npm artifact
-for `@vipentti/planlet` with provenance, then create or update the GitHub
-release from the changelog. Do not push a release tag until the version commit
-is on `main` and captain gates in the
+After trusted publishing is configured, create an **annotated, signed** tag
+`v<version>` that matches `package.json` and is reachable from `main`. Tag
+creation for `v*` is limited by a repository ruleset; the release job runs in
+the GitHub Environment `release` (required reviewer) and refuses force-moved or
+deleted tag pushes. The workflow verifies GitHub reports a signed tag, checks
+the tagged source, packs the verified build (`npm pack --ignore-scripts`),
+publishes or verifies the exact `@vipentti/planlet` artifact with provenance,
+re-checks registry identity/integrity after a new publish, then creates or
+updates the GitHub release from the changelog. Do not push a release tag until
+the version commit is on `main` and captain gates in the
 [release automation plan](https://github.com/vipentti/planlet/blob/main/plans/release-automation/plan.md)
-are satisfied.
+are satisfied. After changing the workflow environment name, keep the npm
+trusted-publisher environment field in sync (`release`).
 
 The first npm publication (`@vipentti/planlet@0.1.0`) was a manual bootstrap
 without `release.yml` on `main`. Later releases use the tag workflow above.
