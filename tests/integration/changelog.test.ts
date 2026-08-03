@@ -22,19 +22,20 @@ function extract(version: string, changelogPath?: string) {
   );
 }
 
-function assertReleaseReady(
-  changelogPath: string,
-  packagePath: string,
-  env: NodeJS.ProcessEnv = {},
-) {
-  return spawnSync(
-    process.execPath,
-    [releaseReady, changelogPath, packagePath],
-    {
-      encoding: "utf8",
-      env: { ...process.env, ...env },
-    },
-  );
+function assertReady(args: readonly string[], env: NodeJS.ProcessEnv = {}) {
+  return spawnSync(process.execPath, [releaseReady, ...args], {
+    encoding: "utf8",
+    env: { ...process.env, ...env },
+  });
+}
+
+function fixture(changelog: string, version = "0.1.0") {
+  const dir = mkdtempSync(join(tmpdir(), "planlet-changelog-ready-"));
+  const changelogPath = join(dir, "CHANGELOG.md");
+  const packagePath = join(dir, "package.json");
+  writeFileSync(changelogPath, changelog);
+  writeFileSync(packagePath, JSON.stringify({ version }));
+  return { changelogPath, packagePath };
 }
 
 test("repository changelog keeps 0.1.0 notes under Unreleased until dated", () => {
@@ -91,34 +92,131 @@ test("extracts one non-empty version and rejects empty sections from an isolated
   assert.ok(empty.stderr.includes("2.0.0"), empty.stderr);
 });
 
-test("release-ready gate accepts Unreleased 0.1.0 notes and matching dated headers", () => {
-  const dir = mkdtempSync(join(tmpdir(), "planlet-changelog-ready-"));
-  const packagePath = join(dir, "package.json");
-  writeFileSync(packagePath, JSON.stringify({ version: "0.1.0" }));
-
-  const unreleased = join(dir, "unreleased.md");
-  writeFileSync(
-    unreleased,
+test("ordinary CI allows Unreleased-only and structurally valid dated 0.1.0", () => {
+  const unreleased = fixture(
     "# Changelog\n\n## [Unreleased]\n\n### Added\n\n- Item\n",
   );
-  assert.equal(assertReleaseReady(unreleased, packagePath).status, 0);
-
-  const dated = join(dir, "dated.md");
-  writeFileSync(
-    dated,
-    "# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - 2026-08-10\n\n### Added\n\n- Item\n",
-  );
-  assert.notEqual(assertReleaseReady(dated, packagePath).status, 0);
   assert.equal(
-    assertReleaseReady(dated, packagePath, {
-      PLANLET_RELEASE_DATE: "2026-08-10",
-    }).status,
+    assertReady([unreleased.changelogPath, unreleased.packagePath]).status,
     0,
   );
+
+  const dated = fixture(
+    "# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - 2026-08-10\n\n### Added\n\n- Item\n",
+  );
+  assert.equal(assertReady([dated.changelogPath, dated.packagePath]).status, 0);
+
+  const invalidDay = fixture(
+    "# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - 2026-02-30\n\n### Added\n\n- Item\n",
+  );
   assert.notEqual(
-    assertReleaseReady(dated, packagePath, {
-      PLANLET_RELEASE_DATE: "2026-08-11",
-    }).status,
+    assertReady([invalidDay.changelogPath, invalidDay.packagePath]).status,
+    0,
+  );
+
+  const emptyNotes = fixture(
+    "# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - 2026-08-10\n\n### Added\n",
+  );
+  assert.notEqual(
+    assertReady([emptyNotes.changelogPath, emptyNotes.packagePath]).status,
+    0,
+  );
+});
+
+test("explicit release mode enforces dated non-empty matching 0.1.0 notes", () => {
+  const unreleased = fixture(
+    "# Changelog\n\n## [Unreleased]\n\n### Added\n\n- Item\n",
+  );
+  assert.notEqual(
+    assertReady([
+      "--release-date",
+      "2026-08-10",
+      unreleased.changelogPath,
+      unreleased.packagePath,
+    ]).status,
+    0,
+  );
+
+  const undated = fixture(
+    "# Changelog\n\n## [Unreleased]\n\n## [0.1.0]\n\n### Added\n\n- Item\n",
+  );
+  assert.notEqual(
+    assertReady([
+      "--release-date",
+      "2026-08-10",
+      undated.changelogPath,
+      undated.packagePath,
+    ]).status,
+    0,
+  );
+
+  const mismatch = fixture(
+    "# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - 2026-08-11\n\n### Added\n\n- Item\n",
+  );
+  assert.notEqual(
+    assertReady([
+      "--release-date",
+      "2026-08-10",
+      mismatch.changelogPath,
+      mismatch.packagePath,
+    ]).status,
+    0,
+  );
+
+  const invalidDay = fixture(
+    "# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - 2026-02-30\n\n### Added\n\n- Item\n",
+  );
+  assert.notEqual(
+    assertReady([
+      "--release-date",
+      "2026-02-30",
+      invalidDay.changelogPath,
+      invalidDay.packagePath,
+    ]).status,
+    0,
+  );
+
+  const emptyNotes = fixture(
+    "# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - 2026-08-10\n\n### Added\n",
+  );
+  assert.notEqual(
+    assertReady([
+      "--release-date",
+      "2026-08-10",
+      emptyNotes.changelogPath,
+      emptyNotes.packagePath,
+    ]).status,
+    0,
+  );
+
+  const good = fixture(
+    "# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - 2026-08-10\n\n### Added\n\n- Item\n",
+  );
+  assert.equal(
+    assertReady([
+      "--release-date",
+      "2026-08-10",
+      good.changelogPath,
+      good.packagePath,
+    ]).status,
+    0,
+  );
+
+  const otherVersion = fixture(
+    "# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - 2026-08-10\n\n### Added\n\n- Item\n",
+    "0.2.0",
+  );
+  assert.notEqual(
+    assertReady([
+      "--release-date",
+      "2026-08-10",
+      otherVersion.changelogPath,
+      otherVersion.packagePath,
+    ]).status,
+    0,
+  );
+  assert.equal(
+    assertReady([otherVersion.changelogPath, otherVersion.packagePath]).status,
     0,
   );
 });

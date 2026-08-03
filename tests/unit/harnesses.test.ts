@@ -102,8 +102,27 @@ test("unselected escaping destinations do not block selected installs", () => {
       assert.equal(destinations.length, 1);
       assert.equal(destinations[0]!.relativePath, ".agents/skills");
       assert.deepEqual(destinations[0]!.selectedToolIds, ["agents"]);
+      assert.deepEqual(destinations[0]!.aliases, ["agents", "codex"]);
     });
   } finally {
     rmSync(outside, { recursive: true, force: true });
   }
+});
+
+test("safe unselected symlink destinations are included as aliases", () => {
+  withRoot((root) => {
+    mkdirSync(join(root, ".agents", "skills"), { recursive: true });
+    mkdirSync(join(root, ".claude"));
+    symlinkSync(
+      join(root, ".agents", "skills"),
+      join(root, ".claude", "skills"),
+    );
+    const destinations = resolveHarnessDestinations(
+      root,
+      normalizeToolSelector("claude"),
+    );
+    assert.equal(destinations.length, 1);
+    assert.deepEqual(destinations[0]!.selectedToolIds, ["claude"]);
+    assert.deepEqual(destinations[0]!.aliases, ["agents", "claude", "codex"]);
+  });
 });

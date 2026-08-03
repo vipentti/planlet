@@ -505,7 +505,7 @@ The CLI should require a slug for mutating commands. It may provide a read-only 
 
 “One at a time” means one target per invocation or agent workflow. The MVP does not need a global active-plan pointer.
 
-Task-file writes should be atomic. Mutating CLI operations that rewrite `tasks.md` (`task check`, `task uncheck`, and `complete`) take an exclusive per-planlet lock under `plans/.planlet-locks/<slug>`. Competing writers fail with `write_conflict` rather than applying a stale read-modify-write. Stale lock directories whose recorded holder PID is dead may be reclaimed; live holders are never stolen. Editors and git can still rewrite `tasks.md` outside the CLI lock; treat that as ordinary version-control conflict resolution.
+Task-file writes should be atomic. Mutating CLI operations that rewrite `tasks.md` (`task check`, `task uncheck`, and `complete`) take an exclusive per-planlet lock under `plans/.planlet-locks/<slug>`. Each acquisition writes an ownership token into the holder file and returns that token with the lock path. Competing writers fail with `write_conflict` rather than applying a stale read-modify-write. Stale locks whose recorded holder PID is dead are reclaimed only by atomically renaming the lock directory into a unique quarantine sibling; only the rename winner may delete the quarantine and retry acquisition. Release deletes the lock only when the caller's ownership token still matches the holder. Live holders are never stolen. Editors and git can still rewrite `tasks.md` outside the CLI lock; treat that as ordinary version-control conflict resolution.
 
 ## 13. CLI Design
 

@@ -1,4 +1,11 @@
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import {
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 
 import { PlanletError } from "../errors/planlet-error.js";
@@ -10,60 +17,51 @@ export const PLANLET_LOCK_HOLDER = "holder.json";
 export interface PlanletLockHolder {
   readonly pid: number;
   readonly createdAt: string;
+  readonly token: string;
 }
 
+export interface PlanletLockHandle {
+  readonly path: string;
+  readonly token: string;
+}
+
+/**
+ * Testable filesystem and process seams. Defaults are production behavior;
+ * tests inject mkdir/rename/isProcessAlive (and optionally pid/now/createToken).
+ */
 export interface PlanletLockDependencies {
   readonly mkdir: (path: string) => void;
-  readonly writeHolder: (path: string, holder: PlanletLockHolder) => void;
-  readonly readHolder: (path: string) => PlanletLockHolder | null;
-  readonly removeLock: (path: string) => void;
+  readonly rename: (source: string, destination: string) => void;
   readonly isProcessAlive: (pid: number) => boolean;
   readonly pid: number;
   readonly now: () => Date;
+  readonly createToken: () => string;
 }
 
 const DEFAULT_DEPENDENCIES: PlanletLockDependencies = {
   mkdir: (path) => mkdirSync(path),
-  writeHolder: (path, holder) =>
-    writeFileSync(path, `${JSON.stringify(holder)}\n`, {
-      encoding: "utf8",
-      flag: "wx",
-    }),
-  readHolder: (path) => {
-    try {
-      const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
-      if (
-        typeof parsed !== "object" ||
-        parsed === null ||
-        !("pid" in parsed) ||
-        !("createdAt" in parsed) ||
-        typeof parsed.pid !== "number" ||
-        !Number.isInteger(parsed.pid) ||
-        parsed.pid <= 0 ||
-        typeof parsed.createdAt !== "string"
-      ) {
-        return null;
-      }
-      return { pid: parsed.pid, createdAt: parsed.createdAt };
-    } catch {
-      return null;
-    }
-  },
-  removeLock: (path) => rmSync(path, { recursive: true, force: true }),
+  rename: (source, destination) => renameSync(source, destination),
   isProcessAlive: (pid) => {
     try {
       process.kill(pid, 0);
       return true;
     } catch (error) {
-      return !(
+      // EPERM/EACCES mean the process exists but we cannot signal it.
+      // ESRCH/ENOENT/EINVAL (and other codes) mean the PID is not alive —
+      // Windows reports dead PIDs as ENOENT or EINVAL rather than ESRCH.
+      if (
         error instanceof Error &&
         "code" in error &&
-        error.code === "ESRCH"
-      );
+        (error.code === "EPERM" || error.code === "EACCES")
+      ) {
+        return true;
+      }
+      return false;
     }
   },
   pid: process.pid,
   now: () => new Date(),
+  createToken: () => randomUUID(),
 };
 
 function isAlreadyExists(error: unknown): boolean {
@@ -89,33 +87,100 @@ function assertNotSymlink(path: string, slug: string): void {
   }
 }
 
+function readHolder(path: string): PlanletLockHolder | null {
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
+    if (
+      typeof parsed !== "object" ||
+      parsed === null ||
+      !("pid" in parsed) ||
+      !("createdAt" in parsed) ||
+      !("token" in parsed) ||
+      typeof parsed.pid !== "number" ||
+      !Number.isInteger(parsed.pid) ||
+      parsed.pid <= 0 ||
+      typeof parsed.createdAt !== "string" ||
+      typeof parsed.token !== "string" ||
+      parsed.token.length === 0
+    ) {
+      return null;
+    }
+    return {
+      pid: parsed.pid,
+      createdAt: parsed.createdAt,
+      token: parsed.token,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writeHolder(path: string, holder: PlanletLockHolder): void {
+  writeFileSync(path, `${JSON.stringify(holder)}\n`, {
+    encoding: "utf8",
+    flag: "wx",
+  });
+}
+
+function removeTree(path: string): void {
+  rmSync(path, { recursive: true, force: true });
+}
+
+/**
+ * Atomically quarantine a dead-holder lock. Only the process whose rename
+ * succeeds may delete the quarantine directory. Returns true when this caller
+ * won the reclaim race.
+ */
 function tryReclaimDeadLock(
   lockPath: string,
   slug: string,
   dependencies: PlanletLockDependencies,
 ): boolean {
   assertNotSymlink(lockPath, slug);
-  const holderPath = join(lockPath, PLANLET_LOCK_HOLDER);
-  const holder = dependencies.readHolder(holderPath);
-  // Unreadable or corrupt holders are not stolen: an active writer may still
-  // own the directory. Only reclaim when the recorded PID is known dead.
+  const holder = readHolder(join(lockPath, PLANLET_LOCK_HOLDER));
+  // Unreadable or corrupt holders are not stolen.
   if (holder === null || dependencies.isProcessAlive(holder.pid)) {
     return false;
   }
-  dependencies.removeLock(lockPath);
+
+  const quarantinePath = `${lockPath}.quarantine-${dependencies.createToken()}`;
+  try {
+    dependencies.rename(lockPath, quarantinePath);
+  } catch {
+    // Another process already reclaimed or the lock disappeared.
+    return false;
+  }
+  removeTree(quarantinePath);
   return true;
+}
+
+function contentionError(
+  slug: string,
+  lockPath: string,
+  cause?: unknown,
+): never {
+  throw new PlanletError(
+    "write_conflict",
+    `Planlet is locked by another process: ${slug}`,
+    {
+      details: { slug, lockPath },
+      ...(cause === undefined ? {} : { cause }),
+      next: `Retry after the other planlet operation finishes, or remove ${PLANLET_LOCK_DIR}/${slug} only if that process is confirmed dead`,
+    },
+  );
 }
 
 /**
  * Acquires an exclusive per-planlet lock under plans/.planlet-locks/<slug>.
  * Contending live holders fail with write_conflict. Dead-holder directories are
- * reclaimed once; live holders are never stolen.
+ * reclaimed via atomic rename into a quarantine path; live holders are never
+ * stolen. The returned handle's token is required for ownership-safe release.
  */
 export function acquirePlanletLock(
   repositoryRoot: string,
   slug: string,
   dependencies: Partial<PlanletLockDependencies> = {},
-): string {
+): PlanletLockHandle {
   const resolved = { ...DEFAULT_DEPENDENCIES, ...dependencies };
   const root = lockRoot(repositoryRoot);
   mkdirSync(root, { recursive: true });
@@ -124,22 +189,25 @@ export function acquirePlanletLock(
   const lockPath = planletLockPath(repositoryRoot, slug);
   assertNotSymlink(lockPath, slug);
 
-  const attempt = (): void => {
+  const attempt = (): PlanletLockHandle => {
     resolved.mkdir(lockPath);
+    const token = resolved.createToken();
     const holder: PlanletLockHolder = {
       pid: resolved.pid,
       createdAt: resolved.now().toISOString(),
+      token,
     };
     try {
-      resolved.writeHolder(join(lockPath, PLANLET_LOCK_HOLDER), holder);
+      writeHolder(join(lockPath, PLANLET_LOCK_HOLDER), holder);
     } catch (error) {
-      resolved.removeLock(lockPath);
+      removeTree(lockPath);
       throw error;
     }
+    return { path: lockPath, token };
   };
 
   try {
-    attempt();
+    return attempt();
   } catch (error) {
     if (!isAlreadyExists(error)) {
       throw new PlanletError(
@@ -149,39 +217,27 @@ export function acquirePlanletLock(
       );
     }
     if (!tryReclaimDeadLock(lockPath, slug, resolved)) {
-      throw new PlanletError(
-        "write_conflict",
-        `Planlet is locked by another process: ${slug}`,
-        {
-          details: { slug, lockPath },
-          next: `Retry after the other planlet operation finishes, or remove ${PLANLET_LOCK_DIR}/${slug} only if that process is confirmed dead`,
-        },
-      );
+      contentionError(slug, lockPath);
     }
     try {
-      attempt();
+      return attempt();
     } catch (retryError) {
-      throw new PlanletError(
-        "write_conflict",
-        `Planlet is locked by another process: ${slug}`,
-        {
-          details: { slug, lockPath },
-          cause: retryError,
-          next: `Retry after the other planlet operation finishes, or remove ${PLANLET_LOCK_DIR}/${slug} only if that process is confirmed dead`,
-        },
-      );
+      contentionError(slug, lockPath, retryError);
     }
   }
-
-  return lockPath;
 }
 
-export function releasePlanletLock(
-  lockPath: string,
-  dependencies: Partial<PlanletLockDependencies> = {},
-): void {
-  const resolved = { ...DEFAULT_DEPENDENCIES, ...dependencies };
-  resolved.removeLock(lockPath);
+/**
+ * Releases a lock only when the caller's ownership token still matches the
+ * holder file. Mismatched or missing holders are left untouched so a stale
+ * finally-block cannot delete a replacement owner's lock.
+ */
+export function releasePlanletLock(handle: PlanletLockHandle): void {
+  const holder = readHolder(join(handle.path, PLANLET_LOCK_HOLDER));
+  if (holder === null || holder.token !== handle.token) {
+    return;
+  }
+  removeTree(handle.path);
 }
 
 export function withPlanletLock<T>(
@@ -190,28 +246,10 @@ export function withPlanletLock<T>(
   operation: () => T,
   dependencies: Partial<PlanletLockDependencies> = {},
 ): T {
-  const lockPath = acquirePlanletLock(repositoryRoot, slug, dependencies);
+  const handle = acquirePlanletLock(repositoryRoot, slug, dependencies);
   try {
     return operation();
   } finally {
-    releasePlanletLock(lockPath, dependencies);
+    releasePlanletLock(handle);
   }
-}
-
-/** Test helper: create a lock directory that looks held by an arbitrary PID. */
-export function plantPlanletLock(
-  repositoryRoot: string,
-  slug: string,
-  holder: PlanletLockHolder,
-): string {
-  const root = lockRoot(repositoryRoot);
-  mkdirSync(root, { recursive: true });
-  const lockPath = planletLockPath(repositoryRoot, slug);
-  mkdirSync(lockPath);
-  writeFileSync(
-    join(lockPath, PLANLET_LOCK_HOLDER),
-    `${JSON.stringify(holder)}\n`,
-    { encoding: "utf8", flag: "wx" },
-  );
-  return lockPath;
 }

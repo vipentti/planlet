@@ -42,6 +42,7 @@ export interface HarnessInstallationSummary {
   readonly state: HarnessState;
   readonly changed: boolean;
   readonly files: number;
+  readonly warnings?: readonly string[];
 }
 
 export interface InstallationSummary {
@@ -323,13 +324,18 @@ function asWriteConflict(error: unknown, destination: string): PlanletError {
   );
 }
 
+export type InstallTxStep =
+  | "afterStage"
+  | "afterBackup"
+  | "afterReplaceSkill"
+  | "afterRemoveObsolete"
+  | "beforeManifest"
+  | "afterCommit"
+  | "duringRollback"
+  | "afterCleanup";
+
 export interface InstallTransactionHooks {
-  readonly afterStage?: () => void;
-  readonly afterReplaceSkill?: (skill: string) => void;
-  readonly afterRemoveObsolete?: () => void;
-  readonly beforeManifest?: () => void;
-  readonly duringRollback?: () => void;
-  readonly afterPublish?: () => void;
+  readonly onStep?: (step: InstallTxStep, detail?: string) => void;
 }
 
 function writeSkillTree(
@@ -354,43 +360,51 @@ function moveManagedEntry(source: string, destination: string): void {
   renameSync(source, destination);
 }
 
+function bestEffortRemove(path: string): void {
+  rmSync(path, { recursive: true, force: true });
+}
+
 /**
- * Stages every managed skill and the manifest, then swaps them into the live
- * destination. On any failure after live mutation begins, restores the exact
- * previous managed state. Unrelated non-Planlet skills are never touched.
+ * Stages managed skills and the manifest, then swaps them into the live
+ * destination. Failures before the manifest commit roll back to the exact
+ * pre-operation managed state. After commit, cleanup is best-effort and never
+ * rolls back published content. Unrelated non-Planlet skills are never touched.
  */
 function publishDestinationTransaction(
   destinationPath: string,
   source: CanonicalSkillSource,
   desiredManifestText: string,
-  actualFiles: Readonly<Record<string, string>>,
+  actualSkillNames: readonly string[],
   options: {
     readonly publishSkills: boolean;
     readonly writeManifest: boolean;
     readonly hooks?: InstallTransactionHooks;
   },
-): void {
+): readonly string[] {
   const hooks = options.hooks ?? {};
+  const warnings: string[] = [];
   if (!options.publishSkills && !options.writeManifest) {
-    return;
+    return warnings;
   }
 
   const token = randomUUID();
   const stageRoot = join(destinationPath, `.planlet-tx-${token}`);
   const backupRoot = join(destinationPath, `.planlet-bak-${token}`);
   const desiredSkills = options.publishSkills ? [...source.skills] : [];
-  const actualSkills = [
-    ...new Set(Object.keys(actualFiles).map((path) => path.split("/")[0]!)),
-  ];
   const obsoleteSkills = options.publishSkills
-    ? actualSkills.filter((skill) => !desiredSkills.includes(skill))
+    ? actualSkillNames.filter((skill) => !desiredSkills.includes(skill))
     : [];
   const liveManifest = join(destinationPath, INSTALLATION_MANIFEST);
   const mutated: string[] = [];
   let backupReady = false;
+  let committed = false;
+
+  const emit = (step: InstallTxStep, detail?: string): void => {
+    hooks.onStep?.(step, detail);
+  };
 
   const rollback = (): void => {
-    hooks.duringRollback?.();
+    emit("duringRollback");
     for (const name of [...mutated].reverse()) {
       const live = join(destinationPath, name);
       const backup = join(backupRoot, name);
@@ -414,7 +428,7 @@ function publishDestinationTransaction(
         { encoding: "utf8", flag: "wx" },
       );
     }
-    hooks.afterStage?.();
+    emit("afterStage");
 
     mkdirSync(backupRoot);
     backupReady = true;
@@ -424,9 +438,10 @@ function publishDestinationTransaction(
       if (pathKind(live) === "missing") continue;
       moveManagedEntry(live, join(backupRoot, skill));
       mutated.push(skill);
+      emit("afterBackup", skill);
     }
     if (obsoleteSkills.length > 0) {
-      hooks.afterRemoveObsolete?.();
+      emit("afterRemoveObsolete");
     }
     if (options.writeManifest && pathKind(liveManifest) !== "missing") {
       moveManagedEntry(liveManifest, join(backupRoot, INSTALLATION_MANIFEST));
@@ -436,36 +451,72 @@ function publishDestinationTransaction(
     for (const skill of desiredSkills) {
       moveManagedEntry(join(stageRoot, skill), join(destinationPath, skill));
       if (!mutated.includes(skill)) mutated.push(skill);
-      hooks.afterReplaceSkill?.(skill);
+      emit("afterReplaceSkill", skill);
     }
     if (options.writeManifest) {
-      hooks.beforeManifest?.();
+      emit("beforeManifest");
       moveManagedEntry(join(stageRoot, INSTALLATION_MANIFEST), liveManifest);
       if (!mutated.includes(INSTALLATION_MANIFEST)) {
         mutated.push(INSTALLATION_MANIFEST);
       }
     }
 
-    rmSync(stageRoot, { recursive: true, force: true });
-    rmSync(backupRoot, { recursive: true, force: true });
+    // Commit point: live managed state is now the new installation.
+    committed = true;
+    emit("afterCommit");
   } catch (error) {
+    if (backupReady && !committed) {
+      try {
+        rollback();
+      } catch (rollbackError) {
+        try {
+          bestEffortRemove(stageRoot);
+          bestEffortRemove(backupRoot);
+        } catch {
+          // Preserve the rollback failure as the primary signal.
+        }
+        throw new PlanletError(
+          "write_conflict",
+          `Could not roll back harness installation: ${destinationPath}`,
+          {
+            details: { destination: destinationPath, rollbackFailed: true },
+            cause: new AggregateError([error, rollbackError]),
+          },
+        );
+      }
+    }
     try {
-      if (backupReady) rollback();
-    } catch (rollbackError) {
+      bestEffortRemove(stageRoot);
+      if (!committed) bestEffortRemove(backupRoot);
+    } catch (cleanupError) {
       throw new PlanletError(
         "write_conflict",
-        `Could not roll back harness installation: ${destinationPath}`,
+        `Could not publish harness installation: ${destinationPath}`,
         {
-          details: { destination: destinationPath, rollbackFailed: true },
-          cause: new AggregateError([error, rollbackError]),
+          details: {
+            destination: destinationPath,
+            cleanupFailed: true,
+            published: committed,
+          },
+          cause: new AggregateError([error, cleanupError]),
         },
       );
     }
-    rmSync(stageRoot, { recursive: true, force: true });
-    rmSync(backupRoot, { recursive: true, force: true });
     throw asWriteConflict(error, destinationPath);
   }
-  hooks.afterPublish?.();
+
+  try {
+    emit("afterCleanup");
+    bestEffortRemove(stageRoot);
+    bestEffortRemove(backupRoot);
+  } catch (cleanupError) {
+    warnings.push(
+      `Harness installation published but cleanup was incomplete at ${destinationPath}`,
+    );
+    void cleanupError;
+  }
+
+  return warnings;
 }
 
 export function installHarnessSkills(options: {
@@ -560,19 +611,25 @@ function applyInspectionWithSource(
   hooks: InstallTransactionHooks = {},
 ): HarnessInstallationSummary {
   const changed = inspection.publishSkills || inspection.writeManifest;
-  if (changed) {
-    publishDestinationTransaction(
-      inspection.destination.path,
-      source,
-      inspection.desiredManifestText,
-      inspection.actualFiles,
-      {
-        publishSkills: inspection.publishSkills,
-        writeManifest: inspection.writeManifest,
-        hooks,
-      },
-    );
-  }
+  const warnings = changed
+    ? publishDestinationTransaction(
+        inspection.destination.path,
+        source,
+        inspection.desiredManifestText,
+        [
+          ...new Set(
+            Object.keys(inspection.actualFiles).map(
+              (path) => path.split("/")[0]!,
+            ),
+          ),
+        ],
+        {
+          publishSkills: inspection.publishSkills,
+          writeManifest: inspection.writeManifest,
+          hooks,
+        },
+      )
+    : [];
 
   return {
     destination: inspection.destination.relativePath,
@@ -580,6 +637,7 @@ function applyInspectionWithSource(
     state: "installed" as const,
     changed,
     files: source.files.length,
+    ...(warnings.length > 0 ? { warnings } : {}),
   };
 }
 

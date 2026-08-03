@@ -41,12 +41,16 @@ Out of scope:
    On move failure after audit publish, leave audit in place and surface
    `auditRecorded: true` without rewriting `tasks.md`.
 3. Promote normal+unchecked completed validation from warning to throw.
-4. Stage all managed skills + manifest beside the destination, then swap with
-   full rollback; keep unselected adapter paths unresolved.
+4. Stage all managed skills + manifest, swap with pre-commit rollback, and
+   never roll back after the manifest commit point; leave cleanup leftovers
+   with warnings. Coalesce safe unselected aliases that resolve to the same
+   physical destination; ignore escaping unselected paths.
 5. Catch unexpected errors at `src/index.ts`; add `internal_error` code;
    expose details only when `PLANLET_DEBUG=1`.
-6. Pin `ci.yml` actions; add `.github/dependabot.yml`; move changelog 0.1.0 to
-   an unreleased/date-gated process documented in README and release planlet.
+6. Pin `ci.yml` actions; add `.github/dependabot.yml`; ordinary CI changelog
+   gate plus explicit `--release-date` release verification.
+7. Lock reclaim uses ownership tokens and atomic quarantine rename so two
+   reclaimers cannot delete each other's live lock.
 
 ## Acceptance Criteria
 

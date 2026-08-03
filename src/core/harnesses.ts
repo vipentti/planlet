@@ -1,4 +1,4 @@
-import { PlanletError } from "../errors/planlet-error.js";
+import { PlanletError, isPlanletError } from "../errors/planlet-error.js";
 import { resolveSafePath } from "./paths.js";
 
 export const HARNESS_ADAPTERS = Object.freeze([
@@ -81,33 +81,52 @@ export function normalizeToolSelector(
   );
 }
 
+function registryOrder(ids: Iterable<HarnessToolId>): HarnessToolId[] {
+  const wanted = new Set(ids);
+  return HARNESS_ADAPTERS.map((adapter) => adapter.id).filter((id) =>
+    wanted.has(id),
+  );
+}
+
+/**
+ * Resolves selected harness destinations. Unselected adapters that safely
+ * resolve to the same physical path are included as aliases; unselected
+ * adapters that escape or fail to resolve are ignored and do not block.
+ */
 export function resolveHarnessDestinations(
   repositoryRoot: string,
   selectedToolIds: readonly HarnessToolId[],
 ): readonly HarnessDestination[] {
   const selected = new Set<HarnessToolId>(selectedToolIds);
-  // Group by resolved path, not directory name: codex and agents share a
-  // directory, and a symlinked .claude/skills must coalesce the same way.
-  // Only selected adapters are resolved so an unselected escaping destination
-  // cannot fail the operation.
-  const aliasesByPath = new Map<string, HarnessToolId[]>();
+  const aliasesByPath = new Map<string, Set<HarnessToolId>>();
   const relativeByPath = new Map<string, string>();
+
   for (const adapter of HARNESS_ADAPTERS) {
-    if (!selected.has(adapter.id)) {
-      continue;
-    }
+    if (!selected.has(adapter.id)) continue;
     const path = resolveSafePath(repositoryRoot, adapter.skillDirectory);
-    const peers = HARNESS_ADAPTERS.filter(
-      (candidate) => candidate.skillDirectory === adapter.skillDirectory,
-    ).map((candidate) => candidate.id);
     const aliases = aliasesByPath.get(path);
     if (aliases === undefined) {
-      aliasesByPath.set(path, [...peers]);
+      aliasesByPath.set(path, new Set([adapter.id]));
       relativeByPath.set(path, adapter.skillDirectory);
     } else {
-      for (const peer of peers) {
-        if (!aliases.includes(peer)) aliases.push(peer);
+      aliases.add(adapter.id);
+    }
+  }
+
+  for (const adapter of HARNESS_ADAPTERS) {
+    if (selected.has(adapter.id)) continue;
+    let path: string;
+    try {
+      path = resolveSafePath(repositoryRoot, adapter.skillDirectory);
+    } catch (error) {
+      if (isPlanletError(error) && error.code === "unsafe_path") {
+        continue;
       }
+      continue;
+    }
+    const aliases = aliasesByPath.get(path);
+    if (aliases !== undefined) {
+      aliases.add(adapter.id);
     }
   }
 
@@ -115,12 +134,10 @@ export function resolveHarnessDestinations(
     .map(([path, aliases]) => ({
       path,
       relativePath: relativeByPath.get(path)!,
-      selectedToolIds: HARNESS_ADAPTERS.map((adapter) => adapter.id).filter(
-        (id) => aliases.includes(id) && selected.has(id),
+      selectedToolIds: registryOrder(
+        [...aliases].filter((id) => selected.has(id)),
       ),
-      aliases: HARNESS_ADAPTERS.map((adapter) => adapter.id).filter((id) =>
-        aliases.includes(id),
-      ),
+      aliases: registryOrder(aliases),
     }))
     .filter((destination) => destination.selectedToolIds.length > 0);
 }

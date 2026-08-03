@@ -159,9 +159,11 @@ the question and installs every destination, so agents and CI are unaffected.
 Record user-visible changes under `Unreleased` in
 [`CHANGELOG.md`](https://github.com/vipentti/planlet/blob/main/CHANGELOG.md).
 At release time, move those entries into a dated version section and restore an
-empty `Unreleased` section. Do not date `[0.1.0]` until the intended publish day:
-CI runs `node scripts/assert-changelog-release-ready.mjs`, which rejects a dated
-`0.1.0` header unless `PLANLET_RELEASE_DATE` matches that day.
+empty `Unreleased` section. Ordinary CI runs
+`node scripts/assert-changelog-release-ready.mjs`, which allows Unreleased-only
+notes or a structurally valid dated `[0.1.0]` section. Explicit release
+verification uses
+`node scripts/assert-changelog-release-ready.mjs --release-date YYYY-MM-DD`.
 
 ### Manual 0.1.0 bootstrap (before release automation)
 
@@ -175,7 +177,7 @@ Captain names one clean `origin/main` SHA as `BOOTSTRAP_SHA`.
    the tree is clean, `package.json` is `0.1.0`, and no release workflow is on
    the default branch.
 3. Run `npm ci`, the full verification suite, generated-skill parity, and
-   `PLANLET_RELEASE_DATE=YYYY-MM-DD node scripts/assert-changelog-release-ready.mjs`.
+   `node scripts/assert-changelog-release-ready.mjs --release-date YYYY-MM-DD`.
 4. Run `npm pack --json --pack-destination <empty-review-dir>` exactly once.
 5. Record package name/version, tarball name, integrity, shasum, SHA-256, and
    exact file list; inspect the tarball for secrets, license, personal data,
