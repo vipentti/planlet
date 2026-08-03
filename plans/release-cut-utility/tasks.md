@@ -5,36 +5,40 @@
       `--push`; strict/duplicate-flag rejection; dry-run default; clear stderr
       errors naming the failed operation; no worktree, local-ref, or remote-write
       mutations without `--execute`
-- [ ] T2 Extend `assert-changelog-release-ready.mjs` as sole changelog parser:
-      historical verify (no not-in-the-past); optional explicit date or derive;
-      stable machine-readable resolved-date output (e.g. `--print-release-date`
-      or small JSON); mutually exclusive with prep `--release-date`; preserve CI
-      and prep modes. Helper tests: derive/print, match, mismatch,
-      malformed/duplicate sections, stable output, unchanged CI/prep including
-      past-date rejection
-- [ ] T3 Implement remote-ref probe helper classifying found / absent / failed
-      for main, release branch, and tags; dry-run purity (`ls-remote` only, no
-      fetch); `--execute` fetches explicitly; tests for absent vs broken remote
-- [ ] T4 Implement `prepare` mode selection then fresh path: discover
-      local/remote branch and open/closed/merged PRs first; fresh-only clean-tree
-      + `HEAD ==` remote main tip; changelog cut; package/lock alignment; assert
-      `--release-date`; notes smoke; create `release/v<version>` signed commit
-- [ ] T5 Implement `prepare` resume: commit invariants; push resume; PR-state
-      handling (open matching report, merged matching already-complete, closed
-      unmerged refuse, conflicting/ambiguous refuse, create only when no relevant
-      PR); never recreate SHAs; never delete/force-update
-- [ ] T6 Implement `tag` fresh/resume: `HEAD ==` remote main tip; invoke helper
-      historical verify and consume machine-readable date (no changelog parse in
-      `release.mjs`); fresh create annotated signed tag; resume validate local-only
-      tag then idempotent report or `--push`; remote tag found = hard refuse;
-      never recreate/force-update tags
-- [ ] T7 Add `release:prepare` and `release:tag` scripts to `package.json`; update
-      `RELEASING.md` for fresh/resume prepare and tag, helper-owned dates, PR
-      states, ls-remote found/absent/failed, and local-tag-then-push workflow
-- [ ] T8 Add fixture/subprocess tests (temp repos, bare remotes, stubbed `gh` /
-      signing): dry-run purity; fresh prepare; resume push/PR; PR open/merged/
-      closed-unmerged/conflicting; tag push-fail then retry; local-only tag
-      idempotent; local+push once; invalid local tag refuse; remote tag refuse; no
-      force/recreate; ls-remote absent vs failed; stale main tip; later-UTC-day tag
-- [ ] T9 Run format/lint/type-check/build/test and `git diff --check`; fix
+- [ ] T2 Extend `assert-changelog-release-ready.mjs` with exact contract:
+      `--verify-release`, optional `--verify-release-date YYYY-MM-DD`, optional
+      `--print-release-date` (stdout exactly `YYYY-MM-DD\n`); mutual exclusion vs
+      `--release-date`; usage errors for illegal combos/duplicates; preserve CI and
+      strict `--release-date`. Helper tests for derive/print, match, mismatch,
+      malformed/duplicate sections, exact stdout, illegal flag combos, unchanged
+      CI/prep past rejection
+- [ ] T3 Implement remote-ref probe using `git ls-remote --exit-code`: exit `0` +
+      exact ref (tag peel-pair OK) → found; exit `2` + no match → absent; else
+      failed; no stderr inference; prefix nonmatch ≠ found; remote main absent
+      fail-closed. Tests: found, absent, inaccessible remote, malformed URL, peel
+      pair, prefixed nonmatch
+- [ ] T4 Implement signature helpers: `git verify-commit` / `git verify-tag` exit
+      `0` only; GPG/SSH via Git; no allowlist; missing verify config fails closed;
+      resume accepts other valid keys. Fixture/stub cases: valid, invalid,
+      unsigned/lightweight, tooling missing
+- [ ] T5 Implement `prepare` mode selection then fresh path: discover
+      local/remote branch and open/closed/merged PRs first; fresh clean-tree +
+      `HEAD ==` remote main tip; changelog cut; package/lock alignment; assert
+      `--release-date`; notes smoke; create signed `release/v<version>` commit
+- [ ] T6 Implement `prepare` resume: commit invariants including verify-commit;
+      helper `--verify-release --print-release-date` for changelog; PR-state
+      handling (open/merged/closed-unmerged/conflicting); never recreate SHAs;
+      never delete/force-update
+- [ ] T7 Implement `tag` fresh/resume: `HEAD ==` remote main tip; helper
+      `--verify-release --print-release-date` (+ `--verify-release-date` when
+      operator passes `--release-date`); fresh annotated signed tag; resume
+      validate local tag (verify-tag) then idempotent report or `--push`; remote
+      tag found = hard refuse; never recreate/force-update
+- [ ] T8 Add `release:prepare` and `release:tag` to `package.json`; update
+      `RELEASING.md` with exact assert flags, crypto-validity-only signing policy,
+      ls-remote exit classification, fresh/resume flows, and PR states
+- [ ] T9 Add fixture/subprocess tests covering T2–T7 behaviors (temp repos, bare
+      remotes, stubbed `gh`/verify): dry-run purity; prepare/tag resume paths; PR
+      states; tag push-fail retry; ls-remote matrix; later-UTC-day tag
+- [ ] T10 Run format/lint/type-check/build/test and `git diff --check`; fix
       regressions in release helpers touched by this work
