@@ -22,6 +22,21 @@ You normally drive Planlet through the skills and let your agent call the CLI.
 
 Planlet requires Node.js 22 or newer.
 
+Until the official `planlet` package is published and verified on npm, install
+from a source checkout only. Do not run `npm install -g planlet` or
+`npx planlet` yet: an unpublished name can 404, and a colliding name could
+resolve to an unrelated package.
+
+```sh
+git clone https://github.com/vipentti/planlet.git
+cd planlet
+npm ci
+npm run build
+node dist/planlet.mjs <command>
+```
+
+After the official package is published and verified:
+
 ```sh
 npm install -g planlet
 ```
@@ -138,6 +153,18 @@ the question and installs every destination, so agents and CI are unaffected.
 | `npm run build`         | Build the executable at `dist/planlet.mjs`      |
 | `npm run skills:update` | Build CLI and refresh installed Planlet skills  |
 | `npm test`              | Run TypeScript tests with `tsx` and `node:test` |
+
+## Changelog and releases
+
+Record user-visible changes under `Unreleased` in
+[`CHANGELOG.md`](https://github.com/vipentti/planlet/blob/main/CHANGELOG.md).
+At release time, move those entries into a dated version section and restore an
+empty `Unreleased` section. From a source checkout, use
+`node scripts/changelog.mjs <version>` to extract release notes; that helper is
+not included in the published npm package. Follow the
+[release automation plan](https://github.com/vipentti/planlet/blob/main/plans/release-automation/plan.md)
+for publication gates and the phased landing that keeps the first npm bootstrap
+manual while tag-triggered automation lands separately.
 
 ## Links
 

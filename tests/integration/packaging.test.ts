@@ -49,6 +49,7 @@ test("the published tarball installs and runs through its bin shim", () => {
     for (const expected of [
       "dist/planlet.mjs",
       "package.json",
+      "CHANGELOG.md",
       "README.md",
       "LICENSE",
       "skills/planlet-plan/SKILL.md",
