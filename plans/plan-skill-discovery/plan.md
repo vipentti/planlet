@@ -53,7 +53,7 @@ In guidance, define “small task” as one delivered outcome a typical agent ca
 - `npm run type-check`
 - `npm run build`
 - `npm test` (includes skill-contract and scenario evidence checks)
-- `node dist/planlet.mjs tools` reports planlet skill destinations installed/in sync
+- `node dist/planlet.mjs tools` reports every planlet skill destination as `installed`
 - `git diff --check`
 - `git status --porcelain` (expect empty after committed work, or only intentional planlet/product diffs during implementation; catches T6 half-done install drift)
 - Manual review of skill/guidance/design/eval diffs for portability (no vendor-specific tool dependence) and no copied external skill prose
