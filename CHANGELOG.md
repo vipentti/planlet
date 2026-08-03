@@ -6,6 +6,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and thi
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-08-03
+
+### Added
+
+- Tag-triggered GitHub Actions release workflow that publishes `@vipentti/planlet` with npm provenance and creates matching GitHub releases from the changelog.
+
+### Changed
+
+- README installation leads with the published `@vipentti/planlet` package and documents the signed-tag release flow (Environment `release`, `v*` tag rules).
+
 ## [0.1.0] - 2026-08-03
 
 First release. Everything below is new, so these notes describe what Planlet is rather than how it changed.
@@ -21,5 +31,6 @@ First release. Everything below is new, so these notes describe what Planlet is 
 - Unexpected failures surface as a structured `internal_error` with no stack or path leakage; set `PLANLET_DEBUG=1` for diagnostic detail.
 - Planlet and repository paths reject directory traversal and symlink escape, and file writes are atomic or recoverable.
 
-[Unreleased]: https://github.com/vipentti/planlet/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/vipentti/planlet/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/vipentti/planlet/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/vipentti/planlet/releases/tag/v0.1.0
