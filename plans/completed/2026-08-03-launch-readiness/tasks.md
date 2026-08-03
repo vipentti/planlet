@@ -19,7 +19,7 @@
 - [x] T17 Changelog discover≠validate for Unreleased/pkg.version; reject malformed headings and bad argv
 - [x] T18 Collapse lock to one file; release-failure warnings; validate-before-lock; ponytail micro-cuts
 - [x] T19 Full verification and commit remaining PR #6 review fixes (no push)
-- [x] T20 Publish locks atomically via staged holder link; reject past changelog release dates; drop repository-state changelog test
+- [x] T20 Publish locks atomically via staged holder link; reject past changelog release dates under `--release-date` release verification; drop repository-state changelog test
 
 ## Completion
 

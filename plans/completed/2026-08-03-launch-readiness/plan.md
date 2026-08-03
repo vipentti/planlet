@@ -35,9 +35,12 @@ Out of scope:
 
 ## Approach
 
-1. Add `src/core/planlet-lock.ts`: exclusive lock directory under
-   `plans/.planlet-locks/<slug>`, PID metadata, reclaim only if holder PID is
-   dead, `write_conflict` on live contention, release in `finally`.
+1. Add `src/core/planlet-lock.ts`: exclusive per-slug lock holding PID
+   metadata, reclaim only if holder PID is dead, `write_conflict` on live
+   contention, release in `finally`. Locks were originally planned under
+   `plans/.planlet-locks/<slug>`; they live in the OS temp directory instead,
+   in a namespace keyed by owner and canonical repository root, so a transient
+   holder file never appears in `git status` or an editor tree.
 2. Wrap `updateTask` and `completePlanlet` critical sections with the lock.
    On move failure after audit publish, leave audit in place and surface
    `auditRecorded: true` without rewriting `tasks.md`.
