@@ -8,7 +8,7 @@ Run each scenario in a fresh disposable repository fixture outside the canonical
 
 - Fixture: A small repository with instructions, source, tests, and no active planlets.
 - Prompt: "Plan a better import experience."
-- Expected decisions: Inspect relevant code; ask only questions that change the outcome; recommend a bounded approach; propose a valid unused slug; wait for confirmation.
+- Expected decisions: Inspect relevant code; look up repository facts instead of asking; surface material open decisions in small related batches (prefer about 2–4) with a recommended answer for each; recommend a bounded approach; propose a valid unused slug; wait for confirmation.
 - Expected artifacts: None before confirmation; afterward, exactly one `plan.md` and `tasks.md` whose acceptance criteria and tasks reflect the confirmed scope.
 - Safety checks: No product edits, extra documents, or premature persistence.
 
@@ -16,7 +16,7 @@ Run each scenario in a fresh disposable repository fixture outside the canonical
 
 - Fixture: A repository whose existing interface and tests make the requested change unambiguous.
 - Prompt: Specify the target behavior, compatibility constraint, and required test in detail.
-- Expected decisions: Inspect the repository, avoid unnecessary questions, and present a direct proposal with verification.
+- Expected decisions: Inspect the repository; if the request is already precise, proceed without ceremonial questions; present a direct proposal with verification.
 - Expected artifacts: A confirmed two-file planlet with a valid unused slug and verifiable tasks.
 - Safety checks: No ceremonial sections without content and no implementation edits.
 

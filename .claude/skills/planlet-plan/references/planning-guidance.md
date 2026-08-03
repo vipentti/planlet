@@ -4,11 +4,11 @@
 
 Read repository instructions, relevant source and tests, package or build metadata, and nearby plans before recommending work. Trace the current behavior far enough to identify integration boundaries and verification surfaces. Do not edit product files during this workflow.
 
-Ask a question only when different answers would materially change scope, approach, acceptance criteria, or risk. State a reasonable recommendation with the question when possible. A precise request can move directly from investigation to a proposal.
+Look up repository facts instead of asking. For a vague or incomplete request, surface material open decisions that affect outcome, boundaries, constraints, acceptance, verification, or task sizing; ask in small related batches and prefer about 2–4 related decisions per discovery batch; ask one-at-a-time only when answers depend on each other; include a recommended answer with each decision. Narrow into a concrete proposal only after those decisions are settled enough for a fresh agent handoff. If the request is already precise, proceed without ceremonial questions.
 
 ## Shape a focused plan
 
-A useful `plan.md` lets a capable agent continue in a fresh session. Normally include Summary, Scope, Approach, Acceptance Criteria, and Verification. Add Motivation, Out of Scope, or Risks and Considerations only when they remove ambiguity or prevent scope drift.
+A useful `plan.md` lets a capable agent continue in a fresh session with enough outcome, boundaries, acceptance, and verification detail for an independent handoff. Normally include Summary, Scope, Approach, Acceptance Criteria, and Verification. Add Motivation, Out of Scope, or Risks and Considerations only when they remove ambiguity or prevent scope drift.
 
 Keep implementation details at the level needed for a reliable handoff. Name important components, interfaces, migrations, compatibility constraints, and test boundaries, but do not duplicate the task list or prescribe incidental edits discovered only during implementation.
 
@@ -22,7 +22,7 @@ Committed verification evidence is exceptional and absent by default. Tests, lin
 
 Map the chosen approach and acceptance criteria to an ordered checklist of verifiable outcomes:
 
-- Make each task independently understandable and small enough to verify.
+- Make each task independently understandable and small enough to verify. A small task is one delivered outcome a typical agent can implement and verify without guessing scope.
 - Describe a delivered result, not an agent thought process.
 - Separate meaningful verification into explicit tasks when it spans several changes or gates completion.
 - Order prerequisites before their consumers while avoiding dependency notation.

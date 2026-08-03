@@ -680,7 +680,7 @@ The required `name` and `description` frontmatter should make each skill discove
 Responsibilities:
 
 - Explore the user's request and repository.
-- Ask only questions that materially affect the plan.
+- For vague or incomplete requests, surface material open decisions (outcome, boundaries, constraints, acceptance, verification, task sizing) in small related batches with a recommended answer; look up repository facts instead of asking; for precise requests, skip ceremonial questions and proceed to analysis and proposal.
 - Compare options and recommend an approach.
 - Define scope, exclusions, acceptance criteria, and the verification strategy, without recording run results.
 - Propose the slug.
