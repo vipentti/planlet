@@ -4,7 +4,11 @@
     "skill": "planlet-plan",
     "prompt": "Plan a better search experience.",
     "expectedDecision": "clarify-material-unknowns",
-    "evidence": ["Clarify only uncertainties that materially affect scope"]
+    "evidence": [
+      "prefer about 2–4 related decisions",
+      "with a recommended answer for each decision",
+      "Look up repository facts instead of asking"
+    ]
   },
   {
     "id": "precise-planning",
