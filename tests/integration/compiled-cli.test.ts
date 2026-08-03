@@ -310,3 +310,83 @@ test("compiled init resolves and installs packaged canonical skills", () => {
     );
   });
 });
+
+test("compiled validate treats completed normal+unchecked as invalid_plan", () => {
+  withRepository((root) => {
+    const archive = join(root, "plans", "completed", "2026-07-22-bad-complete");
+    mkdirSync(archive, { recursive: true });
+    writeFileSync(join(archive, "plan.md"), "# Bad Complete\n");
+    writeFileSync(
+      join(archive, "tasks.md"),
+      "# Tasks: Bad Complete\n\n- [x] T1 Done\n- [ ] T2 Left\n\n## Completion\n\n- Completed at: 2026-07-22T12:00:00.000Z\n- Mode: normal\n",
+    );
+
+    const targeted = runCli(["validate", "bad-complete"], root);
+    assert.equal(targeted.exitCode, EXIT_CODES.invalidPlan);
+    assert.match(targeted.stdout, /invalid_plan/);
+    assert.match(targeted.stdout, /unchecked tasks without an override/);
+
+    const all = runCli(["validate", "--all"], root);
+    assert.equal(all.exitCode, EXIT_CODES.invalidPlan);
+    assert.match(all.stdout, /invalid_plan/);
+  });
+});
+
+test("production entry emits internal_error without stack by default", async () => {
+  const { runProductionEntry, renderUnexpectedError } =
+    await import("../../src/production-entry.js");
+  const rendered = renderUnexpectedError(new Error("boom /tmp/secret"));
+  assert.equal(rendered.exitCode, EXIT_CODES.operational);
+  assert.match(rendered.stderr, /internal_error/);
+  assert.doesNotMatch(rendered.stderr, /boom|\/tmp\/secret|stack/i);
+
+  process.env.PLANLET_DEBUG = "1";
+  try {
+    const debug = renderUnexpectedError(new Error("boom /tmp/secret"));
+    assert.match(debug.stderr, /boom \/tmp\/secret/);
+  } finally {
+    delete process.env.PLANLET_DEBUG;
+  }
+
+  const { PlanletError } = await import("../../src/errors/planlet-error.js");
+  const passthrough = renderUnexpectedError(
+    new PlanletError("plan_not_found", "Planlet not found: missing", {
+      details: { slug: "missing" },
+      next: "planlet list",
+    }),
+  );
+  assert.match(passthrough.stderr, /plan_not_found/);
+  assert.match(passthrough.stderr, /planlet list/);
+  assert.doesNotMatch(passthrough.stderr, /internal_error/);
+
+  const chunks: string[] = [];
+  const write = process.stderr.write.bind(process.stderr);
+  process.stderr.write = ((chunk: string) => {
+    chunks.push(String(chunk));
+    return true;
+  }) as typeof process.stderr.write;
+  let code: number;
+  try {
+    code = await runProductionEntry(async () => {
+      throw new Error("unexpected path /home/secret");
+    });
+  } finally {
+    process.stderr.write = write;
+  }
+  assert.equal(code, EXIT_CODES.operational);
+  assert.match(chunks.join(""), /internal_error/);
+  assert.doesNotMatch(chunks.join(""), /\/home\/secret/);
+});
+
+test("leftover harness recovery directories emit top-level next on stderr", () => {
+  withRepository((root) => {
+    const skills = join(root, ".agents", "skills");
+    mkdirSync(join(skills, ".planlet-bak-dead"), { recursive: true });
+    const result = runCli(["init", "--tools", "agents"], root);
+    assert.equal(result.exitCode, EXIT_CODES.filesystemConflict);
+    assert.match(result.stderr, /write_conflict/);
+    assert.match(result.stderr, /Inspect leftover/);
+    assert.match(result.stderr, /leftoverPaths|planlet-bak-dead/);
+    assert.doesNotMatch(result.stdout, /Inspect leftover/);
+  });
+});

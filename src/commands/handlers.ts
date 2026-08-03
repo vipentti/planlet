@@ -111,26 +111,26 @@ export function handleHarnessInit(
   arguments_: HarnessCommandArguments,
   context: ExecutionContext,
 ): ExitCode {
-  return emit(context, () => ({
-    data: installHarnessSkills({
+  return emit(context, () =>
+    installHarnessSkills({
       repositoryRoot: context.root,
       operation: "init",
       ...arguments_,
     }),
-  }));
+  );
 }
 
 export function handleHarnessUpdate(
   arguments_: HarnessCommandArguments,
   context: ExecutionContext,
 ): ExitCode {
-  return emit(context, () => ({
-    data: installHarnessSkills({
+  return emit(context, () =>
+    installHarnessSkills({
       repositoryRoot: context.root,
       operation: "update",
       ...arguments_,
     }),
-  }));
+  );
 }
 
 export function handleTools(context: ExecutionContext): ExitCode {

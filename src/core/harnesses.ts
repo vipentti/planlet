@@ -81,32 +81,51 @@ export function normalizeToolSelector(
   );
 }
 
+/**
+ * Resolves selected harness destinations. Unselected adapters that safely
+ * resolve to the same physical path are included as aliases; unselected
+ * adapters that escape or fail to resolve are ignored and do not block.
+ */
 export function resolveHarnessDestinations(
   repositoryRoot: string,
   selectedToolIds: readonly HarnessToolId[],
 ): readonly HarnessDestination[] {
   const selected = new Set<HarnessToolId>(selectedToolIds);
-  // Group by resolved path, not directory name: codex and agents share a
-  // directory, and a symlinked .claude/skills must coalesce the same way.
-  const aliasesByPath = new Map<string, HarnessToolId[]>();
-  const relativeByPath = new Map<string, string>();
-  for (const adapter of HARNESS_ADAPTERS) {
-    const path = resolveSafePath(repositoryRoot, adapter.skillDirectory);
-    const aliases = aliasesByPath.get(path);
-    if (aliases === undefined) {
-      aliasesByPath.set(path, [adapter.id]);
-      relativeByPath.set(path, adapter.skillDirectory);
+  const resolved = HARNESS_ADAPTERS.map((adapter) => {
+    try {
+      return {
+        adapter,
+        path: resolveSafePath(repositoryRoot, adapter.skillDirectory),
+      };
+    } catch (error) {
+      if (selected.has(adapter.id)) throw error;
+      return { adapter, path: undefined };
+    }
+  });
+
+  const byPath = new Map<string, HarnessAdapter[]>();
+  for (const entry of resolved) {
+    if (entry.path === undefined) continue;
+    const bucket = byPath.get(entry.path);
+    if (bucket === undefined) {
+      byPath.set(entry.path, [entry.adapter]);
     } else {
-      aliases.push(adapter.id);
+      bucket.push(entry.adapter);
     }
   }
 
-  return [...aliasesByPath]
-    .map(([path, aliases]) => ({
-      path,
-      relativePath: relativeByPath.get(path)!,
-      selectedToolIds: aliases.filter((id) => selected.has(id)),
-      aliases,
-    }))
-    .filter((destination) => destination.selectedToolIds.length > 0);
+  return [...byPath]
+    .map(([path, adapters]) => {
+      const selectedAdapters = adapters.filter((adapter) =>
+        selected.has(adapter.id),
+      );
+      if (selectedAdapters.length === 0) return undefined;
+      return {
+        path,
+        relativePath: selectedAdapters[0]!.skillDirectory,
+        selectedToolIds: selectedAdapters.map((adapter) => adapter.id),
+        aliases: adapters.map((adapter) => adapter.id),
+      };
+    })
+    .filter((destination) => destination !== undefined);
 }

@@ -93,3 +93,25 @@ test("renders every stable error on stderr with its mapped exit code", () => {
     });
   }
 });
+
+test("details.next is stripped while top-level next is preserved", () => {
+  const error = new PlanletError("write_conflict", "leftover dirs", {
+    details: {
+      leftoverPaths: ["/tmp/bak"],
+      next: "hidden",
+    },
+    next: "Inspect leftover recovery dirs",
+  });
+  const structured = error.toStructuredError();
+  assert.equal(structured.next, "Inspect leftover recovery dirs");
+  const rendered = renderToonError(structured);
+  assert.deepEqual(decode(rendered.stderr.trimEnd()), {
+    error: {
+      code: "write_conflict",
+      message: "leftover dirs",
+      leftoverPaths: ["/tmp/bak"],
+    },
+    next: "Inspect leftover recovery dirs",
+  });
+  assert.doesNotMatch(rendered.stderr, /hidden/);
+});

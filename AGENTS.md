@@ -75,6 +75,23 @@ Yes, this duplicates content. Do not gitignore or delete these copies to remove 
 
 Regenerate them with `node dist/planlet.mjs update` after changing anything under `skills/`, and commit the result. `planlet tools` reporting every destination as `installed` means the tracked copies match the canonical sources.
 
+## Rejected simplifications
+
+Each item below has been proposed and declined more than once. Simpler is the
+right instinct; these are the cases where the simpler version was measured
+against a specific failure and lost. Read the named threat before proposing the
+cut again, and if you still think it should go, say which threat you are
+accepting rather than restating the line count.
+
+- **Lock ownership token + rename-aside release** (`src/core/planlet-lock.ts`). Not PID-reuse insurance — a dead process never releases. The token makes the recovery our own error text invites survivable: a user who removes a lock that turned out to be live lets a second holder in, and a read-then-unlink release would delete that holder's lock mid-write. Release renames aside and deletes only on a matching quarantined token.
+- **No automatic stale-lock reclaim.** Remove-then-create admits two writers on one dead holder. Manual removal only, until `flock(2)`/`LockFileEx`.
+- **Hashed lock-directory name.** A readable encoding of the checkout path exceeds the 255-byte filename limit on deep checkouts and publishes the user's directory layout into a world-readable `/tmp`.
+- **Release-failure warning plumbing** (`OwnedLockRunResult.releaseWarning`). A lock that outlives a *successful* operation silently wedges the next run. Letting it throw turns success into failure; catching at the CLI boundary cannot tell whether the operation ran.
+- **Structured double-fault error.** When the operation and the release both fail, the operation's code and the lock path must survive. A bare `AggregateError` reaches the CLI as `internal_error` with nothing to act on, and `src/core/` writes no output, so stderr is not an alternative.
+- **Lock dependency injection** (`write`, `rename`, `remove`, `pid`). The seams for the acquire-failure and release-failure tests. Removing them removes those tests.
+- **`transactionHooks`** (`src/core/harness-installer.ts`, marked `@internal`). The rollback, recovery-directory, and cleanup-warning paths are unreachable through the public API. Three steps, one per distinct outcome.
+- **`--release-date`** (`scripts/assert-changelog-release-ready.mjs`). Not dead code because CI does not pass it: the caller is the human doing a release, per `README.md`. It is what stops a past-dated release. The duplicate-flag pre-scan stays for the same reason — silent last-wins would ship the wrong date.
+
 ## Architecture and implementation direction
 
 Follow the design's recommended TypeScript and Node.js architecture unless an approved planlet changes it. Keep domain logic independent from CLI argument parsing and output rendering. Prefer Node built-ins, minimal runtime dependencies, deterministic output, structured errors, safe path resolution, and atomic writes.

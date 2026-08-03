@@ -6,24 +6,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and thi
 
 ## [Unreleased]
 
-## [0.1.0] - 2026-07-31
+First release. Everything below is new, so these notes describe what Planlet is rather than how it changed.
 
 ### Added
 
-- Repository-local planlets with deterministic create, inspect, validate, task, and completion commands.
-- Portable planning, implementation, and completion skills for Agent Skills-compatible tools and Claude Code.
-- Project-local skill installation and update support for `agents`, `claude`, and `codex` destinations.
-- Bundled `planlet` executable for Node.js 22 and newer.
+- Repository-local planlets: a plan and its tasks as two Markdown files under `plans/<slug>/`, with `plans/completed/<YYYY-MM-DD>-<slug>/` for finished work.
+- `planlet` CLI for creating, inspecting, validating, and completing planlets, checking and unchecking tasks, and reporting progress. Deterministic output and structured error codes throughout.
+- Planning, implementation, and completion skills for Claude Code and other Agent Skills-compatible tools, installable per project with `planlet init` and refreshed with `planlet update`. `planlet init` prompts for destinations when run interactively and stays deterministic when it is not.
+- Bundled executable requiring only Node.js 22 or newer.
+- Concurrent `task check`, `task uncheck`, `complete`, and skill installs are serialized by write locks held outside the repository, so a lock never appears in `git status`. A competing run fails with `write_conflict` and guidance rather than applying a stale read-modify-write. Stale locks require confirmed manual removal; release renames aside and deletes only when the ownership token still matches.
+- Interrupted work is recoverable: skill installation rolls back to its exact prior state, an interrupted completion keeps its audit record so the move can be resumed, and unrelated skills in a shared destination are never touched.
+- Unexpected failures surface as a structured `internal_error` with no stack or path leakage; set `PLANLET_DEBUG=1` for diagnostic detail.
+- Planlet and repository paths reject directory traversal and symlink escape, and file writes are atomic or recoverable.
 
-### Changed
-
-- Interactive `planlet init` prompts for skill destinations while non-interactive use remains deterministic.
-- Documentation now leads with the skill-first workflow and complete CLI reference.
-
-### Security
-
-- Repository and planlet paths reject traversal and symlink escape.
-- Planlet creation, task updates, skill updates, and completion use recoverable or atomic filesystem operations.
-
-[Unreleased]: https://github.com/vipentti/planlet/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/vipentti/planlet/releases/tag/v0.1.0
+[Unreleased]: https://github.com/vipentti/planlet/commits/main

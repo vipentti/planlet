@@ -13,6 +13,7 @@ export const ERROR_CODES = [
   "unsupported_tool",
   "unsafe_path",
   "write_conflict",
+  "internal_error",
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];
@@ -44,4 +45,5 @@ export const ERROR_EXIT_CODES: Readonly<Record<ErrorCode, ExitCode>> =
     unsupported_tool: EXIT_CODES.usage,
     unsafe_path: EXIT_CODES.filesystemConflict,
     write_conflict: EXIT_CODES.filesystemConflict,
+    internal_error: EXIT_CODES.operational,
   });

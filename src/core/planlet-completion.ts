@@ -12,6 +12,10 @@ import {
 import { resolve } from "node:path";
 
 import type { PlanSummary } from "./models.js";
+import {
+  withPlanletLock,
+  type PlanletLockDependencies,
+} from "./planlet-lock.js";
 import { resolveSafePath, tryLstat } from "./paths.js";
 import {
   assertValidSlug,
@@ -36,6 +40,7 @@ export interface CompletePlanletDependencies {
   readonly moveDirectory: (source: string, destination: string) => void;
   readonly remove: (path: string) => void;
   readonly temporaryName: (slug: string) => string;
+  readonly lock?: Partial<PlanletLockDependencies>;
 }
 
 export interface CompletePlanletResult {
@@ -257,13 +262,35 @@ function resumeRecordedCompletion(
 /**
  * Records completion with an atomic tasks.md replacement, then moves the whole
  * planlet. The clock is read exactly once and that instant determines both the
- * audit timestamp and archive date.
+ * audit timestamp and archive date. The full sequence runs under the per-planlet
+ * write lock shared with task updates.
  */
 export function completePlanlet(
   options: CompletePlanletOptions,
 ): CompletePlanletResult {
   const slug = assertValidSlug(options.slug);
   const dependencies = { ...DEFAULT_DEPENDENCIES, ...options.dependencies };
+  const { value, releaseWarning } = withPlanletLock(
+    options.repositoryRoot,
+    slug,
+    () => completePlanletLocked(options, dependencies, slug),
+    dependencies.lock,
+  );
+  if (releaseWarning === undefined) return value;
+  return {
+    ...value,
+    summary: {
+      ...value.summary,
+      warnings: [...value.summary.warnings, releaseWarning],
+    },
+  };
+}
+
+function completePlanletLocked(
+  options: CompletePlanletOptions,
+  dependencies: CompletePlanletDependencies,
+  slug: string,
+): CompletePlanletResult {
   const plansPath = resolveSafePath(options.repositoryRoot, "plans");
   // Keep the lexical planlet entry as the move source. resolveSafePath follows
   // symlinks, which is correct for containment checks but unsafe for a rename.
@@ -408,48 +435,13 @@ export function completePlanlet(
     assertActivePlanletDirectory(source, slug);
     dependencies.moveDirectory(source, destination);
   } catch (error) {
-    let rollbackCreated = false;
-    let rollbackPublished = false;
-    let rollbackFailure: unknown;
-    let rollbackPath: string | undefined;
-    try {
-      rollbackPath = resolveSafePath(source, dependencies.temporaryName(slug));
-      const mode = statSync(tasksPath).mode & 0o777;
-      dependencies.writeFile(rollbackPath, tasksMarkdown, mode);
-      rollbackCreated = true;
-      dependencies.replaceFile(rollbackPath, tasksPath);
-      rollbackPublished = true;
-    } catch (rollbackError) {
-      rollbackFailure = rollbackError;
-    }
-
-    if (rollbackCreated && !rollbackPublished && rollbackPath !== undefined) {
-      try {
-        dependencies.remove(rollbackPath);
-      } catch (cleanupError) {
-        rollbackFailure = new AggregateError(
-          rollbackFailure === undefined
-            ? [cleanupError]
-            : [rollbackFailure, cleanupError],
-          `Completion movement and rollback cleanup failed: ${slug}`,
-        );
-      }
-    }
-
-    if (rollbackPublished) {
-      throw asWriteConflict(error, slug, {
-        source,
-        destination,
-        auditRecorded: false,
-        auditRolledBack: true,
-      });
-    }
+    // Leave the published audit in place. Rewriting tasks.md here could clobber
+    // concurrent edits; resumeRecordedCompletion can finish the move later.
     throw asWriteConflict(error, slug, {
       source,
       destination,
       auditRecorded: true,
-      auditRollbackFailed: true,
-      ...(rollbackFailure === undefined ? {} : { rollbackFailure: true }),
+      auditRolledBack: false,
     });
   }
 

@@ -19,6 +19,8 @@ import {
   type HarnessToolId,
 } from "./harnesses.js";
 import { resolveSafePath, tryLstat } from "./paths.js";
+import { withHarnessInstallLock } from "./planlet-lock.js";
+import type { PlanletLockDependencies } from "./planlet-lock.js";
 import {
   enumerateCanonicalSkills,
   sha256,
@@ -49,6 +51,12 @@ export interface InstallationSummary {
   readonly changed: boolean;
   readonly plansInitialized: boolean;
   readonly destinations: readonly HarnessInstallationSummary[];
+}
+
+/** Summary for stdout plus diagnostics for stderr, never mixed into the data. */
+export interface InstallationOutcome {
+  readonly data: InstallationSummary;
+  readonly warnings: readonly string[];
 }
 
 export interface DetectedHarness {
@@ -246,10 +254,34 @@ function sameRecord(
   );
 }
 
+function assertNoLeftoverRecoveryDirs(destinationPath: string): void {
+  if (pathKind(destinationPath) !== "directory") return;
+  const leftovers = readdirSync(destinationPath)
+    .filter(
+      (name) =>
+        name.startsWith(".planlet-bak-") || name.startsWith(".planlet-tx-"),
+    )
+    .sort();
+  if (leftovers.length === 0) return;
+  const leftoverPaths = leftovers.map((name) => join(destinationPath, name));
+  throw new PlanletError(
+    "write_conflict",
+    `Harness destination has leftover recovery directories: ${destinationPath}`,
+    {
+      details: {
+        destination: destinationPath,
+        leftoverPaths,
+      },
+      next: `Inspect leftover .planlet-bak-* / .planlet-tx-* under ${destinationPath}, restore managed files from backup if needed, remove the leftover dirs only when no install is running, then retry`,
+    },
+  );
+}
+
 function inspectDestination(
   destination: HarnessDestination,
   source: CanonicalSkillSource,
 ): DestinationInspection {
+  assertNoLeftoverRecoveryDirs(destination.path);
   const manifestPath = join(destination.path, INSTALLATION_MANIFEST);
   const manifestKind = pathKind(manifestPath);
   if (manifestKind === "directory" || manifestKind === "symlink") {
@@ -324,54 +356,189 @@ function asWriteConflict(error: unknown, destination: string): PlanletError {
 }
 
 /**
- * Builds `name` beside its destination and swaps it in with one rename, keeping
- * the previous copy as a backup that is restored if any step fails.
+ * Fault-injection seams for the publish transaction. Production never sets
+ * hooks; they exist because the recovery paths below cannot be reached through
+ * the public API otherwise. Three steps, one per distinct outcome: a throw at
+ * `afterReplaceSkill` rolls back (and fires per skill, so a fault mid-loop
+ * exercises a partial rollback), at `duringRollback` leaves recovery
+ * directories, at `beforeCleanup` publishes but warns. Adding a step means a
+ * new outcome, not a new place to throw.
  */
-function atomicReplace(
-  destinationPath: string,
-  name: string,
-  write: (staging: string) => void,
-): void {
-  const target = join(destinationPath, name);
-  const token = randomUUID();
-  const staging = join(destinationPath, `.${name}.stage-${token}`);
-  const backup = join(destinationPath, `.${name}.backup-${token}`);
-  let backedUp = false;
-  try {
-    write(staging);
-    if (pathKind(target) !== "missing") {
-      renameSync(target, backup);
-      backedUp = true;
-    }
-    renameSync(staging, target);
-    if (backedUp) rmSync(backup, { recursive: true, force: true });
-  } catch (error) {
-    rmSync(staging, { recursive: true, force: true });
-    if (backedUp && pathKind(target) === "missing") renameSync(backup, target);
-    throw asWriteConflict(error, destinationPath);
-  }
+export type InstallTxStep =
+  "afterReplaceSkill" | "duringRollback" | "beforeCleanup";
+
+export interface InstallTransactionHooks {
+  readonly onStep?: (step: InstallTxStep, detail?: string) => void;
 }
 
-function publishSkill(
-  destinationPath: string,
+function writeSkillTree(
+  stagingSkillPath: string,
   skill: string,
   source: CanonicalSkillSource,
 ): void {
-  atomicReplace(destinationPath, skill, (staging) => {
-    mkdirSync(staging);
-    for (const file of source.files.filter((entry) => entry.skill === skill)) {
-      const relativePath = file.relativePath.slice(skill.length + 1);
-      const targetFile = resolveSafePath(staging, ...relativePath.split("/"));
-      mkdirSync(dirname(targetFile), { recursive: true });
-      writeFileSync(targetFile, file.content, { flag: "wx" });
-    }
-  });
+  mkdirSync(stagingSkillPath);
+  for (const file of source.files.filter((entry) => entry.skill === skill)) {
+    const relativePath = file.relativePath.slice(skill.length + 1);
+    const targetFile = resolveSafePath(
+      stagingSkillPath,
+      ...relativePath.split("/"),
+    );
+    mkdirSync(dirname(targetFile), { recursive: true });
+    writeFileSync(targetFile, file.content, { flag: "wx" });
+  }
 }
 
-function publishManifest(destinationPath: string, content: string): void {
-  atomicReplace(destinationPath, INSTALLATION_MANIFEST, (staging) => {
-    writeFileSync(staging, content, { encoding: "utf8", flag: "wx" });
-  });
+function moveManagedEntry(source: string, destination: string): void {
+  mkdirSync(dirname(destination), { recursive: true });
+  renameSync(source, destination);
+}
+
+/**
+ * Stages managed skills and the manifest, then swaps them into the live
+ * destination. Failures before the manifest commit roll back to the exact
+ * pre-operation managed state. After commit, cleanup is best-effort and never
+ * rolls back published content. Unrelated non-Planlet skills are never touched.
+ */
+function publishDestinationTransaction(
+  destinationPath: string,
+  source: CanonicalSkillSource,
+  desiredManifestText: string,
+  actualSkillNames: readonly string[],
+  options: {
+    readonly publishSkills: boolean;
+    readonly writeManifest: boolean;
+    readonly hooks?: InstallTransactionHooks;
+  },
+): readonly string[] {
+  const hooks = options.hooks ?? {};
+  const warnings: string[] = [];
+  if (!options.publishSkills && !options.writeManifest) {
+    return warnings;
+  }
+
+  const token = randomUUID();
+  const stageRoot = join(destinationPath, `.planlet-tx-${token}`);
+  const backupRoot = join(destinationPath, `.planlet-bak-${token}`);
+  const desiredSkills = options.publishSkills ? [...source.skills] : [];
+  const obsoleteSkills = options.publishSkills
+    ? actualSkillNames.filter((skill) => !desiredSkills.includes(skill))
+    : [];
+  const liveManifest = join(destinationPath, INSTALLATION_MANIFEST);
+  const mutated = new Set<string>();
+  let backupReady = false;
+  let committed = false;
+
+  const emit = (step: InstallTxStep, detail?: string): void => {
+    hooks.onStep?.(step, detail);
+  };
+
+  const rollback = (): void => {
+    for (const name of [...mutated].reverse()) {
+      emit("duringRollback", name);
+      const live = join(destinationPath, name);
+      const backup = join(backupRoot, name);
+      rmSync(live, { recursive: true, force: true });
+      if (pathKind(backup) !== "missing") {
+        moveManagedEntry(backup, live);
+      }
+    }
+  };
+
+  try {
+    mkdirSync(destinationPath, { recursive: true });
+    mkdirSync(stageRoot);
+    for (const skill of desiredSkills) {
+      writeSkillTree(join(stageRoot, skill), skill, source);
+    }
+    if (options.writeManifest) {
+      writeFileSync(
+        join(stageRoot, INSTALLATION_MANIFEST),
+        desiredManifestText,
+        { encoding: "utf8", flag: "wx" },
+      );
+    }
+
+    mkdirSync(backupRoot);
+    backupReady = true;
+
+    for (const skill of [...new Set([...desiredSkills, ...obsoleteSkills])]) {
+      const live = resolveSafePath(destinationPath, skill);
+      if (pathKind(live) === "missing") continue;
+      moveManagedEntry(live, join(backupRoot, skill));
+      mutated.add(skill);
+    }
+    if (options.writeManifest && pathKind(liveManifest) !== "missing") {
+      moveManagedEntry(liveManifest, join(backupRoot, INSTALLATION_MANIFEST));
+      mutated.add(INSTALLATION_MANIFEST);
+    }
+
+    for (const skill of desiredSkills) {
+      moveManagedEntry(join(stageRoot, skill), join(destinationPath, skill));
+      mutated.add(skill);
+      emit("afterReplaceSkill", skill);
+    }
+    if (options.writeManifest) {
+      moveManagedEntry(join(stageRoot, INSTALLATION_MANIFEST), liveManifest);
+      mutated.add(INSTALLATION_MANIFEST);
+    }
+
+    // Commit point: live managed state is now the new installation.
+    committed = true;
+  } catch (error) {
+    if (backupReady && !committed) {
+      try {
+        rollback();
+      } catch (rollbackError) {
+        // Never delete backupRoot on rollback failure; leave stage for recovery.
+        throw new PlanletError(
+          "write_conflict",
+          `Could not roll back harness installation: ${destinationPath}`,
+          {
+            details: {
+              destination: destinationPath,
+              rollbackFailed: true,
+              backupPath: backupRoot,
+              stagePath: stageRoot,
+              mutated: [...mutated],
+              manifestPublished: false,
+            },
+            next: `Do not delete ${backupRoot} until managed files are restored from it. Leftover recovery dirs: ${backupRoot}, ${stageRoot}. Restore manually if needed, remove leftover .planlet-bak-* / .planlet-tx-* only when no install is running, then retry`,
+            cause: new AggregateError([error, rollbackError]),
+          },
+        );
+      }
+    }
+    try {
+      rmSync(stageRoot, { recursive: true, force: true });
+      if (!committed) rmSync(backupRoot, { recursive: true, force: true });
+    } catch (cleanupError) {
+      throw new PlanletError(
+        "write_conflict",
+        `Could not publish harness installation: ${destinationPath}`,
+        {
+          details: {
+            destination: destinationPath,
+            cleanupFailed: true,
+            published: committed,
+          },
+          cause: new AggregateError([error, cleanupError]),
+        },
+      );
+    }
+    throw asWriteConflict(error, destinationPath);
+  }
+
+  try {
+    emit("beforeCleanup");
+    rmSync(stageRoot, { recursive: true, force: true });
+    rmSync(backupRoot, { recursive: true, force: true });
+  } catch {
+    warnings.push(
+      `Harness installation published but cleanup was incomplete at ${destinationPath}`,
+    );
+  }
+
+  return warnings;
 }
 
 export function installHarnessSkills(options: {
@@ -380,7 +547,10 @@ export function installHarnessSkills(options: {
   readonly tools?: string | undefined;
   readonly force?: boolean | undefined;
   readonly source?: CanonicalSkillSource | undefined;
-}): InstallationSummary {
+  /** @internal Fault-injection seam for the publish transaction. Tests only. */
+  readonly transactionHooks?: InstallTransactionHooks | undefined;
+  readonly lock?: Partial<PlanletLockDependencies> | undefined;
+}): InstallationOutcome {
   const selectedToolIds = normalizeToolSelector(options.tools);
   const destinations = resolveHarnessDestinations(
     options.repositoryRoot,
@@ -407,88 +577,104 @@ export function installHarnessSkills(options: {
       options.operation === "init" && plansKind === "missing";
     if (plansInitialized) mkdirSync(plansPath, { recursive: true });
     return {
-      operation: options.operation,
-      changed: plansInitialized,
-      plansInitialized,
-      destinations: [],
+      data: {
+        operation: options.operation,
+        changed: plansInitialized,
+        plansInitialized,
+        destinations: [],
+      },
+      warnings: [],
     };
   }
 
-  const source = options.source ?? enumerateCanonicalSkills();
-  const inspections = destinations.map((destination) =>
-    inspectDestination(destination, source),
-  );
-  const actionable = inspections.filter(
-    (inspection) =>
-      options.operation === "init" || inspection.state !== "missing",
-  );
-  const conflicts = actionable.flatMap((inspection) =>
-    inspection.conflicts.map((path) => ({
-      destination: inspection.destination.relativePath,
-      path,
-    })),
-  );
-  if (conflicts.length > 0 && options.force !== true) {
-    throw new PlanletError(
-      "write_conflict",
-      `Harness installation has locally modified files: ${conflicts[0]!.destination}/${conflicts[0]!.path}`,
-      { details: { conflicts } },
-    );
-  }
-
-  const plansInitialized =
-    options.operation === "init" && plansKind === "missing";
-  if (plansInitialized) mkdirSync(plansPath, { recursive: true });
-  const summaries = inspections.map((inspection) =>
-    options.operation === "update" && inspection.state === "missing"
-      ? {
+  const warnings: string[] = [];
+  const { value, releaseWarning } = withHarnessInstallLock(
+    options.repositoryRoot,
+    () => {
+      const source = options.source ?? enumerateCanonicalSkills();
+      const inspections = destinations.map((destination) =>
+        inspectDestination(destination, source),
+      );
+      const actionable = inspections.filter(
+        (inspection) =>
+          options.operation === "init" || inspection.state !== "missing",
+      );
+      const conflicts = actionable.flatMap((inspection) =>
+        inspection.conflicts.map((path) => ({
           destination: inspection.destination.relativePath,
-          tools: inspection.destination.selectedToolIds,
-          state: "missing" as const,
-          changed: false,
-          files: 0,
-        }
-      : applyInspectionWithSource(inspection, source),
+          path,
+        })),
+      );
+      if (conflicts.length > 0 && options.force !== true) {
+        throw new PlanletError(
+          "write_conflict",
+          `Harness installation has locally modified files: ${conflicts[0]!.destination}/${conflicts[0]!.path}`,
+          { details: { conflicts } },
+        );
+      }
+
+      const plansInitialized =
+        options.operation === "init" && plansKind === "missing";
+      if (plansInitialized) mkdirSync(plansPath, { recursive: true });
+      const summaries = inspections.map((inspection) =>
+        options.operation === "update" && inspection.state === "missing"
+          ? {
+              destination: inspection.destination.relativePath,
+              tools: inspection.destination.selectedToolIds,
+              state: "missing" as const,
+              changed: false,
+              files: 0,
+            }
+          : applyInspectionWithSource(
+              inspection,
+              source,
+              warnings,
+              options.transactionHooks,
+            ),
+      );
+
+      return {
+        operation: options.operation,
+        changed:
+          plansInitialized || summaries.some((summary) => summary.changed),
+        plansInitialized,
+        destinations: summaries,
+      };
+    },
+    options.lock,
   );
 
-  return {
-    operation: options.operation,
-    changed: plansInitialized || summaries.some((summary) => summary.changed),
-    plansInitialized,
-    destinations: summaries,
-  };
+  if (releaseWarning !== undefined) warnings.push(releaseWarning);
+  return { data: value, warnings };
 }
 
 function applyInspectionWithSource(
   inspection: DestinationInspection,
   source: CanonicalSkillSource,
+  warnings: string[],
+  hooks: InstallTransactionHooks = {},
 ): HarnessInstallationSummary {
   const changed = inspection.publishSkills || inspection.writeManifest;
   if (changed) {
-    mkdirSync(inspection.destination.path, { recursive: true });
-    if (inspection.publishSkills) {
-      const desiredSkills = new Set(source.skills);
-      const actualSkills = new Set(
-        Object.keys(inspection.actualFiles).map((path) => path.split("/")[0]!),
-      );
-      for (const skill of actualSkills) {
-        if (!desiredSkills.has(skill)) {
-          rmSync(resolveSafePath(inspection.destination.path, skill), {
-            recursive: true,
-            force: true,
-          });
-        }
-      }
-      for (const skill of source.skills) {
-        publishSkill(inspection.destination.path, skill, source);
-      }
-    }
-    if (inspection.writeManifest) {
-      publishManifest(
+    warnings.push(
+      ...publishDestinationTransaction(
         inspection.destination.path,
+        source,
         inspection.desiredManifestText,
-      );
-    }
+        [
+          ...new Set(
+            Object.keys(inspection.actualFiles).map(
+              (path) => path.split("/")[0]!,
+            ),
+          ),
+        ],
+        {
+          publishSkills: inspection.publishSkills,
+          writeManifest: inspection.writeManifest,
+          hooks,
+        },
+      ),
+    );
   }
 
   return {

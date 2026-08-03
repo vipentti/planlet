@@ -287,7 +287,7 @@ test("completion refuses destination and logical-slug collisions without touchin
   });
 });
 
-test("a movement failure rolls back the audit so completion can be retried", () => {
+test("a movement failure keeps the audit so completion can resume", () => {
   withRepository(COMPLETE_TASKS, (root, source) => {
     assert.throws(
       () =>
@@ -304,23 +304,24 @@ test("a movement failure rolls back the audit so completion can be retried", () 
       (error) => {
         assert.ok(error instanceof PlanletError);
         assert.equal(error.code, "write_conflict");
-        assert.equal(error.details.auditRecorded, false);
-        assert.equal(error.details.auditRolledBack, true);
+        assert.equal(error.details.auditRecorded, true);
+        assert.equal(error.details.auditRolledBack, false);
         return true;
       },
     );
 
     assert.equal(readFileSync(join(source, "plan.md"), "utf8"), PLAN);
-    assert.equal(
+    assert.match(
       readFileSync(join(source, "tasks.md"), "utf8"),
-      COMPLETE_TASKS,
+      /## Completion[\s\S]*Mode: normal/,
     );
 
     const retried = completePlanlet({
       repositoryRoot: root,
       slug: "fixture-plan",
-      dependencies: { now: () => new Date("2026-07-22T12:00:00Z") },
+      dependencies: { now: () => new Date("2030-01-01T00:00:00Z") },
     });
+    assert.equal(retried.archiveName, "2026-07-22-fixture-plan");
     assert.equal(existsSync(retried.destination), true);
   });
 });

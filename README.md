@@ -159,11 +159,40 @@ the question and installs every destination, so agents and CI are unaffected.
 Record user-visible changes under `Unreleased` in
 [`CHANGELOG.md`](https://github.com/vipentti/planlet/blob/main/CHANGELOG.md).
 At release time, move those entries into a dated version section and restore an
-empty `Unreleased` section. From a source checkout, use
-`node scripts/changelog.mjs <version>` to extract release notes; that helper is
-not included in the published npm package. Follow the
+empty `Unreleased` section. Ordinary CI runs
+`node scripts/assert-changelog-release-ready.mjs`, which requires exactly one
+`[Unreleased]` section and at most one structurally valid dated section for the
+current `package.json` version. Malformed headings that mention `Unreleased` or
+that version still count toward those limits. Explicit release verification uses
+`node scripts/assert-changelog-release-ready.mjs --release-date YYYY-MM-DD`.
+
+### Manual 0.1.0 bootstrap (before release automation)
+
+Keep `.github/workflows/release.yml` off `main` until after this bootstrap.
+Captain names one clean `origin/main` SHA as `BOOTSTRAP_SHA`.
+
+1. If `[0.1.0]` is still under `Unreleased`, move notes into
+   `## [0.1.0] - YYYY-MM-DD` for the intended publish day, restore empty
+   `Unreleased`, and land that commit on `main` before selecting the SHA.
+2. In a fresh detached checkout of `BOOTSTRAP_SHA`, verify `HEAD` matches,
+   the tree is clean, `package.json` is `0.1.0`, and no release workflow is on
+   the default branch.
+3. Run `npm ci`, the full verification suite, generated-skill parity, and
+   `node scripts/assert-changelog-release-ready.mjs --release-date YYYY-MM-DD`.
+4. Run `npm pack --json --pack-destination <empty-review-dir>` exactly once.
+5. Record package name/version, tarball name, integrity, shasum, SHA-256, and
+   exact file list; inspect the tarball for secrets, license, personal data,
+   and unexpected files.
+6. Publish that exact `.tgz` with `--access public` (no rebuild) and verify
+   registry metadata.
+7. Create `v0.1.0` at `BOOTSTRAP_SHA` and the matching GitHub release from the
+   dated changelog notes only after registry verification succeeds.
+
+From a source checkout, use `node scripts/changelog.mjs <version>` to extract
+release notes; that helper is not included in the published npm package. Follow
+the
 [release automation plan](https://github.com/vipentti/planlet/blob/main/plans/release-automation/plan.md)
-for publication gates and the phased landing that keeps the first npm bootstrap
+for captain gates and the phased landing that keeps the first npm bootstrap
 manual while tag-triggered automation lands separately.
 
 ## Links
