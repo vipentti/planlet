@@ -57,7 +57,7 @@ tag/release creation, and trusted-publisher configuration.
 Keep changelog hand-written because user-visible changes do not map reliably to
 commit subjects. `scripts/changelog.mjs <version> [file]` prints body of one
 dated version section. It rejects missing, empty, and `Unreleased` sections.
-Optional file argument exists only to keep subprocess tests fixture-based.
+Optional file argument exists for isolated subprocess tests.
 
 Backfill 0.1.0 from complete repository history and user-visible package
 behavior, not completed planlets alone. Keep `Unreleased` first and compare
@@ -202,7 +202,8 @@ git diff --check
 git status --porcelain
 ```
 
-Also run focused extractor cases against root and fixture, inspect workflow YAML
+Also run focused extractor cases against root and an isolated temp changelog,
+inspect workflow YAML
 and packed file list, validate Planlet through built CLI, and require protected
 pull-request CI to pass before merge. Dry runs cannot prove OIDC, provenance,
 GitHub release mutation, or public visibility. Routine run results stay in Git,

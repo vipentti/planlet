@@ -3,7 +3,7 @@
 - [x] T1 Add `CHANGELOG.md` in Keep a Changelog 1.1.0 format with empty `Unreleased`, a 0.1.0 section reviewed against repository changes and user-visible behavior, and compare links
 - [x] T2 Package and format `CHANGELOG.md`, and assert its presence in the packed-artifact integration test
 - [x] T3 Add dependency-free `scripts/changelog.mjs` extracting one dated version and rejecting missing, empty, or `Unreleased` sections
-- [x] T4 Add focused subprocess coverage against a fixture for known, absent, empty, and `Unreleased` sections
+- [x] T4 Add focused subprocess coverage against the repository changelog and an isolated temp file for known, absent, empty, and `Unreleased` sections
 - [ ] T5 Add pinned-action tag workflow with exact release checks, version/main-ancestry guards, trusted provenance publication, changelog notes, verified npm reruns, release create/update behavior, and same-tag concurrency serialization
 - [x] T6 Document prepublication source-only install and changelog upkeep in `README.md`, and point release guidance at this planlet
 - [x] T7 Review full history, refs intended for exposure, commit metadata, and stored objects for secrets/credentials, licensing or third-party provenance, and personal data; resolve every finding and record captain sign-off before visibility changes
