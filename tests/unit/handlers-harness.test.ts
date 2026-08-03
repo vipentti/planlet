@@ -31,6 +31,7 @@ test("harness install outcome routes destination warnings to diagnostics only", 
     "Harness installation published but cleanup was incomplete at /tmp/skills",
   ]);
   assert.equal("warnings" in (outcome.data.destinations[0] as object), false);
+  assert.equal("warnings" in outcome.data, false);
 
   const rendered = renderToon(outcome.data, outcome.warnings);
   assert.equal(rendered.exitCode, 0);
@@ -45,4 +46,31 @@ test("harness install outcome routes destination warnings to diagnostics only", 
       },
     ],
   });
+});
+
+test("harness install outcome routes repository-wide warnings to diagnostics only", () => {
+  const outcome = harnessInstallOutcome({
+    operation: "update",
+    changed: true,
+    plansInitialized: false,
+    destinations: [
+      {
+        destination: ".agents/skills",
+        tools: ["agents"],
+        state: "installed",
+        changed: true,
+        files: 2,
+      },
+    ],
+    warnings: ["Lock release failed at /tmp/planlet-locks/__harness__"],
+  });
+
+  assert.deepEqual(outcome.warnings, [
+    "Lock release failed at /tmp/planlet-locks/__harness__",
+  ]);
+  assert.equal("warnings" in outcome.data, false);
+
+  const rendered = renderToon(outcome.data, outcome.warnings);
+  assert.doesNotMatch(rendered.stdout, /Lock release failed/);
+  assert.match(rendered.stderr, /Lock release failed/);
 });

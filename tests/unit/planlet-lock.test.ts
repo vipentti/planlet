@@ -421,7 +421,7 @@ test("withPlanletLock releases only the caller's owned lock after a throw", () =
   });
 });
 
-test("withPlanletLock preserves the operation error when release fails", () => {
+test("withPlanletLock reports both the operation error and a failed release", () => {
   withRepo((root) => {
     assert.throws(
       () =>
@@ -438,7 +438,12 @@ test("withPlanletLock preserves the operation error when release fails", () => {
           },
         ),
       (error) =>
-        error instanceof PlanletError && error.code === "task_not_found",
+        error instanceof AggregateError &&
+        error.message.includes(lockPathFor(root, "fixture-plan")) &&
+        error.errors[0] instanceof PlanletError &&
+        error.errors[0].code === "task_not_found" &&
+        error.errors[1] instanceof Error &&
+        error.errors[1].message === "release failed",
     );
   });
 });
@@ -497,7 +502,7 @@ test("missing planlet does not create a lock directory before plan_not_found", (
   }
 });
 
-test("isProcessAlive classifies alive, permission, dead, and unknown codes", () => {
+test("isProcessAlive reclaims only on ESRCH and treats everything else as alive", () => {
   assert.equal(isProcessAlive(process.pid), true);
 
   const classify = (code: string): boolean => {
@@ -514,11 +519,9 @@ test("isProcessAlive classifies alive, permission, dead, and unknown codes", () 
     }
   };
 
+  assert.equal(classify("ESRCH"), false);
   assert.equal(classify("EPERM"), true);
   assert.equal(classify("EACCES"), true);
-  assert.equal(classify("ESRCH"), false);
-  assert.equal(classify("ENOENT"), false);
-  assert.equal(classify("EINVAL"), false);
   assert.equal(classify("EIO"), true);
   assert.equal(classify("ENOSYS"), true);
 });

@@ -52,6 +52,8 @@ export interface InstallationSummary {
   readonly changed: boolean;
   readonly plansInitialized: boolean;
   readonly destinations: readonly HarnessInstallationSummary[];
+  /** Repository-wide diagnostics, such as a failed harness lock release. */
+  readonly warnings?: readonly string[];
 }
 
 export interface DetectedHarness {
@@ -636,18 +638,11 @@ export function installHarnessSkills(options: {
     options.lock,
   );
 
-  if (releaseWarning === undefined) return value;
-  return {
-    ...value,
-    destinations: value.destinations.map((destination, index) =>
-      index === 0
-        ? {
-            ...destination,
-            warnings: [...(destination.warnings ?? []), releaseWarning],
-          }
-        : destination,
-    ),
-  };
+  // The harness lock is repository-wide, so its release warning belongs beside
+  // the result rather than on an arbitrary destination.
+  return releaseWarning === undefined
+    ? value
+    : { ...value, warnings: [releaseWarning] };
 }
 
 function applyInspectionWithSource(

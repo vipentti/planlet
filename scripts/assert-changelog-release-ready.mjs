@@ -141,8 +141,7 @@ if (unreleasedSuffix.kind !== "bare") {
   );
 }
 
-const maxVersionSections = releaseDate === undefined ? 1 : 1;
-if (versionSections.length > maxVersionSections) {
+if (versionSections.length > 1) {
   fail(
     `Changelog must contain at most one [${version}] section (found ${versionSections.length}).`,
   );

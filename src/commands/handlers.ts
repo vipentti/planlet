@@ -74,26 +74,29 @@ function warningsFromSummaries(summaries: readonly PlanSummary[]): string[] {
   return summaries.flatMap((summary) => summary.warnings);
 }
 
-/** Strip destination warnings from stdout data; return them for stderr diagnostics. */
+/** Strip warnings from stdout data; return them for stderr diagnostics. */
 export function harnessInstallOutcome(result: InstallationSummary): {
   readonly data: InstallationSummary;
   readonly warnings: readonly string[];
 } {
-  const warnings = result.destinations.flatMap(
-    (destination) => destination.warnings ?? [],
-  );
+  const strip = <T extends { warnings?: readonly string[] }>(
+    value: T,
+  ): Omit<T, "warnings"> => {
+    const copy = { ...value };
+    delete copy.warnings;
+    return copy;
+  };
   return {
     data: {
-      ...result,
-      destinations: result.destinations.map((destination) => ({
-        destination: destination.destination,
-        tools: destination.tools,
-        state: destination.state,
-        changed: destination.changed,
-        files: destination.files,
-      })),
+      ...strip(result),
+      destinations: result.destinations.map(strip),
     },
-    warnings,
+    warnings: [
+      ...result.destinations.flatMap(
+        (destination) => destination.warnings ?? [],
+      ),
+      ...(result.warnings ?? []),
+    ],
   };
 }
 

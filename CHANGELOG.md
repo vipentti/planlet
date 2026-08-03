@@ -24,6 +24,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and thi
 - Successful lock operations warn when lock release fails instead of silent success.
 - Locks publish ownership metadata atomically, so an interrupted acquisition cannot leave an unreclaimable lock.
 - Changelog gate rejects release dates earlier than today (UTC) in ordinary and `--release-date` modes.
+- A failed lock release is reported as an `AggregateError` alongside the operation error instead of being dropped when both fail.
+- Harness lock release warnings are reported repository-wide instead of being attached to the first destination.
 
 ### Changed
 

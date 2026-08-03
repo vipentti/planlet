@@ -92,18 +92,13 @@ export function resolveHarnessDestinations(
 ): readonly HarnessDestination[] {
   const selected = new Set<HarnessToolId>(selectedToolIds);
   const resolved = HARNESS_ADAPTERS.map((adapter) => {
-    if (selected.has(adapter.id)) {
-      return {
-        adapter,
-        path: resolveSafePath(repositoryRoot, adapter.skillDirectory),
-      };
-    }
     try {
       return {
         adapter,
         path: resolveSafePath(repositoryRoot, adapter.skillDirectory),
       };
-    } catch {
+    } catch (error) {
+      if (selected.has(adapter.id)) throw error;
       return { adapter, path: undefined };
     }
   });
