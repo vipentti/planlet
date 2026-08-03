@@ -9,9 +9,12 @@
       `--verify-release`, optional `--date YYYY-MM-DD`, optional `--print-date`
       (stdout exactly `YYYY-MM-DD\n`); verification-only options require
       `--verify-release`; preparation and historical modes cannot combine;
-      preserve ordinary CI behavior and strict `--release-date`. Focused helper
+      historical mode has no not-in-the-past rule; `--print-date` writes exactly
+      `YYYY-MM-DD\n` to stdout and nothing else, diagnostics to stderr; preserve
+      ordinary CI behavior and strict `--release-date`. Focused helper
       tests for validate, expected-date match and mismatch, exact printed date,
-      illegal combos, and unchanged CI/past-date rejection
+      past historical date accepted, illegal combos, and unchanged CI/past-date
+      rejection
 - [ ] T3 Implement fresh `prepare`: refuse on local or remote `release/v<version>`,
       matching open/merged/closed-unmerged PR, multiple or conflicting PR matches,
       version already current, changelog already containing the release, or
@@ -33,10 +36,18 @@
       the signed commit was created but post-commit validation failed, with
       manual recovery guidance
 - [ ] T4 Implement `tag`: clean worktree, `HEAD ==` remote `main` tip, package
-      version match, helper historical validation; refuse when the remote tag
+      version match; resolve the release date only through historical helper mode
+      — `--verify-release --print-date`, plus `--date D` when the operator passes
+      `tag --release-date D`, never the helper's strict `--release-date` — and
+      accept stdout only as exactly one `YYYY-MM-DD` line with a single trailing
+      newline and nothing else, refusing on malformed output or nonzero exit and
+      surfacing the helper diagnostic; report the resolved date in dry-run and
+      success output; refuse when the remote tag
       exists; fresh `git tag -a -s` then `git verify-tag`; existing-local-tag
       validation (annotated, exact name and message, target `HEAD`, valid
-      signature) for the two-step workflow; ordinary explicit non-force push only
+      signature) for the two-step workflow, which still requires the shared
+      preconditions and date contract to pass on the current `HEAD` before push;
+      ordinary explicit non-force push only
       with `--push`; verify the remote tag afterwards; never move, recreate,
       replace, delete, or force-update a tag; leave the local tag on verification
       failure
@@ -47,5 +58,9 @@
       stubbed `gh` and signing) covering the cases listed under Tests in
       `plan.md`, including fixture commit hooks that mutate a release file, leave
       staged or unstaged changes, or create untracked state after `git commit`,
-      each refusing before any push or PR; run `npm run format:check`, `npm run lint`, `npm run type-check`,
+      each refusing before any push or PR, and the tag release-date cases
+      (derived vs expected date, mismatch refusal, past date accepted, strict
+      `--release-date` never invoked, malformed/extra/nonzero helper output
+      refused, same contract on both tag push paths, dry-run reporting the
+      resolved date); run `npm run format:check`, `npm run lint`, `npm run type-check`,
       `npm run build`, `npm test`, and `git diff --check`

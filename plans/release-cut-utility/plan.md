@@ -50,6 +50,10 @@ npm run release:tag     -- --version X.Y.Z [--release-date D] [--execute] [--pus
 - npm aliases only: `release:prepare` and `release:tag`.
 - `--version` required. `--execute` enables mutations. `--push` is `tag`-only
   and still requires `--execute`.
+- `--release-date D` means different things per subcommand: on `prepare` it is
+  the date to write, validated strictly (not in the past); on `tag` it is the
+  date the changelog is expected to already record, validated historically. See
+  the `tag` release-date contract.
 - Dry-run is the default.
 - Unknown flags, duplicate value flags, and a missing/malformed subcommand fail
   with usage on stderr.
@@ -211,10 +215,47 @@ manually before rerunning.
 ### `tag`
 
 Shared preconditions: clean worktree; `HEAD` equals the current remote `main`
-tip; `package.json.version` equals `--version`; the changelog validates as a
-released version via the helper's historical mode; the remote tag probe
-succeeds. **A remote tag that already exists is always a refusal** — never
-moved, replaced, or overwritten.
+tip; `package.json.version` equals `--version`; the changelog validates through
+the historical date contract below; the remote tag probe succeeds. **A remote
+tag that already exists is always a refusal** — never moved, replaced, or
+overwritten.
+
+#### Release-date contract
+
+`tag` resolves the recorded release date through the helper's **historical**
+mode, always with `--print-date`. Without an operator date:
+
+```sh
+node scripts/assert-changelog-release-ready.mjs --verify-release --print-date
+```
+
+With `tag --release-date D`:
+
+```sh
+node scripts/assert-changelog-release-ready.mjs --verify-release --date D --print-date
+```
+
+- Public `tag --release-date D` maps to the helper's historical `--date D`. It
+  **never** maps to the helper's strict `--release-date D`.
+- Strict `--release-date` stays preparation-only and keeps its not-in-the-past
+  rule. `tag` must never invoke it — a release tagged days after the cut has a
+  past date, which is correct.
+- With `--date D`, the changelog's recorded date must equal `D`. Without it,
+  the helper derives the recorded date.
+- The `--print-date` output is the authoritative recorded release date; `tag`
+  never parses the changelog itself.
+
+Accept helper success only when **all** hold: exit status `0`; stdout is
+exactly one `YYYY-MM-DD` line with a single trailing newline; no other stdout.
+Validate that raw shape before trimming the newline. On malformed output or a
+nonzero exit, refuse to create or push the tag and surface the helper's
+diagnostic.
+
+The resolved date is printed in both the dry-run plan and the success summary,
+so the maintainer can confirm which changelog release was validated.
+
+This contract applies identically to fresh tag creation and to validating an
+existing local tag before the optional second-step push.
 
 #### Fresh local tag
 
@@ -233,6 +274,10 @@ is pushed.
 When the exact local tag exists and the remote tag does not, validate it:
 annotated (not lightweight); name exactly `v<version>`; message exactly
 `v<version>`; target equals current `HEAD`; `git verify-tag` exits `0`.
+
+A valid Git object is not sufficient on its own — the shared preconditions and
+the release-date contract must still pass against the current `HEAD` before the
+tag is pushed.
 
 - Without `--push`: report that it is ready.
 - With `--execute --push`: push it, then verify the remote ref.
@@ -267,6 +312,11 @@ Parser rules: verification-only options require `--verify-release`; preparation
 and historical modes cannot be combined; unknown flags and duplicate value
 flags fail. Validation and usage errors write diagnostics to stderr and exit
 nonzero, with empty stdout. Ordinary CI behavior (no date flags) is unchanged.
+
+`--print-date` success output is exactly `YYYY-MM-DD\n` on stdout and nothing
+else; diagnostics go to stderr. Historical mode has no not-in-the-past rule, so
+an earlier release date is valid — that rule belongs to strict
+`--release-date`, which `prepare` uses and `tag` never does.
 
 The helper already accepts optional `CHANGELOG.md` and `package.json`
 positional paths; that stays as-is.
@@ -325,6 +375,18 @@ elaborate concurrency fixtures.
 - PR creation happens only after a successful push.
 - Historical changelog validation, and the exact `YYYY-MM-DD\n` printed date.
 - Preparation mode still rejects past dates; CI mode unchanged.
+- Tag release-date contract:
+  - `tag` without `--release-date` derives and prints the recorded date;
+  - `tag --release-date D` invokes historical `--date D`;
+  - a matching expected date succeeds;
+  - a mismatching expected date refuses before tag creation or push;
+  - a past historical date succeeds;
+  - `tag` never invokes the helper's strict `--release-date`;
+  - malformed printed date refuses;
+  - extra helper stdout refuses;
+  - nonzero helper exit refuses;
+  - fresh-tag and existing-local-tag push paths use the same contract;
+  - dry-run reports the resolved release date and mutates nothing.
 - Tag creation and signature verification; verification failure causes no push.
 - The local-tag two-step flow.
 - Remote tag already exists → refuse.
@@ -349,6 +411,11 @@ elaborate concurrency fixtures.
 - Pushes are explicit and non-force; the remote ref is verified afterwards.
 - The assertion helper remains the sole changelog parser and can validate an
   existing release and print its date.
+- `tag` resolves the release date only through historical mode
+  (`--verify-release [--date D] --print-date`), never through strict
+  `--release-date`; it accepts stdout only as exactly one `YYYY-MM-DD` line
+  with a single trailing newline and nothing else, refusing otherwise; and it
+  reports the resolved date in dry-run and success output.
 - `RELEASING.md` documents the happy path, manual recovery, and that there is
   no automatic prepare resume.
 - No auto-merge, no local publish, no new dependencies, `release.yml`
