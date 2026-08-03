@@ -5,6 +5,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  statSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -257,6 +258,24 @@ test("injected acquire failure surfaces as write_conflict", () => {
     assert.equal(readFileSync(tasksPath, "utf8"), TASKS);
   });
 });
+
+test(
+  "an existing permissive lock root is tightened before use",
+  { skip: process.platform === "win32" ? "POSIX modes only" : false },
+  () => {
+    withRepo((root) => {
+      const lockRoot = planletLockRoot(root);
+      // What an upgrade from a version that created the namespace without a mode
+      // looks like: ours, but world-readable.
+      mkdirSync(lockRoot, { recursive: true, mode: 0o755 });
+      assert.equal(statSync(lockRoot).mode & 0o777, 0o755);
+
+      const handle = acquirePlanletLock(root, "fixture-plan");
+      assert.equal(statSync(lockRoot).mode & 0o777, 0o700);
+      releaseOwnedLock(handle);
+    });
+  },
+);
 
 test("lock directories reject symlink escapes", () => {
   withRepo((root) => {

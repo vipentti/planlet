@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import {
+  chmodSync,
   mkdirSync,
   readFileSync,
   realpathSync,
@@ -74,6 +75,44 @@ const DEFAULT_PLANLET_LOCK_DEPENDENCIES: PlanletLockDependencies = {
 
 function isAlreadyExists(error: unknown): boolean {
   return error instanceof Error && "code" in error && error.code === "EEXIST";
+}
+
+/**
+ * mkdir applies its mode only when it creates the directory, so an existing
+ * namespace has to be checked separately. The name is derived from the owner
+ * and checkout path, which anyone on the machine can compute, so a hostile
+ * user could pre-create it and plant holder files that never reclaim. A
+ * namespace owned by someone else is refused outright; one of our own left
+ * readable by an earlier version is tightened in place.
+ */
+function assertPrivateLockRoot(rootDir: string, label: string): void {
+  const owner = process.getuid?.();
+  // Windows has no POSIX ownership or mode bits to check.
+  if (owner === undefined) return;
+  const status = tryLstat(rootDir);
+  if (status === null) return;
+
+  if (status.uid !== owner) {
+    throw new PlanletError(
+      "unsafe_path",
+      `Lock root is owned by another user: ${rootDir}`,
+      {
+        details: { label, rootDir, owner: status.uid },
+        next: `Remove ${rootDir} if it is stale, or set TMPDIR to a directory you own`,
+      },
+    );
+  }
+  if ((status.mode & 0o777) !== 0o700) {
+    try {
+      chmodSync(rootDir, 0o700);
+    } catch (error) {
+      throw new PlanletError(
+        "unsafe_path",
+        `Could not restrict lock root permissions: ${rootDir}`,
+        { details: { label, rootDir }, cause: error },
+      );
+    }
+  }
 }
 
 function assertNotSymlink(path: string, label: string): void {
@@ -197,6 +236,7 @@ export function acquireOwnedLock(
     );
   }
   assertNotSymlink(rootDir, label);
+  assertPrivateLockRoot(rootDir, label);
 
   const lockPath = join(rootDir, lockName);
   assertNotSymlink(lockPath, label);
