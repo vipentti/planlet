@@ -12,7 +12,7 @@ Create or revise one focused planlet while keeping planning separate from implem
 1. Discover the repository root without traversing above its boundary.
 2. Use one available `planlet` executable throughout the workflow. Confirm each needed operation with `planlet help <command>`; do not infer support from this skill. Pass `--root "<repository-root>"` to every operational command. Treat angle-bracket runtime values as separate argv values; when invoking through a shell, apply shell-specific escaping instead of interpolating raw text.
 3. Use `planlet --root "<repository-root>" list` to inspect active logical slugs and `planlet --root "<repository-root>" list --completed` to inspect completed logical slugs. For a revision, resolve exactly one active slug, run `planlet --root "<repository-root>" validate <slug>`, and read both files completely with `planlet --root "<repository-root>" --full show <slug> --part plan` and `planlet --root "<repository-root>" --full show <slug> --part tasks`.
-4. Read `planlet_design.md` and applicable repository instructions when present.
+4. Read applicable repository instructions when present.
 5. If an operation is unavailable, announce fallback for that operation only and name its missing deterministic CLI behavior. Continue using CLI for every supported operation.
 
 ## Develop the proposal
