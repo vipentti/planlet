@@ -7,3 +7,8 @@
 - [x] T5 Update `evaluations/skills/scenarios.md` S1/S2 expected decisions to the hybrid discovery stance
 - [x] T6 Build CLI, run `node dist/planlet.mjs update`, then `node dist/planlet.mjs tools` and confirm every planlet skill destination reports as `installed`
 - [x] T7 Run full verification suite including `git status --porcelain`; touch `tests/skills/skill-contract.test.ts` only if decision labels must change, and fix any remaining contract/scenario failures
+
+## Completion
+
+- Completed at: 2026-08-03T06:32:45.627Z
+- Mode: normal
