@@ -5,7 +5,7 @@
 - [x] T3 Reject completed normal-mode planlets with unchecked tasks as invalid_plan; cover unit and compiled CLI
 - [x] T4 Make harness destination install transactional with fault-injection restore tests; resolve only selected harness adapters
 - [x] T5 Add production internal_error boundary with optional PLANLET_DEBUG; pin CI action SHAs; add Dependabot; gate changelog 0.1.0 date and document bootstrap procedure
-- [x] T6 Make planlet locks ownership-token safe with quarantine rename reclaim and portable dead-PID detection
+- [x] T6 Make planlet lock release ownership-token safe with quarantine rename; drop automatic stale reclaim and dead-PID probing in favor of manual removal
 - [x] T7 Split changelog gate into ordinary CI mode and explicit --release-date verification; update README
 - [x] T8 Add harness install commit point so post-commit cleanup failures never roll back published skills
 - [x] T9 Include safely coalesced unselected harness aliases without resolving escaping unselected paths
@@ -19,7 +19,7 @@
 - [x] T17 Changelog discover≠validate for Unreleased/pkg.version; reject malformed headings and bad argv
 - [x] T18 Collapse lock to one file; release-failure warnings; validate-before-lock; ponytail micro-cuts
 - [x] T19 Full verification and commit remaining PR #6 review fixes (no push)
-- [x] T20 Publish locks atomically via staged holder link; reject past changelog release dates under `--release-date` release verification; drop repository-state changelog test
+- [x] T20 Publish locks atomically via exclusive holder write; reject past changelog release dates under `--release-date` release verification; drop repository-state changelog test
 
 ## Completion
 

@@ -13,7 +13,8 @@ existing `release-automation` planlet and captain actions.
 In scope:
 
 - Per-planlet cross-process locks for `task check`, `task uncheck`, and
-  `complete`, with safe stale-lock reclaim only for dead holders.
+  `complete`, with ownership-token-safe release. Dead holders are not
+  reclaimed automatically; manual removal is the only recovery path.
 - Skip destructive completion audit rollback after a failed move; report
   partial failure and rely on resume.
 - Treat completed + normal mode + unchecked tasks as `invalid_plan`.
@@ -36,8 +37,8 @@ Out of scope:
 ## Approach
 
 1. Add `src/core/planlet-lock.ts`: exclusive per-slug lock holding PID
-   metadata, reclaim only if holder PID is dead, `write_conflict` on live
-   contention, release in `finally`. Locks were originally planned under
+   metadata, `write_conflict` on any contention (live or dead holder),
+   release in `finally`. Locks were originally planned under
    `plans/.planlet-locks/<slug>`; they live in the OS temp directory instead,
    in a namespace keyed by owner and canonical repository root, so a transient
    holder file never appears in `git status` or an editor tree.
@@ -53,19 +54,24 @@ Out of scope:
    expose details only when `PLANLET_DEBUG=1`.
 6. Pin `ci.yml` actions; add `.github/dependabot.yml`; ordinary CI changelog
    gate plus explicit `--release-date` release verification.
-7. Lock reclaim uses ownership tokens and atomic quarantine rename so two
-   reclaimers cannot delete each other's live lock.
+7. Lock release uses ownership tokens and atomic quarantine rename so a
+   late or duplicate release cannot delete a successor's live lock. There is
+   no automatic stale-lock reclaim: remove-then-create admits two writers on
+   one dead holder, so confirmed manual removal is the only recovery until
+   `flock(2)`/`LockFileEx` is available.
 8. Surface harness recovery `next` at the PlanletError top level; emit harness
    cleanup and lock-release warnings as stderr diagnostics; discover changelog
    headings broadly then validate syntax; collapse lock wrappers and apply
-   safe line cuts without weakening reclaim.
+   safe line cuts without weakening release ownership checks.
 
 ## Acceptance Criteria
 
 - Concurrent task updates and task-vs-complete races fail with `write_conflict`
   without lost checkbox updates.
-- Lock released after thrown operations; dead-holder reclaim works; live
-  holders are not stolen.
+- Lock released after thrown operations; release failures surface as
+   warnings or structured double-fault errors; a dead holder blocks with
+   `write_conflict` until manually removed; release never deletes a
+   successor's lock.
 - Failed complete move after audit leaves audit and does not clobber tasks.
 - Completed normal+unchecked is `invalid_plan` in API and compiled CLI.
 - Partial harness install failure restores exact pre-operation managed state.
