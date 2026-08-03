@@ -59,6 +59,10 @@ When a described CLI capability is not yet present, do not invent commands or re
 - Preserve user changes and avoid unrelated edits.
 - Prefer small, reviewable changes aligned with the current planlet.
 
+## Pull requests
+
+When creating a pull request against this repository, structure the description with [`.github/pull_request_template.md`](.github/pull_request_template.md). Keep it proportional to the change, remove sections that do not apply, and check only the verification commands actually run.
+
 ## Planlet file conventions
 
 - Slugs use lowercase ASCII letters, digits, and single hyphens and must match `^[a-z0-9]+(?:-[a-z0-9]+)*$`.
