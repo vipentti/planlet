@@ -19,7 +19,9 @@ fresh tag **must** verify the newly created object with `git verify-commit` /
 `git verify-tag` (and full invariants) **before** any push; signing prechecks
 are preliminary only. Prepare release-commit content checks are always
 **SHA-anchored** to one resolved candidate commit (blob extraction into a temp
-dir; never the ambient worktree). `tag` requires `HEAD` equal to the current
+dir; never the ambient worktree), including all canonical root package/lockfile
+version fields. Remote-only resume pins `observedRemoteReleaseSha` through
+fetch and re-probes before PR. `tag` requires `HEAD` equal to the current
 remote `main` tip. Prepare PR lookup distinguishes open, merged,
 closed-unmerged, and conflicting PR states. Remote-ref probes use exact
 `git ls-remote --exit-code` status classification.
@@ -47,7 +49,9 @@ In scope:
   `--print-release-date`). Existing `--release-date` preparation mode and
   ordinary CI mode stay unchanged.
 - `prepare` fresh / resume (branch + commit invariants; PR state handling;
-  shared SHA-anchored candidate-commit validator via blob extraction).
+  shared SHA-anchored candidate-commit validator via blob extraction; full
+  package/lockfile root version contract including `packages[""].version`;
+  pinned remote probe/fetch/re-probe with temporary fetch-ref cleanup).
 - `tag` fresh / resume (local annotated signed tag invariants; optional push;
   remote tag always investigation-required).
 - Signature policy: local cryptographic validity via `git verify-commit` /
@@ -119,7 +123,7 @@ Out of scope:
 | Class | Examples | Dry-run | `--execute` |
 | --- | --- | --- | --- |
 | Remote read-only | `git ls-remote`, `gh` read APIs | Allowed | Allowed |
-| Local Git metadata mutation | `git fetch`, writing `FETCH_HEAD`, creating remote-tracking refs | Forbidden | Allowed when required; prefer `--no-write-fetch-head` where useful; never force-update a conflicting existing local ref |
+| Local Git metadata mutation | `git fetch`, writing `FETCH_HEAD`, creating remote-tracking or temporary refs under an implementation-owned namespace | Forbidden | Allowed when required; prefer `--no-write-fetch-head` where useful; never force-update a conflicting existing local/user ref; temporary fetch refs are created only under `--execute` and cleaned up |
 | Worktree / index mutation | editing files, `git add` / `commit`, creating local branches/tags, checking out the release branch | Forbidden | Allowed for intended steps only; candidate validation must **not** require checking out the candidate |
 | Remote mutation | `git push`, `gh pr create` | Forbidden | Allowed for intended steps |
 | Process-ephemeral temp files | OS temp dir extracts of candidate blobs | Allowed (create/delete outside the repo) | Allowed; always cleaned up |
@@ -127,7 +131,9 @@ Out of scope:
 Dry-run acceptance is mechanically testable: after dry-run, worktree, index,
 and local refs (including remote-tracking refs) are unchanged aside from
 process-ephemeral temp files outside the repository that are removed before
-exit.
+exit. Dry-run creates **no** temporary Git refs. Execute-time fetched objects
+may remain in the object database (acknowledged local metadata mutation); only
+implementation-owned temporary refs are deleted.
 
 ### Remote-ref probes (`git ls-remote --exit-code`)
 
@@ -352,18 +358,43 @@ delete/force-update; do not check out the release branch solely to validate.
 
 ### Candidate commit selection
 
-Before content validation, resolve exactly one candidate release commit SHA:
+Before content validation, resolve exactly one candidate release commit SHA.
+For a remote release branch, record the exact SHA from the initial exact-ref
+probe as `observedRemoteReleaseSha` and use that value for candidate
+selection, PR-state classification relative to the branch, and the pinned
+fetch below.
 
 | Observed refs | Candidate SHA |
 | --- | --- |
 | Local-only `release/v<version>` | Exact local tip |
-| Remote-only `release/v<version>` | Exact remote tip (after `--execute` fetch into a controlled ref; see remote-only resume) |
+| Remote-only `release/v<version>` | `observedRemoteReleaseSha` (must be fetched and confirmed identical under `--execute`; see pinned remote-only resume) |
 | Local and remote both present | Both must resolve to the **same** SHA; that SHA is the candidate |
 | Matching PR present | PR head SHA must equal the validated branch candidate SHA |
 | Disagreement / multiple plausible unequal SHAs | Hard-refuse |
 
 All subsequent release-commit invariant checks are anchored to this exact SHA,
 independent of the current checkout.
+
+### Package and lockfile version contract
+
+This repository’s lockfile format (npm lockfile v2/v3 style) stores the root
+project version in **three** places that must stay aligned. For both fresh
+preparation edits and SHA-anchored resume/post-creation validation, require:
+
+1. `package.json.version === requestedVersion`
+2. `package-lock.json.version === requestedVersion`
+3. `package-lock.json.packages[""].version === requestedVersion`
+4. `package-lock.json.packages[""]` exists and is an object
+5. No silent acceptance of a missing or mismatching root package version
+
+Fresh preparation must update **all three** values through a deterministic
+mechanism. Prefer existing npm-supported version update behavior if it changes
+only the intended package/lockfile root fields; otherwise perform the minimum
+direct JSON edits matching the repository’s formatting conventions. Do **not**
+recursively rewrite dependency versions or modify unrelated lockfile entries.
+
+The candidate validator reads these values from blobs extracted from the exact
+candidate commit, never from the ambient checkout.
 
 ### Shared SHA-anchored release-commit validator
 
@@ -395,8 +426,9 @@ Procedure:
    path segment).
 3. Treat missing, non-blob, unreadable, or malformed expected paths as
    invariant failure.
-4. Read extracted `package.json` and root `package-lock.json`; require both root
-   `version` fields equal `--version`.
+4. Parse extracted `package.json` and `package-lock.json`; enforce the full
+   package/lockfile version contract above (all three root version fields +
+   `packages[""]` object presence).
 5. Invoke the trusted helper from the **current reviewed codebase** (never a
    script from the candidate commit), passing extracted file paths as argv
    array elements (no shell concatenation), for example:
@@ -437,30 +469,86 @@ Also require, using Git plumbing against `<candidate-sha>` (not the worktree):
 7. Local and remote tips agree when both exist (already enforced by candidate
    selection).
 
-### Remote-only resume and dry-run object availability
+### Pinned remote-only resume (probe → fetch → re-probe)
 
-- Dry-run must not fetch or mutate local Git metadata.
-- If the remote candidate object is **not** already available locally, dry-run
+#### Initial observation
+
+On remote-branch **found**, record:
+
+```text
+observedRemoteReleaseSha
+```
+
+as the exact SHA from the exact-ref `ls-remote` probe. PR lookup / state
+classification for that branch must be relative to this SHA (PR head must match
+it for “matching” states).
+
+#### Dry-run object availability
+
+- Dry-run must not fetch or mutate local Git metadata / refs.
+- If `observedRemoteReleaseSha` is **not** already available locally, dry-run
   must report that full candidate-tree validation requires `--execute` and exit
   **nonzero** — never claim success.
-- Under `--execute`, fetch the exact release branch into a controlled
-  temporary or remote-tracking ref **without** force-updating an existing
-  conflicting local ref. Validate the fetched exact SHA with the shared
-  validator **before** creating any local branch tip, pushing, or creating a
-  PR. Do **not** blindly check out the remote branch.
+- If the object **is** already local, dry-run may run the shared validator on
+  that exact SHA without fetching.
+
+#### Controlled fetch under `--execute`
+
+1. Create a **temporary** local ref under a dedicated implementation-owned
+   namespace (collision-resistant name; never overwrite a pre-existing ref).
+   Prefer this over leaving a durable remote-tracking ref.
+2. Fetch the exact branch into that temp ref **without** checkout and **without**
+   force-updating any application/user ref. Fetching by object ID is acceptable
+   where reliable, but the result must still be tied to
+   `observedRemoteReleaseSha`.
+3. Resolve the fetched object SHA and **require** it equals
+   `observedRemoteReleaseSha`. If it differs, report that the remote release
+   branch moved during validation and either restart from a fresh read-only
+   discovery pass or fail closed — do **not** continue with whichever SHA
+   arrived.
+4. Run the shared SHA-anchored validator on that pinned SHA **before** creating
+   any local branch tip, pushing, or creating a PR. Do **not** blindly check
+   out the remote branch.
+5. In `finally`-style cleanup: delete **only** temporary refs created by this
+   invocation. Cleanup on success and failure. Cleanup failure is reported but
+   must **not** trigger remote mutation. Dry-run creates no refs. Fetched
+   objects may remain in the object database (execute-time metadata mutation).
+
+#### Before remote mutation (PR create / rely on remote branch)
+
+Immediately before creating a PR or otherwise relying on the remote release
+branch:
+
+1. Re-probe the exact remote branch ref.
+2. Require it still equals the validated candidate SHA
+   (`observedRemoteReleaseSha` / validated SHA).
+3. Re-check that the selected PR state still corresponds to that SHA where
+   relevant.
+4. Refuse if the branch disappeared or moved.
+
+#### Local-only branch push
+
+- Push the **exact validated candidate SHA** to the **exact** destination ref
+  `refs/heads/release/v<version>` (SHA-to-ref form), not an ambiguous
+  current-branch push.
+- If the remote branch appeared or changed after the earlier absence check, the
+  push must fail closed rather than overwrite; never force-update.
+- For an **existing** remote branch, the utility must **not** push merely to
+  “synchronize” after validation; once the exact remote ref is confirmed
+  unchanged, only create or report the PR.
 
 ### Fresh prepare ordering (post-creation verify before push)
 
 ```text
 prechecks (incl. preliminary signing diagnostics)
-→ edit release files
+→ edit release files (changelog cut + all three package/lock root versions)
 → create branch release/v<version>
 → git commit -S -m "release: <version>"
 → resolve exact new commit SHA
 → shared SHA-anchored validator(candidate-sha)
-   (blob extract + helper + verify-commit + diff-tree + …)
-→ only then: git push -u origin release/v<version>
-→ only then: gh pr create (per PR-state rules)
+   (blob extract + full lockfile contract + helper + verify-commit + diff-tree)
+→ only then: push exact SHA to refs/heads/release/v<version>
+→ re-probe remote as needed; only then: gh pr create (per PR-state rules)
 ```
 
 If post-creation invariant or `verify-commit` fails:
@@ -476,7 +564,9 @@ If post-creation invariant or `verify-commit` fails:
 
 ### Prepare PR state handling
 
-Lookup open, closed, and merged PRs for head `release/v<version>`:
+Lookup open, closed, and merged PRs for head `release/v<version>`, classified
+relative to `observedRemoteReleaseSha` / the validated candidate SHA when a
+remote branch is involved:
 
 | State | Behavior |
 | --- | --- |
@@ -485,7 +575,9 @@ Lookup open, closed, and merged PRs for head `release/v<version>`:
 | Closed unmerged; same head identity | Hard-refuse; no reopen/replacement |
 | Conflicting (SHA differs, base ≠ `main`, multiple relevant PRs, etc.) | Hard-refuse |
 
-Create PR only when full lookup finds no relevant open/closed/merged PR.
+Create PR only when full lookup finds no relevant open/closed/merged PR, and
+only after the pre-mutation re-probe confirms the remote branch (if any) still
+equals the validated SHA.
 
 ### Other prepare resume scenarios
 
@@ -495,12 +587,16 @@ Create PR only when full lookup finds no relevant open/closed/merged PR.
 | Clean worktree files differ from candidate commit | Candidate wins; validate extracted blobs only |
 | Candidate valid, current checkout invalid | Resume succeeds validation |
 | Current checkout valid, candidate invalid | Hard refuse |
-| Local validated, no remote | Push; then PR handling |
-| Remote-only; object already local | Validate fetched/available SHA; no blind checkout |
+| Local validated, no remote | Push exact SHA → exact destination ref; then PR handling |
+| Remote-only; object already local at `observedRemoteReleaseSha` | Validate that SHA; no blind checkout |
 | Remote-only; object not local (dry-run) | No fetch; report need `--execute`; exit nonzero |
-| Remote-only; `--execute` | Controlled fetch; validate SHA; then PR/local-ref steps without force |
-| Remote validated, no relevant PR | Create PR |
+| Remote-only; `--execute` | Temp-ref fetch pinned to `observedRemoteReleaseSha`; mismatch → refuse/restart; validate; re-probe before PR; cleanup temp ref |
+| Remote moved between ls-remote and fetch | Refuse or restart discovery; do not validate the unexpected SHA |
+| Remote moved/disappeared after validation before PR | Refuse |
+| Concurrent remote branch appears during local-only push | Fail closed; never force-overwrite |
+| Remote validated, no relevant PR | Create PR only after re-probe confirms SHA |
 | Local commit exists after post-creation verify failure (never pushed) | Resume: shared validator; if now valid, push/PR; if still invalid, refuse and leave untouched |
+| Signed commit with inconsistent lockfile root versions | Hard refuse |
 | Divergent local/remote tips | Hard refuse |
 | Invariant failure | Hard refuse |
 | Dirty pre-commit tree (fresh only) | Refuse; manual restore |
@@ -555,10 +651,11 @@ Never recreate/move/delete/force. **Invalid local tag:** hard-refuse.
 Document operator flow; exact assert flags (`--verify-release`,
 `--verify-release-date`, `--print-release-date` vs `--release-date`); signature
 policy (crypto validity only); mandatory post-creation verify before push;
-SHA-anchored candidate validation (not worktree); remote-only resume /
-dry-run object limits; prepare/tag fresh/resume; PR states; ls-remote exit
-classification; local-tag-then-push; errors that leave unverified-but-created
-local objects for investigation.
+SHA-anchored candidate validation (not worktree); full package/lockfile root
+version contract; pinned remote-only probe/fetch/re-probe; temporary fetch-ref
+cleanup; prepare/tag fresh/resume; PR states; ls-remote exit classification;
+local-tag-then-push; errors that leave unverified-but-created local objects
+for investigation.
 
 ## Acceptance Criteria
 
@@ -577,11 +674,18 @@ local objects for investigation.
   resume.
 - Fresh and resume prepare share one SHA-anchored validator: resolve one
   candidate SHA; extract `CHANGELOG.md` / `package.json` / `package-lock.json`
-  blobs to a temp dir; run helper on those paths; diff-tree vs parent; never
-  validate ambient worktree files as the candidate.
-- Remote-only dry-run without local object: no fetch, no false success. Execute
-  fetches controlled ref, validates before branch/PR mutations; no blind
-  checkout.
+  blobs to a temp dir; enforce `package.json.version`,
+  `package-lock.json.version`, and `packages[""].version` all equal
+  `--version` with `packages[""]` present as an object; run helper on those
+  paths; diff-tree vs parent; never validate ambient worktree files as the
+  candidate.
+- Fresh preparation updates all three canonical root version fields without
+  rewriting unrelated lockfile entries.
+- Remote-only: record `observedRemoteReleaseSha`; dry-run no fetch / no false
+  success; execute temp-ref fetch must equal observed SHA; re-probe before PR;
+  local-only push is SHA→exact-ref, fail closed on concurrent appearance; no
+  force; no synchronize-push of an already-validated remote branch; temp refs
+  cleaned up (only refs created by this invocation).
 - Fresh tag / `--execute --push`: create tag → full invariant + `verify-tag` →
   only then optional push. Same leave-local / resume behavior on failure. No
   create-then-push without verify.
@@ -618,13 +722,21 @@ matrix; verify-commit/tag valid/invalid/unsigned/missing-tooling; stale main
 tip; later-UTC-day tag; post-creation verify success then push; post-creation
 verify failure with no push/PR and local object retained; later rerun resume
 after failed post-creation verify; `--execute --push` create → verify → push
-ordering; no cleanup/force after verify failure; **resume while on `main` with
-release branch elsewhere**; **worktree data differs from candidate**;
-**candidate valid / checkout invalid succeeds**; **checkout valid / candidate
-invalid refuses**; **remote-only fetch+validate without checkout**; **dry-run
-remote-only unavailable locally**; missing/malformed candidate paths refuse;
-shared validator for fresh+resume; helper receives extracted paths; temp
-cleanup on success/failure; no candidate-controlled script execution. Live
+ordering; no cleanup/force after verify failure; resume while on `main` with
+release branch elsewhere; worktree data differs from candidate; candidate valid
+/ checkout invalid succeeds; checkout valid / candidate invalid refuses;
+remote-only fetch+validate without checkout; dry-run remote-only unavailable
+locally; missing/malformed candidate paths refuse; shared validator for
+fresh+resume; helper receives extracted paths; temp cleanup on success/failure;
+no candidate-controlled script execution; **all three package/lock root
+versions aligned**; **stale `packages[""].version` refused**; **stale top-level
+lock version refused**; **missing/malformed `packages[""]` refused**; **fresh
+prep updates all three**; **resume refuses inconsistent lockfile commit**;
+**stable remote SHA across probe/fetch/validate/PR**; **remote moves between
+ls-remote and fetch**; **fetched SHA ≠ observed**; **remote moves/disappears
+after validation before PR**; **local-only exact SHA→ref push**; **concurrent
+branch appearance refuses overwrite**; **temp fetch-ref cleanup including
+pre-existing same-name collision and failure-path cleanup**. Live
 signing/`gh`/push remain operator gates.
 
 ## Risks and Considerations
@@ -641,6 +753,11 @@ signing/`gh`/push remain operator gates.
   investigation and resume — never auto-cleanup.
 - Validating ambient worktree files during resume would approve the wrong tree
   when HEAD ≠ candidate; SHA-anchored blob extraction is load-bearing.
+- Checking only `package-lock.json.version` would miss a stale
+  `packages[""].version`; both root fields are required.
+- Remote branch can move between probe and fetch; pinning to
+  `observedRemoteReleaseSha` and re-probing before PR prevents validating or
+  acting on a different commit.
 - SSH verify depends on local `allowedSignersFile`; missing config fails closed
   rather than skipping.
 - ls-remote exit `2` is the only “absent” signal; treating other nonzeros as
