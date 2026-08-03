@@ -65,8 +65,11 @@ links last.
 
 ### Release workflow
 
-Tag is manual release decision. Workflow checks out full history, installs from
-lockfile, then performs these checks before publication:
+Tag is manual release decision. Only **new** `v*` tag creates (not
+force-moves or deletes) start the job. The job uses GitHub Environment
+`release` with required reviewers. Workflow checks out full history, verifies
+GitHub reports the annotated tag as signed, installs from lockfile, then
+performs these checks before publication:
 
 1. tag is exactly `v<package.json version>`;
 2. tagged SHA is reachable from explicitly fetched `origin/main`;
@@ -75,13 +78,18 @@ lockfile, then performs these checks before publication:
 5. generated skill copies match canonical sources after `planlet update`;
 6. tagged source remains clean;
 7. requested changelog section exists and has an entry;
-8. `npm pack --json` succeeds and yields reviewed package metadata.
+8. `npm pack --json --ignore-scripts` succeeds against that verified build and
+   yields reviewed package metadata.
 
 Workflow pins its two external actions to reviewed commit SHAs. A workflow-level
 concurrency group serializes runs for same tag without cancelling an in-flight
-publication. npm 11.5.1 supplies trusted-publishing support; no `NPM_TOKEN`
+publication. npm `^11.5.1` supplies trusted-publishing support; no `NPM_TOKEN`
 exists. Workflow publishes exact tarball produced by `npm pack` with public
-access and provenance.
+access and provenance. After a new publish, it waits for registry visibility and
+re-runs the same identity/integrity checks before mutating the GitHub release.
+First-publication path also runs
+`assert-changelog-release-ready.mjs --release-date` for the current UTC day;
+reruns skip that date gate.
 
 Rerun does not treat any registry hit as success. When exact version exists,
 workflow compares registry package name, version, repository, available
@@ -91,17 +99,22 @@ publication. Non-404 lookup failures fail rather than falling through to
 publish. Existing GitHub release notes are replaced from changelog; missing
 release is created from same file.
 
+Repository-side controls: `v*` tag ruleset restricts create/update/delete to
+admins; Environment `release` requires a reviewer before the job can use
+OIDC/publish permissions. npm trusted publisher must name Environment `release`
+to match.
+
 ### Publication gates and unresolved decisions
 
 No external step proceeds until captain records all choices:
 
 1. **Public release:** authorize exposing full repository history after T7 audit,
    or keep repository private and defer publication/provenance.
-2. **Release governance:** decide whether current `main` protection is enough:
-   strict required CI across six OS/Node jobs, signed commits, linear history,
-   disabled force-push/deletion, and admin enforcement disabled, but no tag
-   controls or protected release environment. Ancestry proves reachability, not
-   review.
+2. **Release governance:** after bootstrap, captain amended T15 to add a `v*`
+   tag ruleset (admin bypass) and GitHub Environment `release` with required
+   reviewers, plus workflow guards against force-moved tags and verified signed
+   tags. Ancestry still proves reachability, not review; the environment and
+   ruleset supply authorization.
 3. **Bootstrap:** approve npm owner/account, available package name, exact clean
    source SHA, reviewed artifact hash/file list, and irreversible 0.1.0 publish.
 
@@ -146,9 +159,11 @@ After all gates:
 3. T8 publishes exact approved 0.1.0 artifact; T12 creates matching tag/release.
 4. T13 configures trusted publisher for npm package `@vipentti/planlet` on
    GitHub repository `vipentti/planlet` with workflow
-   `.github/workflows/release.yml`.
+   `.github/workflows/release.yml` and Environment name `release` (must match
+   the workflow `environment:`).
 5. T14 lands Slice B automation and confirms main CI before any automated tag.
-6. T9 prepares 0.1.1 on main, pushes source before tag, performs real release,
+6. T19 hardens release governance and workflow before T9.
+7. T9 prepares 0.1.1 on main, pushes source before tag, performs real release,
    and records workflow/provenance/release evidence.
 
 This order prevents bootstrap tag from activating workflow and ensures
@@ -216,10 +231,11 @@ each line write-once and non-self-referential.
 
 - Public visibility exposes reachable history; tip cleanup is insufficient.
 - npm publication and public-history disclosure are effectively irreversible.
-- Current protected `main` still lacks administrator enforcement, tag controls,
-  and a protected release environment; captain must decide whether existing
-  governance is sufficient.
-- Trusted-publisher mismatch commonly appears as 401/403 after checks pass.
+- Protected `main` still lacks administrator enforcement; release authorization
+  additionally uses a `v*` tag ruleset, Environment `release` with required
+  reviewers, and workflow rejection of force-moved tags.
+- Trusted-publisher mismatch (including Environment name drift) commonly appears
+  as 401/403 after checks pass.
 - npm name or ownership can change before execution; recheck immediately.
 - Concurrent same-tag runs are serialized, but failed external state must still
   satisfy exact rerun verification.

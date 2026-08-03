@@ -18,6 +18,7 @@
 - [x] T16 Record captain bootstrap authorization naming npm owner/account, exact clean source SHA, reviewed artifact identity/hash, and permission for irreversible 0.1.0 publication
 - [x] T17 Reconcile Slice B onto current `main` as source of truth: keep main planlet evidence and completed bootstrap tasks, add adapted `release.yml` (not stale unscoped Slice A content), align docs without rewriting write-once evidence, and pass focused, full-suite, generated-skill parity, and packaging checks
 - [x] T18 Document post-bootstrap install for `@vipentti/planlet`, publication gates, and the common tag-triggered `release.yml` flow in `README.md`; point `AGENTS.md` at those owner documents without duplicating procedure; on planlet completion retarget any README link from `plans/release-automation/` to the completed archive path
+- [x] T19 Harden `release.yml` and release governance before automated 0.1.1: Environment `release` with required reviewers, `v*` tag ruleset, reject force-moved tags, verify signed annotated tags, post-publish registry re-validation before GitHub release, `npm pack --ignore-scripts`, strict changelog date gate on first publish, npm `^11.5.1` upgrade step, and JSON parse hardening; sync npm trusted-publisher environment name to `release`
 
 ## Verification Evidence
 
@@ -36,3 +37,7 @@
 - 2026-08-03 — GitHub repository homepage set to `https://www.npmjs.com/package/@vipentti/planlet`.
 - 2026-08-03 — Captain configured npm trusted publisher for package `@vipentti/planlet` on GitHub repository `vipentti/planlet` with workflow filename `release.yml`, no GitHub environment, publishing access requiring 2FA and disallowing bypass-2FA tokens (T13).
 - 2026-08-03 — Squash-merged Slice B to `main` as `0c3d63985989e252d11fcdcf64b51c71c4e27fb3` (`release.yml` present); only existing release tag remained `v0.1.0` (no new tag during merge) (T14).
+- 2026-08-03 — Captain amended release governance (T15 follow-up): add `v*` tag ruleset `release-tags` (creation/update/deletion/non-fast-forward; repository admin bypass) and GitHub Environment `release` with required reviewer `vipentti` (`prevent_self_review: false`).
+- 2026-08-03 — Captain must update npm trusted publisher Environment name from empty to `release` to match workflow before the next automated publish (T13 sync / T19).
+- 2026-08-03 — Hardening implemented on branch (pending merge + npm env sync): `release.yml` uses Environment `release`, rejects non-create tag pushes, verifies GitHub-reported signed annotated tags, packs with `--ignore-scripts`, re-validates registry after publish, applies `--release-date` on first publish, upgrades to `npm@^11.5.1`, and hardens pack/view JSON parsing (T19 in progress).
+- 2026-08-03 — Captain set npm trusted publisher Environment name to `release` for `@vipentti/planlet` / `release.yml`, matching workflow Environment (T13 sync / T19).

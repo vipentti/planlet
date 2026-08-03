@@ -14,12 +14,39 @@ concurrency:
 
 jobs:
   release:
+    # New tag only — ignore force-moves, deletes, and non-create updates.
+    if: >-
+      github.event_name == 'push' &&
+      github.event.created &&
+      !github.event.deleted &&
+      !github.event.forced
     runs-on: ubuntu-latest
+    environment: release
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
+
+      - name: Verify annotated tag is signed
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          object_type=$(git cat-file -t "refs/tags/${GITHUB_REF_NAME}")
+          test "$object_type" = "tag" || {
+            echo "Release tags must be annotated and signed: ${GITHUB_REF_NAME} is ${object_type}" >&2
+            exit 1
+          }
+          tag_sha=$(git rev-parse "refs/tags/${GITHUB_REF_NAME}")
+          verification=$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${tag_sha}" --jq .verification)
+          echo "$verification"
+          echo "$verification" | jq -e '.verified == true' >/dev/null || {
+            echo "GitHub does not report a verified signature on ${GITHUB_REF_NAME}" >&2
+            exit 1
+          }
+
       - name: Verify tag and main ancestry
         env:
           GH_TOKEN: ${{ github.token }}
@@ -41,11 +68,13 @@ jobs:
             echo "VERSION=$version"
             echo "PACKAGE_NAME=$name"
           } >> "$GITHUB_ENV"
+
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
-          cache: npm
           registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+
       - run: npm ci
       - run: npm run format:check
       - run: npm run lint
@@ -53,40 +82,66 @@ jobs:
       - run: npm run build
       - run: npm test
       - run: git diff --check
+
       - name: Verify generated skills
         run: |
           node dist/planlet.mjs update --tools all
           git diff --exit-code -- .agents .claude
+
       - name: Verify clean tagged source
         run: test -z "$(git status --porcelain)"
+
       - name: Extract release notes
         run: node scripts/changelog.mjs "$VERSION" > "$RUNNER_TEMP/release-notes.md"
+
+      - name: Ensure npm supports trusted publishing
+        run: npm install --global npm@^11.5.1
+
       - name: Build reviewed package artifact
         shell: bash
         run: |
-          npm install --global npm@11.5.1
-          npm pack --json --pack-destination "$RUNNER_TEMP" > "$RUNNER_TEMP/pack.json"
+          set -euo pipefail
+          # Pack the already-verified build; do not re-run prepack/build.
+          npm pack --json --ignore-scripts --pack-destination "$RUNNER_TEMP" > "$RUNNER_TEMP/pack.json"
           node --input-type=module <<'NODE'
+          import assert from "node:assert/strict";
           import { readFileSync, appendFileSync } from "node:fs";
           const report = JSON.parse(readFileSync(`${process.env.RUNNER_TEMP}/pack.json`));
-          const packed = Array.isArray(report) ? report[0] : Object.values(report)[0];
+          assert.ok(Array.isArray(report) && report[0], "npm pack --json must return a non-empty array");
+          const packed = report[0];
+          assert.equal(typeof packed.filename, "string");
+          assert.equal(typeof packed.integrity, "string");
           appendFileSync(
             process.env.GITHUB_ENV,
             `PACKAGE_TARBALL=${process.env.RUNNER_TEMP}/${packed.filename}\n`,
           );
           NODE
+
       - name: Publish or verify existing package
         shell: bash
         run: |
           set -euo pipefail
           spec="${PACKAGE_NAME}@${VERSION}"
-          if npm view "$spec" --json > "$RUNNER_TEMP/registry.json" 2> "$RUNNER_TEMP/npm-view.err"; then
+
+          read_registry_json() {
+            node --input-type=module <<'NODE'
+          import assert from "node:assert/strict";
+          import { readFileSync, writeFileSync } from "node:fs";
+          const raw = JSON.parse(readFileSync(`${process.env.RUNNER_TEMP}/registry.json`));
+          const registry = Array.isArray(raw) ? raw[0] : raw;
+          assert.ok(registry && typeof registry === "object", "npm view --json returned no object");
+          writeFileSync(`${process.env.RUNNER_TEMP}/registry.json`, JSON.stringify(registry));
+          NODE
+          }
+
+          verify_registry_matches_pack() {
             node --input-type=module <<'NODE'
           import assert from "node:assert/strict";
           import { readFileSync } from "node:fs";
           const registry = JSON.parse(readFileSync(`${process.env.RUNNER_TEMP}/registry.json`));
           const report = JSON.parse(readFileSync(`${process.env.RUNNER_TEMP}/pack.json`));
-          const packed = Array.isArray(report) ? report[0] : Object.values(report)[0];
+          assert.ok(Array.isArray(report) && report[0], "npm pack --json must return a non-empty array");
+          const packed = report[0];
           const source = JSON.parse(readFileSync("package.json"));
           assert.equal(registry.name, source.name, "registry package name mismatch");
           assert.equal(registry.version, source.version, "registry version mismatch");
@@ -95,14 +150,43 @@ jobs:
             assert.equal(registry.gitHead, process.env.GITHUB_SHA, "registry source SHA mismatch");
           }
           assert.equal(registry.dist?.integrity, packed.integrity, "registry artifact integrity mismatch");
-          console.log(`Verified existing ${registry.name}@${registry.version}: ${registry.dist.tarball}`);
+          console.log(`Verified ${registry.name}@${registry.version}: ${registry.dist.tarball}`);
           NODE
+          }
+
+          if npm view "$spec" --json > "$RUNNER_TEMP/registry.json" 2> "$RUNNER_TEMP/npm-view.err"; then
+            read_registry_json
+            verify_registry_matches_pack
           elif grep -q "E404" "$RUNNER_TEMP/npm-view.err"; then
+            # First publication only: empty Unreleased + dated section matching today UTC.
+            node scripts/assert-changelog-release-ready.mjs --release-date "$(date -u +%Y-%m-%d)"
             npm publish "$PACKAGE_TARBALL" --access public --provenance
+            # Wait for packument visibility, then apply the same identity/integrity checks.
+            visible=0
+            for attempt in 1 2 3 4 5 6 7 8 9 10; do
+              if npm view "$spec" --json > "$RUNNER_TEMP/registry.json" 2> "$RUNNER_TEMP/npm-view.err"; then
+                visible=1
+                break
+              fi
+              if ! grep -q "E404" "$RUNNER_TEMP/npm-view.err"; then
+                cat "$RUNNER_TEMP/npm-view.err" >&2
+                exit 1
+              fi
+              echo "Waiting for registry visibility (attempt ${attempt})..."
+              sleep 6
+            done
+            if test "$visible" != 1; then
+              echo "Published package not visible on the registry after waiting" >&2
+              cat "$RUNNER_TEMP/npm-view.err" >&2 || true
+              exit 1
+            fi
+            read_registry_json
+            verify_registry_matches_pack
           else
             cat "$RUNNER_TEMP/npm-view.err" >&2
             exit 1
           fi
+
       - name: Create or update GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
