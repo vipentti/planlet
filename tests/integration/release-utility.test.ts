@@ -9,7 +9,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
@@ -172,7 +172,7 @@ function makeRepo(options: MakeOptions = {}): Repo {
   const ghLog = ghStub(base, options.prList ?? "[]");
   const env: NodeJS.ProcessEnv = {
     ...process.env,
-    PATH: join(base, "bin") + ":" + process.env.PATH,
+    PATH: join(base, "bin") + delimiter + process.env.PATH,
   };
   return {
     dir,
@@ -420,7 +420,10 @@ test("prepare refuses before push when a post-commit hook mutates an allowed rel
   const hooks = join(repo.dir, ".git", "hooks");
   mkdirSync(hooks, { recursive: true });
   const hook = join(hooks, "post-commit");
-  writeFileSync(hook, ["#!/bin/sh", `node ${mutator}`].join("\n") + "\n");
+  writeFileSync(
+    hook,
+    ["#!/bin/sh", `node ${mutator.replace(/\\\\/g, "/")}`].join("\n") + "\n",
+  );
   chmodSync(hook, 0o755);
 
   const out = release(
@@ -453,7 +456,11 @@ function withPostCommitHook(repo: Repo, mutator: string[]): void {
   const hooks = join(repo.dir, ".git", "hooks");
   mkdirSync(hooks, { recursive: true });
   const hook = join(hooks, "post-commit");
-  writeFileSync(hook, ["#!/bin/sh", `node ${mutatorPath}`].join("\n") + "\n");
+  writeFileSync(
+    hook,
+    ["#!/bin/sh", `node ${mutatorPath.replace(/\\\\/g, "/")}`].join("\n") +
+      "\n",
+  );
   chmodSync(hook, 0o755);
 }
 
