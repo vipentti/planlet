@@ -338,6 +338,7 @@ async function cmdPrepare() {
     );
     plan("Would push " + branchName + " to origin");
     plan("Would create PR (base: main)");
+    plan("Would checkout main after PR create");
     return;
   }
 
@@ -485,7 +486,22 @@ async function cmdPrepare() {
       ").\n\nSee CHANGELOG.md for details.",
   );
   if (pr.status !== 0) fail("gh pr create failed:\n" + pr.stderr.trim());
-  console.log("PR created: " + pr.stdout.trim());
+  const prUrl = pr.stdout.trim();
+  console.log("PR created: " + prUrl);
+
+  // Return to main so the operator can fast-forward after the PR merges.
+  // Local main tip is unchanged; release work lives only on branchName.
+  const switchBack = git("checkout", "main");
+  if (switchBack.status !== 0) {
+    fail(
+      "PR created (" +
+        prUrl +
+        ") but failed to checkout main: " +
+        switchBack.stderr.trim() +
+        ". Resolve manually, then continue; prepare does not resume.",
+    );
+  }
+  plan("Checked out main");
 }
 
 // ===================================================================

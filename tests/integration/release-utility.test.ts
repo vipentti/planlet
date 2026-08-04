@@ -241,6 +241,7 @@ test("prepare dry-run performs no mutations and prints a plan", () => {
   const out = release(repo, "prepare", "--version", "1.2.3");
   assert.equal(out.status, 0, out.stderr);
   assert.match(out.stdout, /Would cut changelog/);
+  assert.match(out.stdout, /Would checkout main after PR create/);
   assert.match(out.stdout, /\[dry-run\]/);
 
   // No branch was created, no PR opened, and package.json is untouched.
@@ -257,6 +258,7 @@ test("prepare dry-run performs no mutations and prints a plan", () => {
 
 test("prepare succeeds end to end: branch, three version fields, signed commit, push, PR", () => {
   const repo = makeRepo({ version: "0.1.0" });
+  const mainShaBefore = git(repo, "rev-parse", "main").stdout.trim();
   const out = release(
     repo,
     "prepare",
@@ -279,8 +281,10 @@ test("prepare succeeds end to end: branch, three version fields, signed commit, 
   );
   assert.equal(remote.status, 0);
 
-  // Changelog cut: Unreleased empty, new dated version section holds the notes.
-  const changelog = readFileSync(join(repo.dir, "CHANGELOG.md"), "utf8");
+  // Release commit holds the cut changelog and version bumps (worktree is back
+  // on main, so inspect the branch tip rather than the working tree).
+  const sha = git(repo, "rev-parse", "release/v1.2.3").stdout.trim();
+  const changelog = git(repo, "show", `${sha}:CHANGELOG.md`).stdout;
   assert.ok(changelog.includes(`## [1.2.3] - ${today}`));
   const unreleasedBody =
     changelog
@@ -289,14 +293,13 @@ test("prepare succeeds end to end: branch, three version fields, signed commit, 
   assert.equal(unreleasedBody, "");
   assert.ok(changelog.includes("An unreleased item\n"));
 
-  // Three root version fields written.
-  assert.equal(readJson(repo, "package.json").version, "1.2.3");
-  const lock = readJson(repo, "package-lock.json");
+  const pkg = JSON.parse(git(repo, "show", `${sha}:package.json`).stdout);
+  assert.equal(pkg.version, "1.2.3");
+  const lock = JSON.parse(git(repo, "show", `${sha}:package-lock.json`).stdout);
   assert.equal(lock.version, "1.2.3");
   assert.equal(lock.packages[""].version, "1.2.3");
 
   // Commit is signed and has one parent.
-  const sha = git(repo, "rev-parse", "HEAD").stdout.trim();
   assert.equal(git(repo, "verify-commit", sha).status, 0);
   assert.equal(
     git(repo, "log", "--format=%s", "-1", sha).stdout.trim(),
@@ -330,6 +333,13 @@ test("prepare succeeds end to end: branch, three version fields, signed commit, 
   // PR created only after a successful push.
   const creates = ghCalls(repo).filter((c) => c.startsWith("pr create"));
   assert.equal(creates.length, 1);
+
+  // Checkout returns to main so the operator can fast-forward after merge.
+  // Local main tip is unchanged; release work lives only on the release branch.
+  assert.equal(git(repo, "branch", "--show-current").stdout.trim(), "main");
+  assert.equal(git(repo, "rev-parse", "main").stdout.trim(), mainShaBefore);
+  assert.equal(readJson(repo, "package.json").version, "0.1.0");
+  assert.match(out.stdout, /Checked out main/);
 });
 
 test("prepare refuses when the worktree is dirty", () => {

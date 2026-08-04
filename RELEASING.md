@@ -54,9 +54,12 @@ sets the three root version fields in `package.json` and `package-lock.json`,
 creates a signed commit `release: <version>` on branch `release/v<version>`, and
 opens a PR into `main`. It verifies the commit signature and commit contents
 before and after the commit, refuses on any existing branch, tag, or matching
-PR, and creates the PR only after a successful explicit non-force push.
+PR, and creates the PR only after a successful explicit non-force push. On
+success it checks out local `main` again so a post-merge fast-forward is
+one pull away.
 
-After the PR is reviewed and merged (no auto-merge), proceed to `tag`.
+After the PR is reviewed and merged (no auto-merge), update local `main` to the
+remote tip, then proceed to `tag`.
 
 ### Tag
 
