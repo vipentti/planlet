@@ -33,7 +33,8 @@ prepare e2e test match.
 4. Update `RELEASING.md` Prepare wording: successful execute leaves the
    checkout on `main`; after merge, update local `main` to the remote tip, then
    `tag`.
-5. `CHANGELOG.md` Unreleased note for the maintainer-script behavior.
+5. No `CHANGELOG.md` entry — `scripts/release.mjs` is repository-local
+   maintainer tooling, not published Planlet CLI surface (see `AGENTS.md`).
 
 Always checkout `main` (not “restore starting branch”): prepare already
 requires `HEAD == origin/main` tip, and the fast-forward workflow is on `main`.
@@ -45,7 +46,8 @@ requires `HEAD == origin/main` tip, and the fast-forward workflow is on `main`.
 - Dry-run prints the planned post-PR `main` checkout and mutates nothing.
 - Checkout failure after PR create fails closed with recovery guidance (PR
   already open).
-- `RELEASING.md` and Unreleased changelog reflect the behavior.
+- `RELEASING.md` reflects the behavior; `CHANGELOG.md` Unreleased stays empty
+  for this change.
 
 ## Verification
 

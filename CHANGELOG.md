@@ -6,11 +6,6 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and thi
 
 ## [Unreleased]
 
-### Changed
-
-- `release.mjs prepare --execute` checks out local `main` after creating the
-  release PR, so a post-merge fast-forward needs no manual branch switch.
-
 ## [0.1.2] - 2026-08-04
 
 ### Changed
