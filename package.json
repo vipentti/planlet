@@ -50,7 +50,9 @@
     "lint": "eslint \"src/**/*.ts\" \"tests/**/*.ts\"",
     "test": "tsx --test \"tests/**/*.test.ts\"",
     "type-check": "tsc --noEmit",
-    "prepack": "npm run build"
+    "prepack": "npm run build",
+    "release:prepare": "node scripts/release.mjs prepare",
+    "release:tag": "node scripts/release.mjs tag"
   },
   "devDependencies": {
     "@toon-format/toon": "4.0.0",
