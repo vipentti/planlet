@@ -6,10 +6,6 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and thi
 
 ## [Unreleased]
 
-### Added
-
-- Dependency-free `release:prepare` / `release:tag` maintainer utility (`scripts/release.mjs`) that scripts the release cut happy path and fails closed on existing or ambiguous state.
-
 ### Changed
 
 - Move changelog and tag-release guidance from `README.md` into `RELEASING.md`.
