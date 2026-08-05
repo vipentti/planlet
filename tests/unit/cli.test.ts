@@ -53,18 +53,23 @@ test("installation command help documents selectors and force flags", async () =
     ["update", /update \[--tools <ids>\] \[--force\]/],
     ["tools", /planlet tools/],
   ] as const) {
-    const stdout: string[] = [];
-    const stderr: string[] = [];
-    assert.equal(
-      await main(["help", command], {
-        cwd: "/path/that/does/not/need/to/exist",
-        stdout: (value) => stdout.push(value),
-        stderr: (value) => stderr.push(value),
-      }),
-      0,
-    );
-    assert.match(stdout.join(""), pattern);
-    assert.equal(stderr.join(""), "");
+    for (const form of [
+      ["help", command],
+      [command, "--help"],
+    ] as const) {
+      const stdout: string[] = [];
+      const stderr: string[] = [];
+      assert.equal(
+        await main([...form], {
+          cwd: "/path/that/does/not/need/to/exist",
+          stdout: (value) => stdout.push(value),
+          stderr: (value) => stderr.push(value),
+        }),
+        0,
+      );
+      assert.match(stdout.join(""), pattern);
+      assert.equal(stderr.join(""), "");
+    }
   }
 });
 

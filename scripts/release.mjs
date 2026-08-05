@@ -10,7 +10,7 @@
  * Dry-run is default. --execute enables mutations. --push is tag-only.
  */
 
-import { execSync, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
@@ -70,26 +70,6 @@ function remoteRefExists(ref) {
   if (r.status === 0) return true;
   if (r.status === 2) return false;
   fail("git ls-remote failed for " + ref + ": " + r.stderr.trim());
-}
-
-function parseVersionSuffix(suffix) {
-  if (!suffix || suffix.trim() === "") return { kind: "bare" };
-  const m = /^ - (\d{4}-\d{2}-\d{2})$/.exec(suffix);
-  return m ? { kind: "dated", date: m[1] } : { kind: "malformed", raw: suffix };
-}
-
-function getChangelogReleaseDate(version) {
-  const changelog = readFileSync(changelogPath, "utf8");
-  const re = new RegExp(
-    `^## \\[${escapeRegex(version)}\\] - (\\d{4}-\\d{2}-\\d{2})$`,
-    "m",
-  );
-  const m = re.exec(changelog);
-  return m ? m[1] : null;
-}
-
-function escapeRegex(s) {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function todayUtc() {

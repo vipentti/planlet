@@ -141,15 +141,15 @@ the question and installs every destination, so agents and CI are unaffected.
 
 ## Development
 
-| Command                 | Purpose                                         |
-| ----------------------- | ----------------------------------------------- |
-| `npm run format`        | Format source and project files                 |
-| `npm run format:check`  | Check formatting without changing files         |
-| `npm run lint`          | Lint the TypeScript source and tests            |
-| `npm run type-check`    | Type-check the TypeScript project               |
-| `npm run build`         | Build the executable at `dist/planlet.mjs`      |
-| `npm run skills:update` | Build CLI and refresh installed Planlet skills  |
-| `npm test`              | Run TypeScript tests with `tsx` and `node:test` |
+| Command                 | Purpose                                          |
+| ----------------------- | ------------------------------------------------ |
+| `npm run format`        | Format source and project files                  |
+| `npm run format:check`  | Check formatting without changing files          |
+| `npm run lint`          | Lint source files, tests, and maintainer scripts |
+| `npm run type-check`    | Type-check the TypeScript project                |
+| `npm run build`         | Build the executable at `dist/planlet.mjs`       |
+| `npm run skills:update` | Build CLI and refresh installed Planlet skills   |
+| `npm test`              | Run TypeScript tests with `tsx` and `node:test`  |
 
 Changelog and release process: see
 [`RELEASING.md`](https://github.com/vipentti/planlet/blob/main/RELEASING.md).

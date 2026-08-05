@@ -200,16 +200,6 @@ test("content-only show parts preserve advisory warnings", async () => {
   });
 });
 
-test("public main handles command help without repository discovery", async () => {
-  const { capture, runtime } = captureRuntime(
-    "/path/that/does/not/need/to/exist",
-  );
-
-  assert.equal(await main(["list", "--help"], runtime), 0);
-  assert.match(capture.stdout.join(""), /^Usage: planlet list /);
-  assert.deepEqual(capture.stderr, []);
-});
-
 test("global-looking option values are not consumed as globals or help", async () => {
   await withRepository(async (root) => {
     for (const arguments_ of [
