@@ -21,7 +21,7 @@
       TypeScript source and tests; remove the boilerplate
       `forceConsistentCasingInFileNames` from `tsconfig.json`; remove speculative
       `coverage/` ignores in `eslint.config.js`, `.gitignore`, `.prettierignore`.
-- [ ] T4 Refactor PR: share the byte-identical mutation-side
+- [x] T4 Refactor PR: share the byte-identical mutation-side
       `assertActivePlanletDirectory` and `readMarkdown` helpers between
       `src/core/task-update.ts` and `src/core/planlet-completion.ts` (the distinct
       read-only loader in `src/commands/read-only.ts` stays out of scope); replace

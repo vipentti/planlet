@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import {
   mkdirSync,
-  readFileSync,
   readdirSync,
   renameSync,
   rmSync,
@@ -16,6 +15,7 @@ import {
   withPlanletLock,
   type PlanletLockDependencies,
 } from "./planlet-lock.js";
+import { assertActivePlanletDirectory, readMarkdown } from "./planlet-files.js";
 import { resolveSafePath, tryLstat } from "./paths.js";
 import {
   assertValidSlug,
@@ -63,17 +63,6 @@ const DEFAULT_DEPENDENCIES: CompletePlanletDependencies = {
   temporaryName: (slug) => `.${slug}.completion-${randomUUID()}.tmp`,
 };
 
-function readMarkdown(path: string, filename: string): string {
-  try {
-    return readFileSync(path, "utf8");
-  } catch (error) {
-    throw new PlanletError("invalid_plan", `Cannot read ${filename}`, {
-      details: { path },
-      cause: error,
-    });
-  }
-}
-
 function normalizedReason(reason: string | undefined, slug: string): string {
   const value = reason?.trim() ?? "";
   if (value.length === 0 || /[\r\n]/.test(value)) {
@@ -84,22 +73,6 @@ function normalizedReason(reason: string | undefined, slug: string): string {
     );
   }
   return value;
-}
-
-function assertActivePlanletDirectory(path: string, slug: string): void {
-  const status = tryLstat(path);
-  if (status?.isSymbolicLink()) {
-    throw new PlanletError(
-      "unsafe_path",
-      `Planlet directory must not be a symbolic link: ${slug}`,
-      { details: { slug, path } },
-    );
-  }
-  if (!status?.isDirectory()) {
-    throw new PlanletError("plan_not_found", `Planlet not found: ${slug}`, {
-      details: { slug },
-    });
-  }
 }
 
 function appendCompletionRecord(

@@ -1,11 +1,5 @@
 import { randomUUID } from "node:crypto";
-import {
-  readFileSync,
-  renameSync,
-  rmSync,
-  statSync,
-  writeFileSync,
-} from "node:fs";
+import { renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import type { PlanletTask } from "./models.js";
@@ -13,7 +7,8 @@ import {
   withPlanletLock,
   type PlanletLockDependencies,
 } from "./planlet-lock.js";
-import { resolveSafePath, tryLstat } from "./paths.js";
+import { assertActivePlanletDirectory, readMarkdown } from "./planlet-files.js";
+import { resolveSafePath } from "./paths.js";
 import { assertValidSlug } from "./slugs.js";
 import { parseTaskLine } from "./task-parser.js";
 import { validatePlanletStructure } from "./validation.js";
@@ -56,33 +51,6 @@ const DEFAULT_DEPENDENCIES: UpdateTaskDependencies = {
   remove: (path) => rmSync(path, { force: true }),
   temporaryName: (slug) => `.${slug}.tasks-${randomUUID()}.tmp`,
 };
-
-function assertActivePlanletDirectory(path: string, slug: string): void {
-  const status = tryLstat(path);
-  if (status?.isSymbolicLink()) {
-    throw new PlanletError(
-      "unsafe_path",
-      `Planlet directory must not be a symbolic link: ${slug}`,
-      { details: { slug, path } },
-    );
-  }
-  if (!status?.isDirectory()) {
-    throw new PlanletError("plan_not_found", `Planlet not found: ${slug}`, {
-      details: { slug },
-    });
-  }
-}
-
-function readMarkdown(path: string, filename: string): string {
-  try {
-    return readFileSync(path, "utf8");
-  } catch (error) {
-    throw new PlanletError("invalid_plan", `Cannot read ${filename}`, {
-      details: { path },
-      cause: error,
-    });
-  }
-}
 
 function replaceTaskMarker(
   markdown: string,

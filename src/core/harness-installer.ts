@@ -87,7 +87,9 @@ function sortedRecord(
   entries: readonly (readonly [string, string])[],
 ): Readonly<Record<string, string>> {
   return Object.fromEntries(
-    [...entries].sort(([left], [right]) => left.localeCompare(right)),
+    [...entries].sort(([left], [right]) =>
+      left < right ? -1 : left > right ? 1 : 0,
+    ),
   );
 }
 
@@ -194,7 +196,8 @@ function collectPlanletFiles(
   const entries: Array<readonly [string, string]> = [];
   const visit = (directory: string, relativeDirectory: string): void => {
     const children = readdirSync(directory, { withFileTypes: true }).sort(
-      (left: Dirent, right: Dirent) => left.name.localeCompare(right.name),
+      (left: Dirent, right: Dirent) =>
+        left.name < right.name ? -1 : left.name > right.name ? 1 : 0,
     );
     for (const child of children) {
       const path = join(directory, child.name);
@@ -219,7 +222,9 @@ function collectPlanletFiles(
 
   for (const entry of readdirSync(destinationPath, {
     withFileTypes: true,
-  }).sort((left, right) => left.name.localeCompare(right.name))) {
+  }).sort((left, right) =>
+    left.name < right.name ? -1 : left.name > right.name ? 1 : 0,
+  )) {
     if (!entry.name.startsWith("planlet-")) continue;
     const path = join(destinationPath, entry.name);
     const kind = pathKind(path);

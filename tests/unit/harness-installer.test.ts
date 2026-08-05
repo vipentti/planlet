@@ -36,7 +36,7 @@ import { PlanletError } from "../../src/errors/planlet-error.js";
 
 function source(files: Readonly<Record<string, string>>): CanonicalSkillSource {
   const entries = Object.entries(files).sort(([left], [right]) =>
-    left.localeCompare(right),
+    left < right ? -1 : left > right ? 1 : 0,
   );
   return Object.freeze({
     skills: Object.freeze(
