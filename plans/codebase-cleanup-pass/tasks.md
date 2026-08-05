@@ -27,16 +27,16 @@
       switch the affected unit-test expectations to the same comparator. Preserve
       every fault-injection seam and keep the four local `asWriteConflict`
       definitions and the per-operation transaction flows unchanged.
-- [ ] T5 Hygiene fixes: add individually justified `.prettierignore` entries for
-      the nine drifted files (`.agents/skills/.planlet-manifest.json`,
-      `.claude/skills/.planlet-manifest.json`, `planlet_design.md`,
-      `plans/completed/2026-07-22-bootstrap-planlet-skills/plan.md`,
-      `plans/completed/2026-07-26-packaging-and-polish/plan.md`,
-      `plans/completed/2026-08-03-launch-readiness/plan.md`,
-      `plans/completed/2026-08-03-launch-readiness/tasks.md`,
-      `plans/completed/2026-08-04-release-cut-utility/plan.md`,
-      `tests/fixtures/skills/scenarios.json`); add teardown to the leaked temp
-      fixtures in `tests/integration/changelog.test.ts` and
+- [ ] T5 Hygiene fixes: classify the drifted files by ownership — narrowly ignore
+      the generated manifests (`.agents/skills/.planlet-manifest.json`,
+      `.claude/skills/.planlet-manifest.json`; their generator owns formatting)
+      and the `plans/completed/**` archive-policy pattern (completed planlets are
+      immutable audit records; documented policy, not five one-off entries); format
+      the maintained source artifacts `planlet_design.md` and
+      `tests/fixtures/skills/scenarios.json` (exact paths, not a broad JSON glob)
+      and add both to `npm run format` and `npm run format:check` in
+      `package.json` so the commands stay symmetric; add teardown to the leaked
+      temp fixtures in `tests/integration/changelog.test.ts` and
       `tests/integration/release-utility.test.ts`; replace the bare
       `SLUG_COMMANDS[command]!` lookups in `tests/integration/safety.test.ts`
       (184, 271, 312); guard `realpathSync` in `src/core/skill-source.ts:118`;
