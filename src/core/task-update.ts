@@ -9,11 +9,11 @@ import {
   type PlanletLockDependencies,
 } from "./planlet-lock.js";
 import { assertActivePlanletDirectory, readMarkdown } from "./planlet-files.js";
-import { resolveSafePath } from "./paths.js";
+import { atomicPublish, resolveSafePath } from "./paths.js";
 import { assertValidSlug } from "./slugs.js";
 import { parseTaskLine } from "./task-parser.js";
 import { validatePlanletStructure } from "./validation.js";
-import { isPlanletError, PlanletError } from "../errors/planlet-error.js";
+import { PlanletError, asWriteConflict } from "../errors/planlet-error.js";
 
 type TaskUpdateOperation = "check" | "uncheck";
 
@@ -105,24 +105,6 @@ function replaceTaskMarker(
   return updated.join("");
 }
 
-function asWriteConflict(
-  error: unknown,
-  slug: string,
-  taskId: string,
-): PlanletError {
-  if (isPlanletError(error)) {
-    return error;
-  }
-  return new PlanletError(
-    "write_conflict",
-    `Could not update task: ${taskId}`,
-    {
-      details: { slug, taskId },
-      cause: error,
-    },
-  );
-}
-
 /**
  * Checks or unchecks one task by atomically replacing tasks.md with a prepared
  * sibling file. Already-satisfied updates return without touching the file.
@@ -207,48 +189,33 @@ function updateTaskLocked(
     planletPath,
     dependencies.temporaryName(slug),
   );
-  let temporaryCreated = false;
-  let published = false;
-  let updateFailure: PlanletError | undefined;
-
-  try {
-    const mode = statSync(tasksPath).mode & 0o777;
-    dependencies.writeFile(temporaryPath, updatedMarkdown, mode);
-    temporaryCreated = true;
-    dependencies.rename(temporaryPath, tasksPath);
-    published = true;
-  } catch (error) {
-    updateFailure = asWriteConflict(error, slug, task.id);
-  }
-
-  if (temporaryCreated && !published) {
-    try {
-      dependencies.remove(temporaryPath);
-    } catch (cleanupFailure) {
-      throw new PlanletError(
-        "write_conflict",
-        `Could not clean up failed task update: ${task.id}`,
-        {
-          details: {
-            slug,
-            taskId: task.id,
-            temporaryPath,
-            cleanupFailed: true,
-          },
-          cause: new AggregateError(
-            updateFailure === undefined
-              ? [cleanupFailure]
-              : [updateFailure, cleanupFailure],
-            `Task update and cleanup failed: ${task.id}`,
-          ),
-        },
-      );
-    }
-  }
-
-  if (updateFailure !== undefined) {
-    throw updateFailure;
-  }
+  atomicPublish({
+    temporaryPath,
+    targetPath: tasksPath,
+    createTemporary: () => {
+      const mode = statSync(tasksPath).mode & 0o777;
+      dependencies.writeFile(temporaryPath, updatedMarkdown, mode);
+    },
+    rename: dependencies.rename,
+    remove: dependencies.remove,
+    onFailure: (error) =>
+      asWriteConflict(error, `Could not update task: ${task.id}`, {
+        slug,
+        taskId: task.id,
+      }),
+    cleanupFailure: {
+      code: "write_conflict",
+      message: `Could not clean up failed task update: ${task.id}`,
+      details: {
+        slug,
+        taskId: task.id,
+        temporaryPath,
+        cleanupFailed: true,
+      },
+      aggregateMessage: `Task update and cleanup failed: ${task.id}`,
+      fatal: true,
+    },
+  });
 
   return {
     slug,

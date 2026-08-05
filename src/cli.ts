@@ -26,6 +26,7 @@ import {
   resolveHarnessDestinations,
 } from "./core/harnesses.js";
 import { PLANLET_STATES, type PlanletState } from "./core/models.js";
+import { errnoIs } from "./core/paths.js";
 import { discoverRepositoryRoot } from "./core/repository.js";
 import { EXIT_CODES, type ExitCode } from "./errors/codes.js";
 import { isPlanletError } from "./errors/planlet-error.js";
@@ -150,11 +151,7 @@ function hasEntries(path: string): boolean {
   } catch (error) {
     // A missing directory has nothing in it, and a non-directory is reported as
     // a modified destination that the installer rejects with write_conflict.
-    if (
-      error instanceof Error &&
-      "code" in error &&
-      (error.code === "ENOENT" || error.code === "ENOTDIR")
-    ) {
+    if (errnoIs(error, "ENOENT", "ENOTDIR")) {
       return false;
     }
     throw error;

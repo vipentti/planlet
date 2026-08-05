@@ -1,15 +1,11 @@
 import { main } from "./cli.js";
-import { isPlanletError, PlanletError } from "./errors/planlet-error.js";
+import { PlanletError } from "./errors/planlet-error.js";
 import { renderToonError } from "./output/toon.js";
 
 export function renderUnexpectedError(error: unknown): {
   readonly stderr: string;
   readonly exitCode: number;
 } {
-  if (isPlanletError(error)) {
-    return renderToonError(error.toStructuredError());
-  }
-
   const debug = process.env.PLANLET_DEBUG === "1";
   const details: Record<string, unknown> = {};
   if (debug) {

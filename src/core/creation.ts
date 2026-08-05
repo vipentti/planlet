@@ -8,9 +8,9 @@ import {
 import { randomUUID } from "node:crypto";
 
 import type { PlanSummary } from "./models.js";
-import { resolveSafePath, tryLstat } from "./paths.js";
+import { atomicPublish, resolveSafePath, tryLstat } from "./paths.js";
 import { assertValidSlug, parseArchiveName } from "./slugs.js";
-import { PlanletError, isPlanletError } from "../errors/planlet-error.js";
+import { PlanletError, asWriteConflict } from "../errors/planlet-error.js";
 
 export interface CreatePlanletOptions {
   readonly repositoryRoot: string;
@@ -91,20 +91,6 @@ function assertNoCompletedCollision(plansPath: string, slug: string): void {
   }
 }
 
-function asWriteConflict(error: unknown, slug: string): PlanletError {
-  if (isPlanletError(error)) {
-    return error;
-  }
-  return new PlanletError(
-    "write_conflict",
-    `Could not create planlet: ${slug}`,
-    {
-      details: { slug },
-      cause: error,
-    },
-  );
-}
-
 /**
  * Creates a draft in a temporary sibling directory and publishes it with one
  * rename only after both complete stub files have been written.
@@ -124,7 +110,7 @@ export function createPlanlet(options: CreatePlanletOptions): PlanSummary {
     assertNoActiveCollision(plansPath, slug);
     assertNoCompletedCollision(plansPath, slug);
   } catch (error) {
-    throw asWriteConflict(error, slug);
+    throw asWriteConflict(error, `Could not create planlet: ${slug}`, { slug });
   }
 
   const temporaryPath = resolveSafePath(
@@ -132,56 +118,35 @@ export function createPlanlet(options: CreatePlanletOptions): PlanSummary {
     dependencies.temporaryName(slug),
   );
   const targetPath = resolveSafePath(plansPath, slug);
-  let temporaryCreated = false;
-  let published = false;
-  let creationFailure: PlanletError | undefined;
-
-  try {
-    mkdirSync(temporaryPath);
-    temporaryCreated = true;
-    dependencies.writeFile(
-      resolveSafePath(temporaryPath, "plan.md"),
-      `# ${title}\n`,
-    );
-    dependencies.writeFile(
-      resolveSafePath(temporaryPath, "tasks.md"),
-      `# Tasks: ${title}\n`,
-    );
-
-    // Recheck immediately before publication to narrow the collision race.
-    assertNoActiveCollision(plansPath, slug);
-    assertNoCompletedCollision(plansPath, slug);
-    dependencies.rename(temporaryPath, targetPath);
-    published = true;
-  } catch (error) {
-    creationFailure = asWriteConflict(error, slug);
-  }
-
-  if (temporaryCreated && !published) {
-    try {
-      dependencies.remove(temporaryPath);
-    } catch (cleanupFailure) {
-      const causes =
-        creationFailure === undefined
-          ? [cleanupFailure]
-          : [creationFailure, cleanupFailure];
-      throw new PlanletError(
-        "write_conflict",
-        `Could not clean up failed planlet creation: ${slug}`,
-        {
-          details: { slug, temporaryPath, cleanupFailed: true },
-          cause: new AggregateError(
-            causes,
-            `Planlet creation and cleanup failed: ${slug}`,
-          ),
-        },
+  atomicPublish({
+    temporaryPath,
+    targetPath,
+    createTemporary: () => mkdirSync(temporaryPath),
+    prepare: () => {
+      dependencies.writeFile(
+        resolveSafePath(temporaryPath, "plan.md"),
+        `# ${title}\n`,
       );
-    }
-  }
-
-  if (creationFailure !== undefined) {
-    throw creationFailure;
-  }
+      dependencies.writeFile(
+        resolveSafePath(temporaryPath, "tasks.md"),
+        `# Tasks: ${title}\n`,
+      );
+      // Recheck immediately before publication to narrow the collision race.
+      assertNoActiveCollision(plansPath, slug);
+      assertNoCompletedCollision(plansPath, slug);
+    },
+    rename: dependencies.rename,
+    remove: dependencies.remove,
+    onFailure: (error) =>
+      asWriteConflict(error, `Could not create planlet: ${slug}`, { slug }),
+    cleanupFailure: {
+      code: "write_conflict",
+      message: `Could not clean up failed planlet creation: ${slug}`,
+      details: { slug, temporaryPath, cleanupFailed: true },
+      aggregateMessage: `Planlet creation and cleanup failed: ${slug}`,
+      fatal: true,
+    },
+  });
 
   return {
     slug,

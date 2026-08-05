@@ -16,14 +16,14 @@ import {
   type PlanletLockDependencies,
 } from "./planlet-lock.js";
 import { assertActivePlanletDirectory, readMarkdown } from "./planlet-files.js";
-import { resolveSafePath, tryLstat } from "./paths.js";
+import { atomicPublish, resolveSafePath, tryLstat } from "./paths.js";
 import {
   assertValidSlug,
   createArchiveName,
   parseArchiveName,
 } from "./slugs.js";
 import { validatePlanletStructure } from "./validation.js";
-import { isPlanletError, PlanletError } from "../errors/planlet-error.js";
+import { PlanletError, asWriteConflict } from "../errors/planlet-error.js";
 
 export interface CompletePlanletOptions {
   readonly repositoryRoot: string;
@@ -126,24 +126,6 @@ function assertNoCompletionCollision(
   }
 }
 
-function asWriteConflict(
-  error: unknown,
-  slug: string,
-  details: Readonly<Record<string, unknown>> = {},
-): PlanletError {
-  if (isPlanletError(error)) {
-    return error;
-  }
-  return new PlanletError(
-    "write_conflict",
-    `Could not complete planlet: ${slug}`,
-    {
-      details: { slug, ...details },
-      cause: error,
-    },
-  );
-}
-
 function resumeRecordedCompletion(
   options: CompletePlanletOptions,
   dependencies: CompletePlanletDependencies,
@@ -203,7 +185,8 @@ function resumeRecordedCompletion(
     assertActivePlanletDirectory(source, slug);
     dependencies.moveDirectory(source, destination);
   } catch (error) {
-    throw asWriteConflict(error, slug, {
+    throw asWriteConflict(error, `Could not complete planlet: ${slug}`, {
+      slug,
       source,
       auditRecorded: true,
       resumeAttempted: true,
@@ -352,7 +335,9 @@ function completePlanletLocked(
     mkdirSync(completedPath, { recursive: true });
     assertNoCompletionCollision(completedPath, slug, destination);
   } catch (error) {
-    throw asWriteConflict(error, slug);
+    throw asWriteConflict(error, `Could not complete planlet: ${slug}`, {
+      slug,
+    });
   }
 
   // Fail if the source was replaced with a symlink while completion was being
@@ -376,31 +361,27 @@ function completePlanletLocked(
     source,
     dependencies.temporaryName(slug),
   );
-  let temporaryCreated = false;
-  let auditPublished = false;
-  try {
-    const mode = statSync(tasksPath).mode & 0o777;
-    dependencies.writeFile(temporaryPath, updatedTasks, mode);
-    temporaryCreated = true;
-    dependencies.replaceFile(temporaryPath, tasksPath);
-    auditPublished = true;
-  } catch (error) {
-    if (temporaryCreated && !auditPublished) {
-      try {
-        dependencies.remove(temporaryPath);
-      } catch (cleanupFailure) {
-        throw new PlanletError(
-          "write_conflict",
-          `Could not clean up failed completion audit: ${slug}`,
-          {
-            details: { slug, temporaryPath, cleanupFailed: true },
-            cause: new AggregateError([error, cleanupFailure]),
-          },
-        );
-      }
-    }
-    throw asWriteConflict(error, slug, { auditRecorded: false });
-  }
+  atomicPublish({
+    temporaryPath,
+    targetPath: tasksPath,
+    createTemporary: () => {
+      const mode = statSync(tasksPath).mode & 0o777;
+      dependencies.writeFile(temporaryPath, updatedTasks, mode);
+    },
+    rename: dependencies.replaceFile,
+    remove: dependencies.remove,
+    onFailure: (error) =>
+      asWriteConflict(error, `Could not complete planlet: ${slug}`, {
+        slug,
+        auditRecorded: false,
+      }),
+    cleanupFailure: {
+      code: "write_conflict",
+      message: `Could not clean up failed completion audit: ${slug}`,
+      details: { slug, temporaryPath, cleanupFailed: true },
+      fatal: true,
+    },
+  });
 
   try {
     // Recheck after recording the audit and immediately before movement.
@@ -410,7 +391,8 @@ function completePlanletLocked(
   } catch (error) {
     // Leave the published audit in place. Rewriting tasks.md here could clobber
     // concurrent edits; resumeRecordedCompletion can finish the move later.
-    throw asWriteConflict(error, slug, {
+    throw asWriteConflict(error, `Could not complete planlet: ${slug}`, {
+      slug,
       source,
       destination,
       auditRecorded: true,

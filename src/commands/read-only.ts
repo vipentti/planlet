@@ -2,12 +2,11 @@ import { readFileSync, readdirSync, type Dirent } from "node:fs";
 import { resolve } from "node:path";
 
 import {
-  PLANLET_STATES,
   type PlanletState,
   type PlanletTask,
   type PlanSummary,
 } from "../core/models.js";
-import { resolveSafePath, tryLstat } from "../core/paths.js";
+import { byName, resolveSafePath, tryLstat } from "../core/paths.js";
 import {
   assertValidSlug,
   isValidSlug,
@@ -112,9 +111,7 @@ function directoryEntries(path: string): readonly Dirent[] {
   try {
     return readdirSync(path, { withFileTypes: true })
       .filter((entry) => entry.isDirectory() || entry.isSymbolicLink())
-      .sort((left, right) =>
-        left.name < right.name ? -1 : left.name > right.name ? 1 : 0,
-      );
+      .sort((left, right) => byName(left.name, right.name));
   } catch (error) {
     throw new PlanletError("invalid_plan", "Cannot read planlet directory", {
       details: { path },
@@ -307,10 +304,6 @@ function findCandidate(repositoryRoot: string, slug: string): PlanletCandidate {
 export function listPlanlets(
   options: ListPlanletsOptions,
 ): readonly PlanSummary[] {
-  if (options.state !== undefined && !PLANLET_STATES.includes(options.state)) {
-    throw new TypeError(`Unknown planlet state: ${options.state}`);
-  }
-
   return discoverCandidates(options.repositoryRoot, options.completed === true)
     .map((candidate) => {
       try {
@@ -354,12 +347,6 @@ export function getPlanletStatus(
 }
 
 export function getPlanletTasks(options: TasksOptions): TasksResult {
-  if (options.remaining === true && options.completed === true) {
-    throw new TypeError(
-      "remaining and completed task filters are mutually exclusive",
-    );
-  }
-
   const loaded = loadCandidate(
     findCandidate(options.repositoryRoot, options.slug),
   );
@@ -407,12 +394,6 @@ function validationEntry(candidate: PlanletCandidate): ValidationEntry {
 export function validatePlanlets(
   options: ValidatePlanletsOptions,
 ): ValidationResult {
-  if (options.slug !== undefined && options.all === true) {
-    throw new TypeError(
-      "slug and all validation targets are mutually exclusive",
-    );
-  }
-
   const candidates =
     options.slug === undefined
       ? discoverCandidates(options.repositoryRoot, options.all === true)

@@ -10,7 +10,7 @@ import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { PlanletError } from "../errors/planlet-error.js";
-import { isPathWithinRoot } from "./paths.js";
+import { byName, errnoIs, isPathWithinRoot } from "./paths.js";
 
 interface CanonicalSkillFile {
   readonly skill: string;
@@ -30,7 +30,7 @@ export function sha256(content: Uint8Array): string {
 
 function directoryEntries(path: string): readonly Dirent[] {
   return readdirSync(path, { withFileTypes: true }).sort((left, right) =>
-    left.name < right.name ? -1 : left.name > right.name ? 1 : 0,
+    byName(left.name, right.name),
   );
 }
 
@@ -43,7 +43,7 @@ function hasCanonicalSkills(path: string): boolean {
         lstatSync(join(path, entry.name, "SKILL.md")).isFile(),
     );
   } catch (error) {
-    if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+    if (errnoIs(error, "ENOENT")) {
       return false;
     }
     throw new PlanletError(

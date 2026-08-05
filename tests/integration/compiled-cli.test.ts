@@ -416,11 +416,12 @@ test("production entry emits internal_error without stack by default", async () 
   }
 
   const { PlanletError } = await import("../../src/errors/planlet-error.js");
-  const passthrough = renderUnexpectedError(
+  const { renderToonError } = await import("../../src/output/toon.js");
+  const passthrough = renderToonError(
     new PlanletError("plan_not_found", "Planlet not found: missing", {
       details: { slug: "missing" },
       next: "planlet list",
-    }),
+    }).toStructuredError(),
   );
   assert.match(passthrough.stderr, /plan_not_found/);
   assert.match(passthrough.stderr, /planlet list/);
