@@ -28,8 +28,15 @@ test("canonical skills expose valid metadata and resolvable local resources", ()
   for (const name of SKILL_NAMES) {
     const skillPath = `skills/${name}/SKILL.md`;
     const markdown = read(skillPath);
-    assert.match(markdown, new RegExp(`^---\\nname: ${name}\\n`));
-    assert.match(markdown, /\ndescription: \S.+/);
+    assert.match(
+      markdown,
+      new RegExp(
+        `^---\\nname: ${name}\\ndescription: \\S.+\\n` +
+          `allowed-tools: Bash\\(planlet:\\*\\)\\n` +
+          `compatibility: Requires planlet CLI\\.\\n` +
+          `license: MIT\\n---\\n`,
+      ),
+    );
 
     for (const match of markdown.matchAll(/\[[^\]]+\]\(([^)]+)\)/g)) {
       const target = match[1];
