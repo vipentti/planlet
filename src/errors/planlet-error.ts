@@ -57,3 +57,17 @@ export class PlanletError extends Error {
 export function isPlanletError(error: unknown): error is PlanletError {
   return error instanceof PlanletError;
 }
+
+export function asWriteConflict(
+  error: unknown,
+  message: string,
+  details: ErrorDetails = {},
+): PlanletError {
+  if (isPlanletError(error)) {
+    return error;
+  }
+  return new PlanletError("write_conflict", message, {
+    details,
+    cause: error,
+  });
+}

@@ -14,7 +14,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { renderUnexpectedError } from "../../src/production-entry.js";
 import { completePlanlet } from "../../src/core/planlet-completion.js";
 import {
   acquireOwnedLock,
@@ -25,6 +24,7 @@ import {
 } from "../../src/core/planlet-lock.js";
 import { updateTask } from "../../src/core/task-update.js";
 import { PlanletError } from "../../src/errors/planlet-error.js";
+import { renderToonError } from "../../src/output/toon.js";
 
 const PLAN = "# Fixture Plan\n";
 const TASKS =
@@ -80,7 +80,6 @@ function acquirePlanletLock(
 test("competing task update fails with write_conflict while lock is held", () => {
   withRepo((root, tasksPath) => {
     plantPlanletLock(root, "fixture-plan", {
-      pid: process.pid,
       token: "live-holder",
     });
 
@@ -102,7 +101,6 @@ test("competing task update fails with write_conflict while lock is held", () =>
 test("task update racing completion lock fails with write_conflict", () => {
   withRepo((root, tasksPath) => {
     plantPlanletLock(root, "fixture-plan", {
-      pid: 1,
       token: "held",
     });
 
@@ -135,7 +133,6 @@ test("task update racing completion lock fails with write_conflict", () => {
 test("dead-holder locks are not reclaimed automatically", () => {
   withRepo((root, tasksPath) => {
     const lockPath = plantPlanletLock(root, "fixture-plan", {
-      pid: 999_999_999,
       token: "dead",
     });
 
@@ -162,7 +159,6 @@ test("dead-holder locks are not reclaimed automatically", () => {
 test("two reclaimers of one dead lock cannot both acquire", () => {
   withRepo((root) => {
     const lockPath = plantPlanletLock(root, "fixture-plan", {
-      pid: 42,
       token: "dead",
     });
     const rootDir = planletLockRoot(root);
@@ -231,7 +227,6 @@ test("lock is released when the operation throws", () => {
 test("barrier-ordered contention refuses stale second write then applies both checks", () => {
   withRepo((root, tasksPath) => {
     const lockPath = plantPlanletLock(root, "fixture-plan", {
-      pid: 1001,
       token: "a",
     });
 
@@ -555,7 +550,9 @@ test("a failed release surfaces through the production entry with its code", () 
     } catch (error) {
       thrown = error;
     }
-    const rendered = renderUnexpectedError(thrown);
+    const rendered = renderToonError(
+      (thrown as PlanletError).toStructuredError(),
+    );
     // The rendered path is escaped per platform, so match the recovery hint
     // rather than the raw path; the sibling test pins the path in `next`.
     assert.match(rendered.stderr, /task_not_found/);
@@ -624,7 +621,6 @@ test("missing planlet still reports plan_not_found and leaves no lock behind", (
 test("existing lock is left untouched on contention", () => {
   withRepo((root, tasksPath) => {
     const lockPath = plantPlanletLock(root, "fixture-plan", {
-      pid: 55,
       token: "maybe-live",
     });
     let removed = false;

@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { isPlanletError, PlanletError } from "../errors/planlet-error.js";
-import { tryLstat } from "./paths.js";
+import { errnoIs, tryLstat } from "./paths.js";
 
 /** Reserved lock name for repository-wide harness install serialization. */
 export const HARNESS_INSTALL_LOCK_NAME = "__harness__";
@@ -34,7 +34,6 @@ export const HARNESS_INSTALL_LOCK_NAME = "__harness__";
  * temp files; that interleaving is rare enough to defer.
  */
 export interface OwnedLockHolder {
-  readonly pid: number;
   readonly token: string;
 }
 
@@ -47,7 +46,6 @@ export interface PlanletLockDependencies {
   readonly write: (path: string, contents: string) => void;
   readonly rename: (from: string, to: string) => void;
   readonly remove: (path: string) => void;
-  readonly pid: number;
 }
 
 export interface OwnedLockRunResult<T> {
@@ -60,16 +58,7 @@ const DEFAULT_PLANLET_LOCK_DEPENDENCIES: PlanletLockDependencies = {
     writeFileSync(path, contents, { encoding: "utf8", flag: "wx" }),
   rename: renameSync,
   remove: (path) => rmSync(path, { recursive: true, force: true }),
-  pid: process.pid,
 };
-
-function isAlreadyExists(error: unknown): boolean {
-  return error instanceof Error && "code" in error && error.code === "EEXIST";
-}
-
-function isNotFound(error: unknown): boolean {
-  return error instanceof Error && "code" in error && error.code === "ENOENT";
-}
 
 /**
  * mkdir applies its mode only when it creates the directory, so an existing
@@ -122,18 +111,15 @@ function assertNotSymlink(path: string, label: string): void {
 
 /**
  * Unreadable or malformed holder metadata returns null, which callers treat as
- * "leave the path alone". The positive-integer check is not defensive noise:
- * process.kill addresses a process group for pid 0 and every permitted process
- * for pid -1, so a hand-edited lock file must never be treated as owned.
+ * "leave the path alone". Ownership is the token; pid stays in the JSON only
+ * as an opaque debug field.
  */
 function readOwnedLockHolder(path: string): OwnedLockHolder | null {
   try {
-    const { pid, token } = JSON.parse(
+    const { token } = JSON.parse(
       readFileSync(path, "utf8"),
     ) as Partial<OwnedLockHolder>;
-    return Number.isInteger(pid) && pid! > 0 && typeof token === "string"
-      ? { pid: pid!, token }
-      : null;
+    return typeof token === "string" ? { token } : null;
   } catch {
     return null;
   }
@@ -206,12 +192,12 @@ export function acquireOwnedLock(
   assertNotSymlink(lockPath, label);
 
   const token = randomUUID();
-  const holder: OwnedLockHolder = { pid: resolved.pid, token };
+  const holder = { pid: process.pid, token };
   try {
     resolved.write(lockPath, `${JSON.stringify(holder)}\n`);
     return { path: lockPath, token };
   } catch (error) {
-    if (isAlreadyExists(error)) {
+    if (errnoIs(error, "EEXIST")) {
       throw new PlanletError(
         "write_conflict",
         `Resource is locked by another process: ${label}`,
@@ -257,7 +243,7 @@ export function releaseOwnedLock(
     // Path already gone (released, or manually cleared). Any other failure
     // leaves the caller's lock in place and must reach releaseWarning /
     // double-fault handling — silent success would wedge later acquires.
-    if (isNotFound(error)) return;
+    if (errnoIs(error, "ENOENT")) return;
     throw error;
   }
 

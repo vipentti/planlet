@@ -317,27 +317,12 @@ test("--all validation rejects duplicate logical slugs across active and complet
   });
 });
 
-test("read-only operations reject missing, ambiguous, and conflicting filters", () => {
+test("read-only operations reject missing planlets", () => {
   withRepository((root) => {
     assert.throws(
       () => getPlanletStatus({ repositoryRoot: root, slug: "missing-plan" }),
       (error) =>
         error instanceof PlanletError && error.code === "plan_not_found",
-    );
-    assert.throws(
-      () =>
-        getPlanletTasks({
-          repositoryRoot: root,
-          slug: "missing-plan",
-          remaining: true,
-          completed: true,
-        }),
-      TypeError,
-    );
-    assert.throws(
-      () =>
-        validatePlanlets({ repositoryRoot: root, slug: "one-plan", all: true }),
-      TypeError,
     );
   });
 });

@@ -10,7 +10,11 @@ import {
 } from "node:fs";
 import { dirname, join } from "node:path";
 
-import { PlanletError, isPlanletError } from "../errors/planlet-error.js";
+import {
+  PlanletError,
+  asWriteConflict,
+  isPlanletError,
+} from "../errors/planlet-error.js";
 import {
   HARNESS_ADAPTERS,
   normalizeToolSelector,
@@ -18,7 +22,7 @@ import {
   type HarnessDestination,
   type HarnessToolId,
 } from "./harnesses.js";
-import { resolveSafePath, tryLstat } from "./paths.js";
+import { byName, resolveSafePath, tryLstat } from "./paths.js";
 import { withHarnessInstallLock } from "./planlet-lock.js";
 import type { PlanletLockDependencies } from "./planlet-lock.js";
 import {
@@ -87,9 +91,7 @@ function sortedRecord(
   entries: readonly (readonly [string, string])[],
 ): Readonly<Record<string, string>> {
   return Object.fromEntries(
-    [...entries].sort(([left], [right]) =>
-      left < right ? -1 : left > right ? 1 : 0,
-    ),
+    [...entries].sort(([left], [right]) => byName(left, right)),
   );
 }
 
@@ -196,8 +198,7 @@ function collectPlanletFiles(
   const entries: Array<readonly [string, string]> = [];
   const visit = (directory: string, relativeDirectory: string): void => {
     const children = readdirSync(directory, { withFileTypes: true }).sort(
-      (left: Dirent, right: Dirent) =>
-        left.name < right.name ? -1 : left.name > right.name ? 1 : 0,
+      (left: Dirent, right: Dirent) => byName(left.name, right.name),
     );
     for (const child of children) {
       const path = join(directory, child.name);
@@ -222,9 +223,7 @@ function collectPlanletFiles(
 
   for (const entry of readdirSync(destinationPath, {
     withFileTypes: true,
-  }).sort((left, right) =>
-    left.name < right.name ? -1 : left.name > right.name ? 1 : 0,
-  )) {
+  }).sort((left, right) => byName(left.name, right.name))) {
     if (!entry.name.startsWith("planlet-")) continue;
     const path = join(destinationPath, entry.name);
     const kind = pathKind(path);
@@ -349,15 +348,6 @@ function inspectDestination(
     publishSkills: !currentSkillsMatch,
     writeManifest: manifestText !== desiredManifestText,
   };
-}
-
-function asWriteConflict(error: unknown, destination: string): PlanletError {
-  if (isPlanletError(error)) return error;
-  return new PlanletError(
-    "write_conflict",
-    `Could not publish harness installation: ${destination}`,
-    { details: { destination }, cause: error },
-  );
 }
 
 /**
@@ -529,7 +519,11 @@ function publishDestinationTransaction(
         },
       );
     }
-    throw asWriteConflict(error, destinationPath);
+    throw asWriteConflict(
+      error,
+      `Could not publish harness installation: ${destinationPath}`,
+      { destination: destinationPath },
+    );
   }
 
   try {
