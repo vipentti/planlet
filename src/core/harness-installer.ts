@@ -561,7 +561,6 @@ export function installHarnessSkills(options: {
     () => {
       const plansInitialized =
         options.operation === "init" && plansKind === "missing";
-      if (plansInitialized) mkdirSync(plansPath, { recursive: true });
 
       let summaries: readonly HarnessInstallationSummary[] = [];
       if (destinations.length > 0) {
@@ -587,6 +586,8 @@ export function installHarnessSkills(options: {
           );
         }
 
+        // Preflight passed: only now mutate the repository.
+        if (plansInitialized) mkdirSync(plansPath, { recursive: true });
         summaries = inspections.map((inspection) =>
           options.operation === "update" && inspection.state === "missing"
             ? {
@@ -603,6 +604,8 @@ export function installHarnessSkills(options: {
                 options.transactionHooks,
               ),
         );
+      } else if (plansInitialized) {
+        mkdirSync(plansPath, { recursive: true });
       }
 
       // Agent files are written only after every destination inspected and

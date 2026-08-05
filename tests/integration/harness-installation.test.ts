@@ -421,6 +421,7 @@ test("conflicting destinations reject before agents files are written or staged"
     assert.match(result.stderr, /code: write_conflict/);
     assert.equal(existsSync(join(root, "AGENTS.md")), false);
     assert.equal(existsSync(join(root, "CLAUDE.md")), false);
+    assert.equal(existsSync(join(root, "plans")), false);
     assert.deepEqual(stagedFiles(root), []);
   });
 });
