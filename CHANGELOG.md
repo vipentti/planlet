@@ -10,6 +10,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and thi
 
 - `task check` and `task uncheck` now report post-write plan `state`, `done`,
   `total`, and a `next` handoff hint when the plan becomes `ready_to_complete`.
+- Planlet skills declare standard Agent Skills frontmatter
+  `allowed-tools: Bash(planlet:*)`, `compatibility: Requires planlet CLI.`, and
+  `license: MIT`; Claude Code pre-approves literal `planlet` commands for the
+  invoking turn.
 
 ### Changed
 

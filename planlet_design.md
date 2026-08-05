@@ -681,6 +681,11 @@ skills/
 
 The required `name` and `description` frontmatter should make each skill discoverable without loading its full instructions. Detailed material should use progressive disclosure so ordinary agent context remains small.
 
+Skills also declare `allowed-tools: Bash(planlet:*)` so Claude Code
+pre-approves literal `planlet` commands for the invoking turn;
+`compatibility: Requires planlet CLI.` and `license: MIT` are standard optional
+metadata.
+
 ### 14.1 `planlet-plan`
 
 Responsibilities:

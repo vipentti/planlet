@@ -1,6 +1,9 @@
 ---
 name: planlet-plan
 description: Explore, propose, create, or revise one repository-local Planlet without implementing product changes. Use when a user wants to investigate and persist a focused plan, refine an existing planlet, or prepare a reviewable implementation handoff.
+allowed-tools: Bash(planlet:*)
+compatibility: Requires planlet CLI.
+license: MIT
 ---
 
 # Planlet Plan

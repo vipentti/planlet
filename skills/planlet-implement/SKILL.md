@@ -1,6 +1,9 @@
 ---
 name: planlet-implement
 description: Implement and verify exactly one active repository-local Planlet while updating its task checklist incrementally. Use when a user asks to execute a persisted planlet, continue its implementation, or report and advance its remaining work without archiving it.
+allowed-tools: Bash(planlet:*)
+compatibility: Requires planlet CLI.
+license: MIT
 ---
 
 # Planlet Implement
