@@ -30,7 +30,7 @@
       switch the affected unit-test expectations to the same comparator. Preserve
       every fault-injection seam and keep the four local `asWriteConflict`
       definitions and the per-operation transaction flows unchanged.
-- [ ] T5 Hygiene fixes: classify the drifted files by ownership — narrowly ignore
+- [x] T5 Hygiene fixes: classify the drifted files by ownership — narrowly ignore
       the generated manifests (`.agents/skills/.planlet-manifest.json`,
       `.claude/skills/.planlet-manifest.json`; their generator owns formatting)
       and the `plans/completed/**` archive-policy pattern (completed planlets are
