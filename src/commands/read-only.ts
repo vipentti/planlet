@@ -67,7 +67,7 @@ export interface ValidatePlanletsOptions {
   readonly all?: boolean | undefined;
 }
 
-export interface ValidationEntry {
+interface ValidationEntry {
   readonly slug: string;
   readonly path: string;
   readonly valid: boolean;

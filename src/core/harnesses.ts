@@ -19,7 +19,7 @@ export const HARNESS_ADAPTERS = Object.freeze([
   }),
 ] as const);
 
-export type HarnessAdapter = (typeof HARNESS_ADAPTERS)[number];
+type HarnessAdapter = (typeof HARNESS_ADAPTERS)[number];
 export type HarnessToolId = HarnessAdapter["id"];
 
 export interface HarnessDestination {

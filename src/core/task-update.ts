@@ -14,7 +14,7 @@ import { parseTaskLine } from "./task-parser.js";
 import { validatePlanletStructure } from "./validation.js";
 import { isPlanletError, PlanletError } from "../errors/planlet-error.js";
 
-export type TaskUpdateOperation = "check" | "uncheck";
+type TaskUpdateOperation = "check" | "uncheck";
 
 export interface UpdateTaskOptions {
   readonly repositoryRoot: string;
@@ -25,7 +25,7 @@ export interface UpdateTaskOptions {
 }
 
 /** Fault-injection seam for the rollback tests; see CreatePlanletDependencies. */
-export interface UpdateTaskDependencies {
+interface UpdateTaskDependencies {
   readonly writeFile: (path: string, content: string, mode: number) => void;
   readonly rename: (source: string, destination: string) => void;
   readonly remove: (path: string) => void;

@@ -28,7 +28,7 @@ import {
 } from "./skill-source.js";
 
 export const INSTALLATION_MANIFEST = ".planlet-manifest.json";
-export const INSTALLATION_MANIFEST_VERSION = 1;
+const INSTALLATION_MANIFEST_VERSION = 1;
 
 export interface InstallationManifest {
   readonly schemaVersion: typeof INSTALLATION_MANIFEST_VERSION;
@@ -36,9 +36,9 @@ export interface InstallationManifest {
   readonly files: Readonly<Record<string, string>>;
 }
 
-export type HarnessState = "missing" | "unmanaged" | "installed" | "modified";
+type HarnessState = "missing" | "unmanaged" | "installed" | "modified";
 
-export interface HarnessInstallationSummary {
+interface HarnessInstallationSummary {
   readonly destination: string;
   readonly tools: readonly HarnessToolId[];
   readonly state: HarnessState;
@@ -46,7 +46,7 @@ export interface HarnessInstallationSummary {
   readonly files: number;
 }
 
-export interface InstallationSummary {
+interface InstallationSummary {
   readonly operation: "init" | "update";
   readonly changed: boolean;
   readonly plansInitialized: boolean;
@@ -369,8 +369,7 @@ function asWriteConflict(error: unknown, destination: string): PlanletError {
  * directories, at `beforeCleanup` publishes but warns. Adding a step means a
  * new outcome, not a new place to throw.
  */
-export type InstallTxStep =
-  "afterReplaceSkill" | "duringRollback" | "beforeCleanup";
+type InstallTxStep = "afterReplaceSkill" | "duringRollback" | "beforeCleanup";
 
 export interface InstallTransactionHooks {
   readonly onStep?: (step: InstallTxStep, detail?: string) => void;

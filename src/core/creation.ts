@@ -23,7 +23,7 @@ export interface CreatePlanletOptions {
  * Injected purely so tests can force each individual filesystem step to fail
  * and assert the rollback path. Production always uses DEFAULT_DEPENDENCIES.
  */
-export interface CreatePlanletDependencies {
+interface CreatePlanletDependencies {
   readonly writeFile: (path: string, content: string) => void;
   readonly rename: (source: string, destination: string) => void;
   readonly remove: (path: string) => void;
@@ -51,7 +51,7 @@ export function deriveTitleFromSlug(slug: string): string {
     .join(" ");
 }
 
-export function validateCreationTitle(title: string): string {
+function validateCreationTitle(title: string): string {
   const trimmed = title.trim();
   if (trimmed.length === 0 || /[\r\n]/.test(trimmed)) {
     throw new PlanletError(
