@@ -16,7 +16,6 @@ import test, { before } from "node:test";
 import { decode } from "@toon-format/toon";
 
 import { EXIT_CODES } from "../../src/errors/codes.js";
-import { DEFAULT_MAX_STRING_CHARACTERS } from "../../src/output/toon.js";
 
 const packageRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const executable = join(packageRoot, "dist", "planlet.mjs");
@@ -165,12 +164,10 @@ test("show --part plan|tasks compacts large content with the exact schema", () =
     writePlanlet(root, "large", tasks, plan);
 
     const compacted = (content: string) => ({
-      preview: `${Array.from(content)
-        .slice(0, DEFAULT_MAX_STRING_CHARACTERS)
-        .join("")}…`,
+      preview: `${Array.from(content).slice(0, 4_096).join("")}…`,
       truncated: true,
       originalCharacters: Array.from(content).length,
-      shownCharacters: DEFAULT_MAX_STRING_CHARACTERS,
+      shownCharacters: 4_096,
       hint: "Re-run with --full for complete content",
     });
 

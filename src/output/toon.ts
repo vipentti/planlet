@@ -7,8 +7,6 @@ import {
 } from "../errors/codes.js";
 import type { StructuredError } from "../errors/planlet-error.js";
 
-export const DEFAULT_MAX_STRING_CHARACTERS = 4_096;
-
 export interface RenderedOutput {
   readonly stdout: string;
   readonly stderr: string;
@@ -24,20 +22,17 @@ interface CompactShowContent {
 }
 
 /** Compact a show content field, returning the raw string when it fits. */
-export function compactShowContent(
-  value: string,
-  maximum: number = DEFAULT_MAX_STRING_CHARACTERS,
-): CompactShowContent | string {
+export function compactShowContent(value: string): CompactShowContent | string {
   const characters = Array.from(value);
-  if (characters.length <= maximum) {
+  if (characters.length <= 4_096) {
     return value;
   }
 
   return {
-    preview: `${characters.slice(0, maximum).join("")}…`,
+    preview: `${characters.slice(0, 4_096).join("")}…`,
     truncated: true,
     originalCharacters: characters.length,
-    shownCharacters: maximum,
+    shownCharacters: 4_096,
     hint: "Re-run with --full for complete content",
   };
 }

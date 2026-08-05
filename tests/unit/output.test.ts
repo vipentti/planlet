@@ -60,22 +60,22 @@ test("renderToon serializes long strings without truncation", () => {
 });
 
 test("compactShowContent preserves the exact compact schema above the limit", () => {
-  const content = "0123456789🙂abcdef";
+  const content = `${"x".repeat(4_096)}🙂`;
 
-  assert.deepEqual(compactShowContent(content, 10), {
-    preview: "0123456789…",
+  assert.deepEqual(compactShowContent(content), {
+    preview: `${"x".repeat(4_096)}…`,
     truncated: true,
-    originalCharacters: 17,
-    shownCharacters: 10,
+    originalCharacters: 4_097,
+    shownCharacters: 4_096,
     hint: "Re-run with --full for complete content",
   });
 });
 
 test("compactShowContent returns the raw string at or below the limit", () => {
-  const content = "0123456789🙂abcdef";
+  const atLimit = "x".repeat(4_096);
 
-  assert.equal(compactShowContent(content, 17), content);
-  assert.equal(compactShowContent(content, 100), content);
+  assert.equal(compactShowContent(atLimit), atLimit);
+  assert.equal(compactShowContent("small"), "small");
 });
 
 test("renders every stable error on stderr with its mapped exit code", () => {
