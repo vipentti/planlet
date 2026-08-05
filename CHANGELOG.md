@@ -11,6 +11,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and thi
 - `show --part plan|tasks` compacts oversized content with a preview and size
   metadata; `--full` returns the complete content, and non-show output is no
   longer truncated.
+- Skill manifest entries are now ordered with locale-independent codepoint
+  comparison; running `planlet update` may reorder entries in an existing
+  `.planlet-manifest.json` once.
 
 ## [0.1.2] - 2026-08-04
 
