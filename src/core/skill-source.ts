@@ -12,7 +12,7 @@ import { fileURLToPath } from "node:url";
 import { PlanletError } from "../errors/planlet-error.js";
 import { isPathWithinRoot } from "./paths.js";
 
-export interface CanonicalSkillFile {
+interface CanonicalSkillFile {
   readonly skill: string;
   readonly relativePath: string;
   readonly content: Buffer;

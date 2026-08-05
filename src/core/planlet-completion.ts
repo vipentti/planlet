@@ -33,7 +33,7 @@ export interface CompletePlanletOptions {
   readonly dependencies?: Partial<CompletePlanletDependencies> | undefined;
 }
 
-export interface CompletePlanletDependencies {
+interface CompletePlanletDependencies {
   readonly now: () => Date;
   readonly writeFile: (path: string, content: string, mode: number) => void;
   readonly replaceFile: (source: string, destination: string) => void;
