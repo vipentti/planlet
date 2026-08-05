@@ -142,15 +142,29 @@ SHAs, mismatched files, invalid versions, or nonempty unreleased notes fail
 closed rather than being treated as an ordinary push.
 
 Only the protected `release` job references `environment: release` and only its
-steps read the release secrets. The job checks out the exact triggering commit
-with full history, verifies it is reachable from the current `origin/main`,
-creates and pushes the signed tag (authenticated by a short-lived GitHub App
-installation token), verifies GitHub reports the signature, runs the full
-repository verification suite, packs the exact artifact with
-`npm pack --json --ignore-scripts`, publishes through npm trusted publishing
-with provenance (or verifies an already-published version by exact identity and
-integrity), and creates or updates the GitHub release from the committed
-changelog notes. Pushing the tag does not start a second workflow run.
+steps read the release secrets. After approval the job runs, in order:
+
+1. Check out the exact triggering commit with full history.
+2. Verify the commit is reachable from the current `origin/main`.
+3. Install dependencies from the lockfile (`npm ci`).
+4. Run `format:check`, `lint`, `type-check`, `build`, tests, `git diff --check`,
+   generated-skill parity, and the clean-source check.
+5. Verify the committed changelog release state and extract release notes.
+6. Build the reviewed package artifact with `npm pack --json --ignore-scripts`
+   and validate its metadata locally.
+7. Configure the isolated temporary GPG environment for release-tag signing.
+8. Generate the short-lived GitHub App installation token when the remote tag
+   is absent (existing-tag reruns skip token generation).
+9. Create the exact signed tag at the triggering commit, or verify the existing
+   exact remote tag.
+10. Push only that tag ref when the remote tag is absent.
+11. Confirm GitHub reports the tag signature verified.
+12. Publish the npm artifact with provenance, or verify the already-published
+    version by exact identity and integrity.
+13. Create or update the GitHub release from the changelog notes.
+
+The remote tag is the final irreversible mutation before npm publication.
+Pushing the tag does not start a second workflow run.
 
 Rerun behavior:
 
@@ -210,11 +224,15 @@ externally:
 
 The workflow generates a short-lived installation token per approved release
 run, scoped to `vipentti/planlet` with Contents read/write only, and uses it
-exclusively for the signed tag push. The token is never used for npm, never
-used for GitHub release operations (those use `GITHUB_TOKEN`), and is never
-written to files, logs, or workflow outputs. A tag push rejected by repository
-rules fails the job with git's diagnostic. A maintainer fine-grained PAT is not
-workflow configuration; it is only a last-resort manual recovery option.
+exclusively for the signed tag push. The action exposes the masked installation
+token as its step output. The workflow passes that output directly to the
+single tag-push step. It does not copy the token into custom `$GITHUB_OUTPUT`
+or `$GITHUB_ENV` values, files, artifacts, logs, remote URLs, or persistent Git
+configuration. The action revokes the token in its post step. The token is
+never used for npm and never used for GitHub release operations (those use
+`GITHUB_TOKEN`). A tag push rejected by repository rules fails the job with
+git's diagnostic. A maintainer fine-grained PAT is not workflow configuration;
+it is only a last-resort manual recovery option.
 
 ## Key rotation
 
