@@ -4,6 +4,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -217,7 +218,7 @@ test("show --part summary is emitted unchanged", () => {
         state: "planned",
         completedTasks: 0,
         totalTasks: 1,
-        path: join(root, "plans", "large"),
+        path: join(realpathSync(root), "plans", "large"),
         warnings: [],
       },
     });
