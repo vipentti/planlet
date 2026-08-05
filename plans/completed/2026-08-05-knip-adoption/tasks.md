@@ -43,6 +43,9 @@
         directly after `npm run lint`.
       - Full suite green: `npm run format:check`, `npm run lint`, `npm run
         type-check`, `npm run build`, `npm test`, `git diff --check`.
+      - `AGENTS.md` documents `npm run knip` in the repository-commands table
+        and in the full verification suite immediately after `npm run lint`;
+        archived plan.md scope and acceptance criteria updated to match.
       - `git status --porcelain` empty; diff contains only the intended files
         named in plan.md Acceptance Criteria.
       - PR CI shows the knip step green.

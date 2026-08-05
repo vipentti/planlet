@@ -26,6 +26,10 @@ knip into CI. No product or CLI behavior change; no published-surface change
   so the config is formatting-gated like `tsconfig.json` and
   `eslint.config.js`.
 - `package-lock.json` gains knip via `npm install` in T1.
+- `AGENTS.md`: add `npm run knip` to the repository-commands table
+  (description "Detect unused files, dependencies, exports, and unlisted
+  binaries.") and to the full verification suite immediately after
+  `npm run lint`, keeping the suite list aligned with CI.
 
 Out of scope: transitive dead clusters and unused object/interface properties
 (no analyzed tool catches them; residual gap documented in scout report §4);
@@ -84,10 +88,14 @@ platform-independent, so no OS-conditional step is needed.
 - Full suite green: `npm run format:check`, `npm run lint`, `npm run
   type-check`, `npm run build`, `npm test`, `git diff --check`; `git status
   --porcelain` empty (dist gitignored).
+- `AGENTS.md` documents `npm run knip` in the repository-commands table and in
+  the full verification suite after `npm run lint`; the suite list stays
+  aligned with CI.
 - CI workflow includes the knip step and the PR run shows it green.
 - Diff limited to: `package.json`, `package-lock.json`, `knip.json`,
-  `.github/workflows/ci.yml`, and `src/**/*.ts` export-keyword removals. No
-  behavior, CLI, or skill change.
+  `.github/workflows/ci.yml`, `AGENTS.md`, the archived `knip-adoption`
+  planlet files, and `src/**/*.ts` export-keyword removals. No behavior, CLI,
+  or skill change.
 
 ## Verification
 
