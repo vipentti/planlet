@@ -64,11 +64,14 @@
       `RELEASE_GIT_EMAIL`/fingerprint, no passphrase in logs or argv);
       add exact-tag ensure step (absent remote: `git tag -a -s` at
       `$GITHUB_SHA` with message `Release v<version>`, local verification via
-      the shared verifier, single non-force push of only that ref with
-      `RELEASE_PUSH_TOKEN` via basic-auth extraheader, remote ref re-verified;
-      existing remote tag: fetch exact ref, verify annotated/exact commit/
-      message/signature via the shared verifier, mismatched state fails without
-      mutation); add GitHub tag-object `.verification.verified == true`
+      the shared verifier, single non-force push of only that ref with a
+      short-lived GitHub App installation token (pinned
+      `actions/create-github-app-token`, scoped to `planlet` with Contents
+      write only, generated only when the remote tag is absent) via
+      basic-auth extraheader, remote ref re-verified; existing remote tag:
+      fetch exact ref, verify annotated/exact commit/message/signature via the
+      shared verifier, mismatched state fails without mutation); add GitHub
+      tag-object `.verification.verified == true`
       confirmation with small bounded retry before npm publication; add
       `always()` cleanup removing the passphrase file and GNUPGHOME; keep
       external actions pinned to the existing reviewed SHAs; inspect the YAML
@@ -81,13 +84,15 @@
       4) approve the `release` environment, 5) verify the signed tag, npm
       package/provenance, and GitHub release; document all environment secrets
       and variables by exact name, dedicated release-only GPG key with
-      GitHub-verified email, fine-grained token scope (vipentti/planlet,
-      Contents read/write) and actor allowed to bypass the existing `v*`
-      tag-creation restriction, ruleset prohibition of updates/force/deletes,
-      preferred future GitHub App bypass, rerun behavior, `release:tag`
-      break-glass recovery (no longer the normal happy path), high-level key
-      rotation, unsupported overlapping release PRs, and that the changelog
-      date is the release-cut date rather than the publication date; add a
+      GitHub-verified email, Release Automation GitHub App installed only on
+      `vipentti/planlet` with Contents read/write and added to the existing
+      `v*` tag-ruleset bypass list, ruleset prohibition of
+      updates/force/deletes, short-lived per-run installation tokens, a
+      maintainer PAT as last-resort manual recovery only, rerun behavior,
+      `release:tag` break-glass recovery (no longer the normal happy path),
+      high-level key rotation, unsupported overlapping release PRs, and that
+      the changelog date is the release-cut date rather than the publication
+      date; add a
       brief supersession note to the completed `release-automation` plan
       pointing at `RELEASING.md` without rewriting task evidence; verify
       referenced paths resolve; no `CHANGELOG.md` entry (maintainer tooling)
