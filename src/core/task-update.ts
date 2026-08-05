@@ -2,7 +2,8 @@ import { randomUUID } from "node:crypto";
 import { renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-import type { PlanletTask } from "./models.js";
+import type { PlanletState, PlanletTask } from "./models.js";
+import { deriveLifecycleState } from "./status.js";
 import {
   withPlanletLock,
   type PlanletLockDependencies,
@@ -37,6 +38,11 @@ export interface UpdateTaskResult {
   readonly slug: string;
   readonly task: PlanletTask;
   readonly changed: boolean;
+  readonly state: PlanletState;
+  readonly done: number;
+  readonly total: number;
+  /** Next-action hint; present only when the plan is ready to complete. */
+  readonly next?: string;
   readonly warnings: readonly string[];
 }
 
@@ -51,6 +57,26 @@ const DEFAULT_DEPENDENCIES: UpdateTaskDependencies = {
   remove: (path) => rmSync(path, { force: true }),
   temporaryName: (slug) => `.${slug}.tasks-${randomUUID()}.tmp`,
 };
+
+function summarize(
+  slug: string,
+  tasks: readonly PlanletTask[],
+): Pick<UpdateTaskResult, "state" | "done" | "total" | "next"> {
+  const state = deriveLifecycleState({
+    valid: true,
+    location: "active",
+    tasks,
+  });
+  const done = tasks.filter((task) => task.completed).length;
+  return {
+    state,
+    done,
+    total: tasks.length,
+    ...(state === "ready_to_complete"
+      ? { next: `planlet complete ${slug}` }
+      : {}),
+  };
+}
 
 function replaceTaskMarker(
   markdown: string,
@@ -149,7 +175,13 @@ function updateTaskLocked(
 
   const completed = options.operation === "check";
   if (task.completed === completed) {
-    return { slug, task, changed: false, warnings: validated.warnings };
+    return {
+      slug,
+      task,
+      changed: false,
+      ...summarize(slug, validated.tasks),
+      warnings: validated.warnings,
+    };
   }
 
   if (validated.completion !== null) {
@@ -164,7 +196,7 @@ function updateTaskLocked(
   }
 
   const updatedMarkdown = replaceTaskMarker(tasksMarkdown, task.id, completed);
-  validatePlanletStructure({
+  const revalidated = validatePlanletStructure({
     directoryName: slug,
     location: "active",
     planMarkdown,
@@ -222,6 +254,7 @@ function updateTaskLocked(
     slug,
     task: { ...task, completed },
     changed: true,
+    ...summarize(slug, revalidated.tasks),
     warnings: validated.warnings,
   };
 }

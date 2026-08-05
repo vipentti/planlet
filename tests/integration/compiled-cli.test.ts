@@ -289,7 +289,15 @@ test("task check mutates tasks.md through the compiled executable", () => {
 
     assert.equal(result.exitCode, EXIT_CODES.success);
     assert.equal(result.stderr, "");
-    assert.match(result.stdout, /slug: mutable/);
+    assert.deepEqual(decode(result.stdout.trimEnd()), {
+      slug: "mutable",
+      task: { id: "T1", description: "Pending", completed: true },
+      changed: true,
+      state: "ready_to_complete",
+      done: 1,
+      total: 1,
+      next: "planlet complete mutable",
+    });
     assert.equal(
       readFileSync(join(root, "plans", "mutable", "tasks.md"), "utf8"),
       "# Tasks: Mutable\n\n- [x] T1 Pending\n",
