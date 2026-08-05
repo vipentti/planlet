@@ -138,7 +138,7 @@ Node.js 22 or newer. Install dependencies with `npm install`.
 | ---------------------- | --------------------------------------------------------- |
 | `npm run format`       | Rewrite supported files with Prettier.                    |
 | `npm run format:check` | Fail on files that do not match Prettier style.           |
-| `npm run lint`         | Run ESLint over `src/` and `tests/`.                      |
+| `npm run lint`         | Run ESLint over source files, tests, and maintainer scripts. |
 | `npm run type-check`   | Run `tsc --noEmit`.                                       |
 | `npm run build`        | Bundle the CLI to `dist/planlet.mjs`.                     |
 | `npm test`             | Run the TypeScript test suite via `tsx` atop `node:test`. |
