@@ -4,16 +4,16 @@
     "claude"
   ],
   "files": {
+    "planlet-complete/SKILL.md": "0b181fad35918190d0f5c26f15a571a6fe66a411d7fc12fe6d29707595b8a999",
     "planlet-complete/agents/openai.yaml": "f4df999b41feddee85f906ceddf84ced3a5ef60daf7467e7a37bec158cb8451e",
     "planlet-complete/references/completion-guidance.md": "41761a01f6591f7d637dbbcd90fef44edfa38e7f82e2c3e7adaecb9e214b1eb2",
-    "planlet-complete/SKILL.md": "0b181fad35918190d0f5c26f15a571a6fe66a411d7fc12fe6d29707595b8a999",
+    "planlet-implement/SKILL.md": "55a1c337dbbddb3fab8d02b79f440140cd00b80ffe49129a011f0ded8c03f452",
     "planlet-implement/agents/openai.yaml": "1c7b5ff9f8b87f34c4395a3cf72d26e1d3878577dae0701488312910260be1c2",
     "planlet-implement/references/implementation-guidance.md": "6872036ccf3f8165c31753773edfea39355faaedbff76c01137d2a9c7ba762d4",
-    "planlet-implement/SKILL.md": "55a1c337dbbddb3fab8d02b79f440140cd00b80ffe49129a011f0ded8c03f452",
+    "planlet-plan/SKILL.md": "35e79c5122c89abdc6e2f8a3011c079ec5d078e71e62367dda6db71e70232c4a",
     "planlet-plan/agents/openai.yaml": "44d12699d652017b382f38bfba32820f1f47cf4766e99b978d8949186e697fc3",
     "planlet-plan/assets/plan-template.md": "218390c4dd55c316fe66c66d759c42221055ed4fda44ee9951438d61b2a112f6",
     "planlet-plan/assets/tasks-template.md": "122e9b8f66d2a3eb3a7d61b09870bb6a3fea8af2fbef3c5a84dc207e71914e32",
-    "planlet-plan/references/planning-guidance.md": "a27e2e8cdbec7ae711dd832f8342e5955940a2c1c96c2351ea5b58fef935bbe1",
-    "planlet-plan/SKILL.md": "35e79c5122c89abdc6e2f8a3011c079ec5d078e71e62367dda6db71e70232c4a"
+    "planlet-plan/references/planning-guidance.md": "a27e2e8cdbec7ae711dd832f8342e5955940a2c1c96c2351ea5b58fef935bbe1"
   }
 }

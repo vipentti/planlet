@@ -30,7 +30,7 @@ export function sha256(content: Uint8Array): string {
 
 function directoryEntries(path: string): readonly Dirent[] {
   return readdirSync(path, { withFileTypes: true }).sort((left, right) =>
-    left.name.localeCompare(right.name),
+    left.name < right.name ? -1 : left.name > right.name ? 1 : 0,
   );
 }
 

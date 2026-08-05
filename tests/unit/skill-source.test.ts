@@ -33,7 +33,7 @@ test("development module location resolves and enumerates canonical skills", () 
   assert.deepEqual(
     source.files.map((file) => file.relativePath),
     [...source.files.map((file) => file.relativePath)].sort((left, right) =>
-      left.localeCompare(right),
+      left < right ? -1 : left > right ? 1 : 0,
     ),
   );
   for (const file of source.files) {
