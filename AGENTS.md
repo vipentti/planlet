@@ -68,6 +68,9 @@ A pull request that finishes a planlet task must also carry that task’s `- [x]
 before opening the PR and include the resulting `tasks.md` change in the same branch. An
 implementation PR that merges with its own task still unchecked is an incomplete PR, not a
 deferred bookkeeping item.
+When a PR checks the last unchecked task of a plan, also run
+`node dist/planlet.mjs --root . complete <slug>` before opening the PR so the plan archives to
+`plans/completed/`.
 
 ## Changelog
 
