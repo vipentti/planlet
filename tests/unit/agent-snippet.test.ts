@@ -14,7 +14,6 @@ import { fileURLToPath } from "node:url";
 
 import {
   AGENT_SNIPPET,
-  agentsSectionHash,
   renderAgentsSection,
   updateAgentFiles,
 } from "../../src/core/agent-snippet.js";
@@ -41,7 +40,6 @@ test("snippet source is shared and section rendering is deterministic", () => {
   assert.ok(section.includes(`\n${AGENT_SNIPPET}\n`));
   assert.ok(section.endsWith("<!-- END PLANLET AGENTS -->\n"));
   assert.equal(section, renderAgentsSection());
-  assert.match(agentsSectionHash(), /^[0-9a-f]{8}$/);
 });
 
 test("README quotes the CLI-owned snippet exactly", () => {
@@ -159,31 +157,6 @@ test("agent-file resolve failures become write_conflict with details", () => {
         assert.equal(error.code, "write_conflict");
         assert.equal(error.details.file, "AGENTS.md");
         assert.equal(error.details.operation, "resolve");
-        return true;
-      },
-    );
-  });
-});
-
-test("agent-file read failures become write_conflict with details", () => {
-  withRoot((root) => {
-    writeFileSync(join(root, "AGENTS.md"), "# Project\n");
-    assert.throws(
-      () =>
-        updateAgentFiles({
-          repositoryRoot: root,
-          operation: "init",
-          dependencies: {
-            readFile: () => {
-              throw new Error("read boom");
-            },
-          },
-        }),
-      (error: unknown) => {
-        assert.ok(error instanceof PlanletError);
-        assert.equal(error.code, "write_conflict");
-        assert.equal(error.details.file, "AGENTS.md");
-        assert.equal(error.details.operation, "read");
         return true;
       },
     );

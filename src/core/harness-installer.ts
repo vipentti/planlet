@@ -559,66 +559,51 @@ export function installHarnessSkills(options: {
   const { value, releaseWarning } = withHarnessInstallLock(
     options.repositoryRoot,
     () => {
-      if (destinations.length === 0) {
-        const plansInitialized =
-          options.operation === "init" && plansKind === "missing";
-        if (plansInitialized) mkdirSync(plansPath, { recursive: true });
-        const agents = updateAgentFiles({
-          repositoryRoot: options.repositoryRoot,
-          operation: options.operation,
-          skip: options.noAgents,
-        });
-        warnings.push(...agents.warnings);
-        return {
-          operation: options.operation,
-          changed: plansInitialized || agents.changed,
-          plansInitialized,
-          destinations: [],
-          agentFiles: agents.files,
-        };
-      }
-
-      const source = options.source ?? enumerateCanonicalSkills();
-      const inspections = destinations.map((destination) =>
-        inspectDestination(destination, source),
-      );
-      const actionable = inspections.filter(
-        (inspection) =>
-          options.operation === "init" || inspection.state !== "missing",
-      );
-      const conflicts = actionable.flatMap((inspection) =>
-        inspection.conflicts.map((path) => ({
-          destination: inspection.destination.relativePath,
-          path,
-        })),
-      );
-      if (conflicts.length > 0 && options.force !== true) {
-        throw new PlanletError(
-          "write_conflict",
-          `Harness installation has locally modified files: ${conflicts[0]!.destination}/${conflicts[0]!.path}`,
-          { details: { conflicts } },
-        );
-      }
-
       const plansInitialized =
         options.operation === "init" && plansKind === "missing";
       if (plansInitialized) mkdirSync(plansPath, { recursive: true });
-      const summaries = inspections.map((inspection) =>
-        options.operation === "update" && inspection.state === "missing"
-          ? {
-              destination: inspection.destination.relativePath,
-              tools: inspection.destination.selectedToolIds,
-              state: "missing" as const,
-              changed: false,
-              files: 0,
-            }
-          : applyInspectionWithSource(
-              inspection,
-              source,
-              warnings,
-              options.transactionHooks,
-            ),
-      );
+
+      let summaries: readonly HarnessInstallationSummary[] = [];
+      if (destinations.length > 0) {
+        const source = options.source ?? enumerateCanonicalSkills();
+        const inspections = destinations.map((destination) =>
+          inspectDestination(destination, source),
+        );
+        const actionable = inspections.filter(
+          (inspection) =>
+            options.operation === "init" || inspection.state !== "missing",
+        );
+        const conflicts = actionable.flatMap((inspection) =>
+          inspection.conflicts.map((path) => ({
+            destination: inspection.destination.relativePath,
+            path,
+          })),
+        );
+        if (conflicts.length > 0 && options.force !== true) {
+          throw new PlanletError(
+            "write_conflict",
+            `Harness installation has locally modified files: ${conflicts[0]!.destination}/${conflicts[0]!.path}`,
+            { details: { conflicts } },
+          );
+        }
+
+        summaries = inspections.map((inspection) =>
+          options.operation === "update" && inspection.state === "missing"
+            ? {
+                destination: inspection.destination.relativePath,
+                tools: inspection.destination.selectedToolIds,
+                state: "missing" as const,
+                changed: false,
+                files: 0,
+              }
+            : applyInspectionWithSource(
+                inspection,
+                source,
+                warnings,
+                options.transactionHooks,
+              ),
+        );
+      }
 
       // Agent files are written only after every destination inspected and
       // published: a non-forced conflict or publication failure must not leave

@@ -27,8 +27,6 @@ This repository uses Planlet for focused implementation plans. A planlet is
 - If no \`planlet\` executable is available, stop and say so. Do not hand-create
   or hand-edit planlet files.`;
 
-const AGENTS_SECTION_VERSION = 1;
-
 const BEGIN_MARKER_PREFIX = "<!-- BEGIN PLANLET AGENTS";
 const END_MARKER = "<!-- END PLANLET AGENTS -->";
 
@@ -43,24 +41,22 @@ export interface AgentFilesOutcome {
 
 /** @internal Fault-injection seam for deterministic failure tests. Tests only. */
 export interface AgentFileDependencies {
-  readonly realpath: (path: string) => string;
   readonly readFile: (path: string) => string;
   readonly writeFile: (path: string, content: string) => void;
 }
 
 const DEFAULT_DEPENDENCIES: AgentFileDependencies = {
-  realpath: (path) => realpathSync(path),
   readFile: (path) => readFileSync(path, "utf8"),
   writeFile: (path, content) =>
     writeFileSync(path, content, { encoding: "utf8" }),
 };
 
-export function agentsSectionHash(): string {
+function agentsSectionHash(): string {
   return sha256(Buffer.from(AGENT_SNIPPET, "utf8")).slice(0, 8);
 }
 
 export function renderAgentsSection(): string {
-  return `${BEGIN_MARKER_PREFIX} v:${AGENTS_SECTION_VERSION} hash:${agentsSectionHash()} -->\n${AGENT_SNIPPET}\n${END_MARKER}\n`;
+  return `${BEGIN_MARKER_PREFIX} v:1 hash:${agentsSectionHash()} -->\n${AGENT_SNIPPET}\n${END_MARKER}\n`;
 }
 
 /**
@@ -144,7 +140,7 @@ function updateAgentFile(
   // symlinked leaf, but these files must never be written through symlinks.
   let canonicalRoot: string;
   try {
-    canonicalRoot = dependencies.realpath(repositoryRoot);
+    canonicalRoot = realpathSync(repositoryRoot);
   } catch (error) {
     throw asWriteConflict(
       error,
