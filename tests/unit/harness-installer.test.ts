@@ -127,7 +127,7 @@ test("init coalesces shared targets, preserves unrelated skills, and is idempote
     const first = installHarnessSkills({
       repositoryRoot: root,
       operation: "init",
-      tools: "codex,agents",
+      tools: "codex,agents,github-copilot",
       source: BASE_SOURCE,
     });
     const second = installHarnessSkills({
@@ -138,7 +138,11 @@ test("init coalesces shared targets, preserves unrelated skills, and is idempote
     });
 
     assert.equal(first.data.destinations.length, 1);
-    assert.deepEqual(first.data.destinations[0]?.tools, ["agents", "codex"]);
+    assert.deepEqual(first.data.destinations[0]?.tools, [
+      "agents",
+      "codex",
+      "github-copilot",
+    ]);
     assert.equal(first.data.changed, true);
     assert.equal(second.data.changed, false);
     assert.equal(readFileSync(unrelated, "utf8"), "# Keep\n");
@@ -347,6 +351,7 @@ test("tool detection reports shared physical state without mutation", () => {
         { id: "agents", state: "modified" },
         { id: "claude", state: "missing" },
         { id: "codex", state: "modified" },
+        { id: "github-copilot", state: "modified" },
       ],
     );
     assert.equal(readFileSync(skill, "utf8"), "Local\n");
@@ -375,6 +380,7 @@ test("tool detection coalesces in-repository symlink destinations", () => {
         { id: "agents", state: "installed" },
         { id: "claude", state: "installed" },
         { id: "codex", state: "installed" },
+        { id: "github-copilot", state: "installed" },
       ],
     );
   });
@@ -392,6 +398,7 @@ test("tool detection classifies malformed manifests as modified", () => {
     const expected = [
       { id: "agents", state: "modified" },
       { id: "codex", state: "modified" },
+      { id: "github-copilot", state: "modified" },
     ];
     for (const manifestText of [
       "invalid\n",
@@ -400,7 +407,10 @@ test("tool detection classifies malformed manifests as modified", () => {
       writeFileSync(manifestPath, manifestText);
       assert.deepEqual(
         detectHarnesses({ repositoryRoot: root, source: BASE_SOURCE })
-          .filter(({ id }) => id === "agents" || id === "codex")
+          .filter(
+            ({ id }) =>
+              id === "agents" || id === "codex" || id === "github-copilot",
+          )
           .map(({ id, state }) => ({ id, state })),
         expected,
       );
@@ -893,6 +903,7 @@ test("safe symlink coalesces unselected aliases for selected-only init", () => {
         { id: "agents", state: "installed" },
         { id: "claude", state: "installed" },
         { id: "codex", state: "installed" },
+        { id: "github-copilot", state: "installed" },
       ],
     );
 

@@ -17,6 +17,11 @@ export const HARNESS_ADAPTERS = Object.freeze([
     displayName: "Codex",
     skillDirectory: ".agents/skills",
   }),
+  Object.freeze({
+    id: "github-copilot",
+    displayName: "GitHub Copilot",
+    skillDirectory: ".agents/skills",
+  }),
 ] as const);
 
 type HarnessAdapter = (typeof HARNESS_ADAPTERS)[number];

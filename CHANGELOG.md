@@ -8,6 +8,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and thi
 
 ### Added
 
+- `planlet init` and `planlet update` now accept an explicit `github-copilot`
+  tool ID for GitHub Copilot, sharing the existing `.agents/skills` destination
+  with `agents` and `codex`.
 - `task check` and `task uncheck` now report post-write plan `state`, `done`,
   `total`, and a `next` handoff hint when the plan becomes `ready_to_complete`.
 - Planlet skills declare standard Agent Skills frontmatter

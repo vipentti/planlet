@@ -1,0 +1,11 @@
+# Tasks: Copilot Adapter
+
+- [x] T1 Register `github-copilot` in the adapter registry (`src/core/harnesses.ts`: id `github-copilot`, displayName `GitHub Copilot`, skillDirectory `.agents/skills`); verify selector normalization accepts it, `.agents/skills` destination coalesces with aliases `["agents", "codex", "github-copilot"]`, `detectHarnesses` reports it, and manifest v2 (files-only, no `tools` field) stays untouched. Acceptance: `--tools github-copilot` works, `--tools all` resolves four ids, no `.github/skills` destination exists anywhere in the change.
+- [x] T2 Update adapter-enumerating surfaces: `src/cli.ts` init/update help text gains `github-copilot`; verify interactive `init` selector (`buildToolChoices`) offers `.agents/skills` once under `agents, codex, GitHub Copilot` (registry-driven; adjust only if verification fails); README harness table adds GitHub Copilot row (`.agents/skills`) and `--tools` text lists it; `planlet_design.md` §15.2 moves `github-copilot` from later additions into the registry table with `.agents/skills`. Acceptance: help, README, and design doc enumerate `github-copilot`; `planlet tools` output reports it.
+- [x] T3 Update tests: `tests/unit/harnesses.test.ts` selector and alias expectations (four-id `all`, `.agents/skills` aliases include `github-copilot`, symlink alias lists); `tests/unit/harness-installer.test.ts` `detectHarnesses` arrays gain `github-copilot`; `tests/integration/harness-installation.test.ts` tools-command output, prompt choices, and answer mappings gain `github-copilot`; `tests/skills/skill-contract.test.ts` portable-harness expectation and `tests/fixtures/skills/scenarios.json` harnesses list add `github-copilot`. Acceptance: full suite green (`format:check`, `lint`, `knip`, `type-check`, `build`, `test`, `git diff --check`).
+- [x] T4 Add `[Unreleased]` `### Added` CHANGELOG entry for the user-visible `github-copilot` adapter sharing `.agents/skills`, and document the `.github/skills` shadowing gotcha in README (a duplicate `planlet-*` name there shadows the `.agents/skills` copy in Copilot's listing; do not create a separate `.github/skills` copy). Acceptance: changelog entry present, README note present, full suite still green.
+
+## Completion
+
+- Completed at: 2026-08-05T14:24:08.826Z
+- Mode: normal

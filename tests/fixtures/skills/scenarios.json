@@ -91,6 +91,6 @@
     "prompt": "Run same workflow from generic Agent Skills, Claude Code, and Codex copies.",
     "expectedDecision": "use-canonical-resources",
     "evidence": ["Treat angle-bracket runtime values as separate argv values"],
-    "harnesses": ["agents", "claude", "codex"]
+    "harnesses": ["agents", "claude", "codex", "github-copilot"]
   }
 ]
