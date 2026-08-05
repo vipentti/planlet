@@ -22,6 +22,7 @@ const sourceHelper = join(
   "scripts",
   "assert-changelog-release-ready.mjs",
 );
+const sourceTagVerifier = join(repoRoot, "scripts", "verify-release-tag.mjs");
 
 const tempDirs: string[] = [];
 test.after(() => {
@@ -168,6 +169,10 @@ function makeRepo(options: MakeOptions = {}): Repo {
   copyFileSync(
     sourceHelper,
     join(dir, "scripts", "assert-changelog-release-ready.mjs"),
+  );
+  copyFileSync(
+    sourceTagVerifier,
+    join(dir, "scripts", "verify-release-tag.mjs"),
   );
   chmodSync(join(dir, "scripts", "release.mjs"), 0o755);
 

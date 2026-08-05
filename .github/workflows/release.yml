@@ -2,72 +2,170 @@ name: Release
 
 on:
   push:
-    tags: ["v*"]
+    branches: [main]
 
 permissions:
   contents: write
   id-token: write
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-main
   cancel-in-progress: false
 
 jobs:
-  release:
-    # New tag only — ignore force-moves, deletes, and non-create updates.
-    if: >-
-      github.event_name == 'push' &&
-      github.event.created &&
-      !github.event.deleted &&
-      !github.event.forced
+  detect:
+    # Unprotected: classifies the push and never touches release secrets.
     runs-on: ubuntu-latest
-    environment: release
+    permissions:
+      contents: read
+    outputs:
+      is-release: ${{ steps.detect.outputs.is-release }}
+      version: ${{ steps.detect.outputs.version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Verify annotated tag is signed
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - id: detect
         shell: bash
         run: |
           set -euo pipefail
-          object_type=$(git cat-file -t "refs/tags/${GITHUB_REF_NAME}")
-          test "$object_type" = "tag" || {
-            echo "Release tags must be annotated and signed: ${GITHUB_REF_NAME} is ${object_type}" >&2
+          result=$(node scripts/detect-release-merge.mjs --before "${{ github.event.before }}" --after "$GITHUB_SHA")
+          is_release=$(printf '%s' "$result" | jq -r '.isRelease')
+          test "$is_release" = "true" || test "$is_release" = "false" || {
+            echo "Detection script returned malformed JSON" >&2
             exit 1
           }
-          tag_sha=$(git rev-parse "refs/tags/${GITHUB_REF_NAME}")
-          verification=$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${tag_sha}" --jq .verification)
-          echo "$verification"
-          echo "$verification" | jq -e '.verified == true' >/dev/null || {
-            echo "GitHub does not report a verified signature on ${GITHUB_REF_NAME}" >&2
-            exit 1
-          }
+          echo "is-release=$is_release" >> "$GITHUB_OUTPUT"
+          if [ "$is_release" = "true" ]; then
+            version=$(printf '%s' "$result" | jq -r '.version')
+            echo "version=$version" >> "$GITHUB_OUTPUT"
+          fi
 
-      - name: Verify tag and main ancestry
+  release:
+    needs: detect
+    if: needs.detect.outputs.is-release == 'true'
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: write
+      id-token: write
+    env:
+      VERSION: ${{ needs.detect.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify triggering commit is reachable from origin/main
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          version=$(node -p "require('./package.json').version")
-          name=$(node -p "require('./package.json').name")
-          test "$GITHUB_REF_NAME" = "v$version" || {
-            echo "Tag $GITHUB_REF_NAME does not match package version $version" >&2
-            exit 1
-          }
           git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)" fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
           git merge-base --is-ancestor "$GITHUB_SHA" origin/main || {
             echo "$GITHUB_SHA is not reachable from origin/main" >&2
             exit 1
           }
-          {
-            echo "VERSION=$version"
-            echo "PACKAGE_NAME=$name"
-          } >> "$GITHUB_ENV"
+
+      - name: Configure GPG signing for release tags
+        env:
+          RELEASE_GPG_PRIVATE_KEY: ${{ secrets.RELEASE_GPG_PRIVATE_KEY }}
+          RELEASE_GPG_PASSPHRASE: ${{ secrets.RELEASE_GPG_PASSPHRASE }}
+          RELEASE_GPG_FINGERPRINT: ${{ vars.RELEASE_GPG_FINGERPRINT }}
+          RELEASE_GIT_NAME: ${{ vars.RELEASE_GIT_NAME }}
+          RELEASE_GIT_EMAIL: ${{ vars.RELEASE_GIT_EMAIL }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          GNUPGHOME=$(mktemp -d)
+          chmod 700 "$GNUPGHOME"
+          echo "GNUPGHOME=$GNUPGHOME" >> "$GITHUB_ENV"
+          printf '%s' "$RELEASE_GPG_PASSPHRASE" > "$GNUPGHOME/passphrase"
+          chmod 600 "$GNUPGHOME/passphrase"
+          printf '%s\n' "$RELEASE_GPG_PRIVATE_KEY" | gpg --batch --homedir "$GNUPGHOME" --import
+          fpr=$(gpg --batch --homedir "$GNUPGHOME" --with-colons --list-secret-keys | awk -F: '$1 == "fpr" { print $10; exit }')
+          test -n "$fpr" || {
+            echo "RELEASE_GPG_PRIVATE_KEY contains no secret key" >&2
+            exit 1
+          }
+          test "$fpr" = "$RELEASE_GPG_FINGERPRINT" || {
+            echo "Imported secret key fingerprint $fpr does not match RELEASE_GPG_FINGERPRINT" >&2
+            exit 1
+          }
+          wrapper="$GNUPGHOME/gpg-wrapper.sh"
+          printf '%s\n' \
+            '#!/bin/sh' \
+            "exec gpg --batch --pinentry-mode loopback --passphrase-file '$GNUPGHOME/passphrase' \"\$@\"" \
+            > "$wrapper"
+          chmod 700 "$wrapper"
+          git config gpg.program "$wrapper"
+          git config user.name "$RELEASE_GIT_NAME"
+          git config user.email "$RELEASE_GIT_EMAIL"
+          git config user.signingkey "$RELEASE_GPG_FINGERPRINT"
+          git config commit.gpgsign false
+          git config tag.gpgsign false
+
+      - name: Ensure exact signed release tag
+        env:
+          RELEASE_PUSH_TOKEN: ${{ secrets.RELEASE_PUSH_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${VERSION:-}" || {
+            echo "Missing release version from detection" >&2
+            exit 1
+          }
+          tag="v${VERSION}"
+          target="$GITHUB_SHA"
+          if git ls-remote --exit-code origin "refs/tags/${tag}" >/dev/null 2>&1; then
+            # Remote tag exists: verify the exact annotated signed tag, never mutate it.
+            git fetch --no-tags origin "+refs/tags/${tag}:refs/tags/${tag}"
+            tag_object=$(node scripts/verify-release-tag.mjs --tag "$tag" --target "$target" --message "Release ${tag}")
+            echo "Existing remote tag ${tag} verified"
+          else
+            git tag -a -s "$tag" -m "Release ${tag}" "$target"
+            tag_object=$(node scripts/verify-release-tag.mjs --tag "$tag" --target "$target" --message "Release ${tag}")
+            git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $(printf 'x-access-token:%s' "$RELEASE_PUSH_TOKEN" | base64 -w0)" push origin "refs/tags/${tag}:refs/tags/${tag}"
+            remote_object=$(git ls-remote origin "refs/tags/${tag}" | awk 'NR == 1 { print $1 }')
+            test -n "$remote_object" || {
+              echo "Remote tag ${tag} did not appear after push" >&2
+              exit 1
+            }
+            test "$remote_object" = "$tag_object" || {
+              echo "Remote tag ${tag} object ${remote_object} does not match local ${tag_object}" >&2
+              exit 1
+            }
+          fi
+          echo "TAG_OBJECT=$tag_object" >> "$GITHUB_ENV"
+
+      - name: Verify GitHub reports the tag signature verified
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="v${VERSION}"
+          verified=0
+          for attempt in 1 2 3 4 5; do
+            verification=$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${TAG_OBJECT}" --jq .verification)
+            if printf '%s' "$verification" | jq -e '.verified == true' >/dev/null; then
+              verified=1
+              break
+            fi
+            if [ "$attempt" -lt 5 ]; then
+              echo "Waiting for GitHub tag signature verification (attempt ${attempt})..."
+              sleep 6
+            fi
+          done
+          test "$verified" = 1 || {
+            echo "GitHub does not report a verified signature on ${tag}" >&2
+            exit 1
+          }
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -91,8 +189,13 @@ jobs:
       - name: Verify clean tagged source
         run: test -z "$(git status --porcelain)"
 
+      - name: Verify committed changelog release state
+        run: node scripts/assert-changelog-release-ready.mjs --verify-release
+
       - name: Extract release notes
-        run: node scripts/changelog.mjs "$VERSION" > "$RUNNER_TEMP/release-notes.md"
+        run: |
+          echo "PACKAGE_NAME=$(node -p "require('./package.json').name")" >> "$GITHUB_ENV"
+          node scripts/changelog.mjs "$VERSION" > "$RUNNER_TEMP/release-notes.md"
 
       - name: Ensure npm supports trusted publishing
         run: npm install --global npm@^11.5.1
@@ -158,8 +261,10 @@ jobs:
             read_registry_json
             verify_registry_matches_pack
           elif grep -q "E404" "$RUNNER_TEMP/npm-view.err"; then
-            # First publication only: empty Unreleased + dated section matching today UTC.
-            node scripts/assert-changelog-release-ready.mjs --release-date "$(date -u +%Y-%m-%d)"
+            # First publication: changelog must describe this release; the
+            # committed date is the release-cut date and is not required to be
+            # today (approval may cross UTC midnight).
+            node scripts/assert-changelog-release-ready.mjs --verify-release
             npm publish "$PACKAGE_TARBALL" --access public --provenance
             # Wait for packument visibility, then apply the same identity/integrity checks.
             visible=0
@@ -192,8 +297,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release edit "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/release-notes.md"
+          if gh release view "v${VERSION}" >/dev/null 2>&1; then
+            gh release edit "v${VERSION}" --title "v${VERSION}" --notes-file "$RUNNER_TEMP/release-notes.md"
           else
-            gh release create "$GITHUB_REF_NAME" --verify-tag --title "$GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/release-notes.md"
+            gh release create "v${VERSION}" --verify-tag --title "v${VERSION}" --notes-file "$RUNNER_TEMP/release-notes.md"
+          fi
+
+      - name: Clean up release GPG key material
+        if: always()
+        shell: bash
+        run: |
+          if [ -n "${GNUPGHOME:-}" ] && [ -d "$GNUPGHOME" ]; then
+            rm -f "$GNUPGHOME/passphrase"
+            rm -rf "$GNUPGHOME"
           fi

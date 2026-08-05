@@ -1,5 +1,10 @@
 # Release Automation
 
+> Superseded (2026-08-05): the tag-triggered workflow described in this plan
+> was replaced by the branch-triggered auto-signed-release flow. See
+> [`RELEASING.md`](../../../RELEASING.md) for current behavior. Historical task
+> evidence below is unchanged.
+
 ## Summary
 
 Release Planlet through a hand-maintained Keep a Changelog file and a small,

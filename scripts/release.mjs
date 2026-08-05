@@ -556,31 +556,27 @@ function cmdTag() {
     localTag.status === 0 && localTag.stdout.trim() === "v" + version;
 
   if (tagExistsLocally) {
-    // Validate existing local tag
-    const tagType = git("cat-file", "-t", "v" + version);
-    if (tagType.status !== 0 || tagType.stdout.trim() !== "tag")
-      fail("Local tag v" + version + " is not an annotated tag.");
-
-    const tagMsg = git(
-      "tag",
-      "-l",
-      "--format=%(contents:subject)",
-      "v" + version,
+    // Validate existing local tag through the shared verifier so the workflow
+    // and the maintainer utility agree on what an exact release tag is.
+    const localVerify = spawnSync(
+      process.execPath,
+      [
+        "scripts/verify-release-tag.mjs",
+        "--tag",
+        "v" + version,
+        "--target",
+        headSha,
+        "--message",
+        "v" + version,
+      ],
+      { cwd: root, encoding: "utf8" },
     );
-    if (tagMsg.status !== 0 || tagMsg.stdout.trim() !== "v" + version)
-      fail("Local tag v" + version + " message mismatch.");
-
-    const tagTarget = git("rev-parse", "v" + version + "^{commit}");
-    if (tagTarget.status !== 0 || tagTarget.stdout.trim() !== headSha)
-      fail("Local tag v" + version + " does not point at current HEAD.");
-
-    const tagVerify = git("verify-tag", "v" + version);
-    if (tagVerify.status !== 0)
+    if (localVerify.status !== 0)
       fail(
-        "git verify-tag failed for v" +
+        "Local tag v" +
           version +
-          ":\n" +
-          tagVerify.stderr.trim(),
+          " is invalid:\n" +
+          (localVerify.stderr || localVerify.stdout).trim(),
       );
 
     if (!isExecute) {
@@ -621,9 +617,26 @@ function cmdTag() {
     if (tag.status !== 0)
       fail("git tag creation failed:\n" + tag.stderr.trim());
 
-    const verify = git("verify-tag", "v" + version);
+    const verify = spawnSync(
+      process.execPath,
+      [
+        "scripts/verify-release-tag.mjs",
+        "--tag",
+        "v" + version,
+        "--target",
+        headSha,
+        "--message",
+        "v" + version,
+      ],
+      { cwd: root, encoding: "utf8" },
+    );
     if (verify.status !== 0)
-      fail("git verify-tag failed:\n" + verify.stderr.trim());
+      fail(
+        "Tag v" +
+          version +
+          " failed verification:\n" +
+          (verify.stderr || verify.stdout).trim(),
+      );
   }
 
   // Push if --push
