@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { asWriteConflict } from "../errors/planlet-error.js";
 import { tryLstat } from "./paths.js";
 import { sha256 } from "./skill-source.js";
 
@@ -39,6 +40,20 @@ export interface AgentFilesOutcome {
   readonly warnings: readonly string[];
   readonly changed: boolean;
 }
+
+/** @internal Fault-injection seam for deterministic failure tests. Tests only. */
+export interface AgentFileDependencies {
+  readonly realpath: (path: string) => string;
+  readonly readFile: (path: string) => string;
+  readonly writeFile: (path: string, content: string) => void;
+}
+
+const DEFAULT_DEPENDENCIES: AgentFileDependencies = {
+  realpath: (path) => realpathSync(path),
+  readFile: (path) => readFileSync(path, "utf8"),
+  writeFile: (path, content) =>
+    writeFileSync(path, content, { encoding: "utf8" }),
+};
 
 export function renderAgentSnippet(): string {
   return AGENT_SNIPPET;
@@ -87,7 +102,12 @@ function updateSection(
   }
 
   const endOfEnd = endIdx + END_MARKER.length;
-  const consumed = content[endOfEnd] === "\n" ? endOfEnd + 1 : endOfEnd;
+  const tail = content.slice(endOfEnd);
+  const consumed = tail.startsWith("\r\n")
+    ? endOfEnd + 2
+    : tail.startsWith("\n")
+      ? endOfEnd + 1
+      : endOfEnd;
   return {
     content:
       content.slice(0, beginIdx) +
@@ -97,8 +117,21 @@ function updateSection(
   };
 }
 
-function writeSection(path: string, body: string): void {
-  writeFileSync(path, renderAgentsSection(body), { encoding: "utf8" });
+function writeAgentFile(
+  dependencies: AgentFileDependencies,
+  path: string,
+  file: string,
+  content: string,
+): void {
+  try {
+    dependencies.writeFile(path, content);
+  } catch (error) {
+    throw asWriteConflict(
+      error,
+      `Could not write agent instructions file: ${file}`,
+      { file, operation: "write" },
+    );
+  }
 }
 
 /**
@@ -110,16 +143,32 @@ function updateAgentFile(
   repositoryRoot: string,
   file: string,
   operation: "init" | "update",
+  dependencies: AgentFileDependencies,
 ): { readonly state: AgentFileState; readonly warning?: string } {
   // Canonical root + lexical leaf path: resolveSafePath would follow a
   // symlinked leaf, but these files must never be written through symlinks.
-  const path = join(realpathSync(repositoryRoot), file);
+  let canonicalRoot: string;
+  try {
+    canonicalRoot = dependencies.realpath(repositoryRoot);
+  } catch (error) {
+    throw asWriteConflict(
+      error,
+      `Could not resolve repository root for agent instructions: ${repositoryRoot}`,
+      { file, operation: "resolve" },
+    );
+  }
+  const path = join(canonicalRoot, file);
   const stats = tryLstat(path);
   if (stats === null) {
     if (operation === "update" || file === "CLAUDE.md") {
       return { state: "skipped" };
     }
-    writeSection(path, AGENT_SNIPPET);
+    writeAgentFile(
+      dependencies,
+      path,
+      file,
+      renderAgentsSection(AGENT_SNIPPET),
+    );
     return { state: "added" };
   }
   if (!stats.isFile()) {
@@ -129,7 +178,16 @@ function updateAgentFile(
     };
   }
 
-  const content = readFileSync(path, "utf8");
+  let content: string;
+  try {
+    content = dependencies.readFile(path);
+  } catch (error) {
+    throw asWriteConflict(
+      error,
+      `Could not read agent instructions file: ${file}`,
+      { file, operation: "read" },
+    );
+  }
   if (operation === "update" && !content.includes(BEGIN_MARKER_PREFIX)) {
     return { state: "skipped" };
   }
@@ -145,7 +203,7 @@ function updateAgentFile(
     };
   }
   if (outcome.state === "updated") {
-    writeFileSync(path, outcome.content, { encoding: "utf8" });
+    writeAgentFile(dependencies, path, file, outcome.content);
   }
   return { state: outcome.state };
 }
@@ -179,10 +237,16 @@ export function updateAgentFiles(options: {
   readonly repositoryRoot: string;
   readonly operation: "init" | "update";
   readonly skip?: boolean | undefined;
+  /** @internal Fault-injection seam for deterministic failure tests. Tests only. */
+  readonly dependencies?: Partial<AgentFileDependencies> | undefined;
 }): AgentFilesOutcome {
   const files: Record<string, AgentFileState> = {};
   const warnings: string[] = [];
   let changed = false;
+  const dependencies: AgentFileDependencies = {
+    ...DEFAULT_DEPENDENCIES,
+    ...options.dependencies,
+  };
 
   for (const file of ["AGENTS.md", "CLAUDE.md"] as const) {
     if (options.skip === true) {
@@ -193,6 +257,7 @@ export function updateAgentFiles(options: {
       options.repositoryRoot,
       file,
       options.operation,
+      dependencies,
     );
     files[file] = outcome.state;
     if (outcome.warning !== undefined) warnings.push(outcome.warning);

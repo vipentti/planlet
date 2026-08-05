@@ -559,17 +559,16 @@ export function installHarnessSkills(options: {
   const { value, releaseWarning } = withHarnessInstallLock(
     options.repositoryRoot,
     () => {
-      const agents = updateAgentFiles({
-        repositoryRoot: options.repositoryRoot,
-        operation: options.operation,
-        skip: options.noAgents,
-      });
-      warnings.push(...agents.warnings);
-
       if (destinations.length === 0) {
         const plansInitialized =
           options.operation === "init" && plansKind === "missing";
         if (plansInitialized) mkdirSync(plansPath, { recursive: true });
+        const agents = updateAgentFiles({
+          repositoryRoot: options.repositoryRoot,
+          operation: options.operation,
+          skip: options.noAgents,
+        });
+        warnings.push(...agents.warnings);
         return {
           operation: options.operation,
           changed: plansInitialized || agents.changed,
@@ -620,6 +619,16 @@ export function installHarnessSkills(options: {
               options.transactionHooks,
             ),
       );
+
+      // Agent files are written only after every destination inspected and
+      // published: a non-forced conflict or publication failure must not leave
+      // AGENTS.md/CLAUDE.md written or staged.
+      const agents = updateAgentFiles({
+        repositoryRoot: options.repositoryRoot,
+        operation: options.operation,
+        skip: options.noAgents,
+      });
+      warnings.push(...agents.warnings);
 
       return {
         operation: options.operation,

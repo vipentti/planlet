@@ -19,6 +19,7 @@ import {
   renderAgentsSection,
   updateAgentFiles,
 } from "../../src/core/agent-snippet.js";
+import { PlanletError } from "../../src/errors/planlet-error.js";
 
 function withRoot(run: (root: string) => void): void {
   const root = mkdtempSync(join(tmpdir(), "planlet-agents-"));
@@ -124,6 +125,98 @@ test("init replaces a stale section by marker and preserves the rest", () => {
     assert.equal(outcome.files["AGENTS.md"], "updated");
     const content = readFileSync(agentsPath, "utf8");
     assert.equal(content, `# Project\n\n${renderAgentsSection()}\nTail.\n`);
+  });
+});
+
+test("stale CRLF sections are replaced with exactly one boundary newline", () => {
+  withRoot((root) => {
+    const agentsPath = join(root, "AGENTS.md");
+    writeFileSync(
+      agentsPath,
+      "# Project\r\n\r\n<!-- BEGIN PLANLET AGENTS v:1 hash:deadbeef -->\r\nstale\r\n<!-- END PLANLET AGENTS -->\r\nTail.\r\n",
+    );
+
+    const outcome = updateAgentFiles({
+      repositoryRoot: root,
+      operation: "update",
+    });
+    assert.equal(outcome.files["AGENTS.md"], "updated");
+    assert.equal(
+      readFileSync(agentsPath, "utf8"),
+      `# Project\r\n\r\n${renderAgentsSection()}Tail.\r\n`,
+    );
+  });
+});
+
+test("agent-file resolve failures become write_conflict with details", () => {
+  withRoot((root) => {
+    assert.throws(
+      () =>
+        updateAgentFiles({
+          repositoryRoot: join(root, "missing"),
+          operation: "init",
+        }),
+      (error: unknown) => {
+        assert.ok(error instanceof PlanletError);
+        assert.equal(error.code, "write_conflict");
+        assert.equal(error.details.file, "AGENTS.md");
+        assert.equal(error.details.operation, "resolve");
+        return true;
+      },
+    );
+  });
+});
+
+test("agent-file read failures become write_conflict with details", () => {
+  withRoot((root) => {
+    writeFileSync(join(root, "AGENTS.md"), "# Project\n");
+    assert.throws(
+      () =>
+        updateAgentFiles({
+          repositoryRoot: root,
+          operation: "init",
+          dependencies: {
+            readFile: () => {
+              throw new Error("read boom");
+            },
+          },
+        }),
+      (error: unknown) => {
+        assert.ok(error instanceof PlanletError);
+        assert.equal(error.code, "write_conflict");
+        assert.equal(error.details.file, "AGENTS.md");
+        assert.equal(error.details.operation, "read");
+        return true;
+      },
+    );
+  });
+});
+
+test("agent-file write failures become write_conflict with details", () => {
+  withRoot((root) => {
+    writeFileSync(
+      join(root, "AGENTS.md"),
+      "<!-- BEGIN PLANLET AGENTS v:1 hash:deadbeef -->\nstale\n<!-- END PLANLET AGENTS -->\n",
+    );
+    assert.throws(
+      () =>
+        updateAgentFiles({
+          repositoryRoot: root,
+          operation: "update",
+          dependencies: {
+            writeFile: () => {
+              throw new Error("write boom");
+            },
+          },
+        }),
+      (error: unknown) => {
+        assert.ok(error instanceof PlanletError);
+        assert.equal(error.code, "write_conflict");
+        assert.equal(error.details.file, "AGENTS.md");
+        assert.equal(error.details.operation, "write");
+        return true;
+      },
+    );
   });
 });
 

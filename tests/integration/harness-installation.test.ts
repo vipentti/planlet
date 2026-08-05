@@ -411,6 +411,20 @@ test("prompt choices coalesce symlinked destinations and survive a file destinat
   });
 });
 
+test("conflicting destinations reject before agents files are written or staged", async () => {
+  await withGitRoot(async (root) => {
+    mkdirSync(join(root, ".agents"));
+    writeFileSync(join(root, ".agents", "skills"), "not a directory\n");
+
+    const result = await invoke(root, ["init", "--tools", "agents"]);
+    assert.equal(result.exitCode, 5);
+    assert.match(result.stderr, /code: write_conflict/);
+    assert.equal(existsSync(join(root, "AGENTS.md")), false);
+    assert.equal(existsSync(join(root, "CLAUDE.md")), false);
+    assert.deepEqual(stagedFiles(root), []);
+  });
+});
+
 test("prompt answers map to selectors and reject unrecognized input", async () => {
   await withRoot(async (root) => {
     const choices = buildToolChoices(root);
