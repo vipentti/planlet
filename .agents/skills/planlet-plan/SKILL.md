@@ -13,7 +13,10 @@ Create or revise one focused planlet while keeping planning separate from implem
 2. Use one available `planlet` executable throughout the workflow. Confirm each needed operation with `planlet help <command>`; do not infer support from this skill. Pass `--root "<repository-root>"` to every operational command. Treat angle-bracket runtime values as separate argv values; when invoking through a shell, apply shell-specific escaping instead of interpolating raw text.
 3. Use `planlet --root "<repository-root>" list` to inspect active logical slugs and `planlet --root "<repository-root>" list --completed` to inspect completed logical slugs. For a revision, resolve exactly one active slug, run `planlet --root "<repository-root>" validate <slug>`, and read both files completely with `planlet --root "<repository-root>" --full show <slug> --part plan` and `planlet --root "<repository-root>" --full show <slug> --part tasks`.
 4. Read applicable repository instructions when present.
-5. If an operation is unavailable, announce fallback for that operation only and name its missing deterministic CLI behavior. Continue using CLI for every supported operation.
+5. The `planlet` CLI is required. If no executable is available, install it
+   (`npm install -g @vipentti/planlet`) or invoke it through `npx @vipentti/planlet`. If it still
+   cannot run, stop and report that, naming the missing executable. Do not reimplement CLI
+   operations by editing planlet files.
 
 ## Develop the proposal
 
@@ -33,15 +36,13 @@ Create or revise one focused planlet while keeping planning separate from implem
 For a new confirmed planlet:
 
 1. Run `planlet --root "<repository-root>" create <slug> --title "<title>"`. Treat non-zero exit as no authorization to write around a slug, path, or collision failure.
-2. Confirm CLI created only H1 stubs. When the harness exposes a dedicated file-reading capability, read each created file with it rather than through a shell command, because such a harness can reject a write to a file it has not read and may not count a shell read. Then replace those two stubs with approved `plan.md` and `tasks.md` content. Never use `create` for revision or overwrite an existing planlet.
+2. Confirm CLI created only H1 stubs. When the harness exposes a dedicated file-reading capability, read each created file with it rather than through a shell command, because such a harness can reject a write to a file it has not read and may not count a shell read. Then replace those two stubs with approved `plan.md` and `tasks.md` content, because `create` writes H1 stubs only and no CLI command accepts plan or task body content. Never use `create` for revision or overwrite an existing planlet.
 3. Run `planlet --root "<repository-root>" validate <slug>`, then re-read both files with `planlet --root "<repository-root>" --full show <slug> --part plan` and `planlet --root "<repository-root>" --full show <slug> --part tasks`; inspect exact persisted content.
 
 For a confirmed revision, edit both existing files directly because CLI has no semantic revision operation. When the harness exposes a dedicated file-reading capability, read each file with it before editing, because such a harness can reject an edit to a file it has not read and may not count a shell read. Preserve IDs for unchanged tasks, assign new IDs above highest numeric suffix, and never silently remove completed work. Then run targeted `validate` and full `show` inspection as above.
-
-Use manual creation only when `create` is unavailable: resolve paths beneath repository root, refuse invalid or conflicting slugs, and publish exactly both primary files without partial state or overwrite. Use manual structural validation only when `validate` is unavailable: require H1 headings, recognized top-level task lines, non-empty descriptions, and unique IDs. A missing `show` operation permits direct file reads, not manual validation. Report unavailable canonical collision checks, validation, structured errors, or atomic creation as applicable.
 
 Do not modify product code, create extra planning documents by default, or begin implementation unless the user separately requests it.
 
 ## Finish
 
-Report selected logical slug, paths written or revised, proposal status, exact CLI validation result, warnings, and unresolved decisions. When fallback was used, repeat each unavailable deterministic operation.
+Report selected logical slug, paths written or revised, proposal status, exact CLI validation result, warnings, and unresolved decisions.

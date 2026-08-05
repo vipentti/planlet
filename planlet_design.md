@@ -1075,12 +1075,10 @@ Skills need scenario-based evaluation in addition to CLI tests:
 
 - Create the canonical `planlet-plan`, `planlet-implement`, and `planlet-complete` skill skeletons.
 - Add shared `plan.md` and `tasks.md` templates based on the file contract in this document.
-- Document a narrow CLI-unavailable fallback that lets the skills create planlets, read progress, update checkboxes, record completion, and move completed planlets to date-prefixed archive paths using ordinary repository file operations.
-- Require fallback operations to follow the same slug, target-selection, validation, task-ID, and completion-safety rules intended for the CLI.
-- Make fallback use explicit in skill output, including which deterministic CLI validations could not be run.
+- Require an available `planlet` executable in the skills. The CLI-unavailable fallback is retired: skills never hand-create planlets, compute progress, update checkboxes, record completion, or move completed planlets, and an agent with no executable and no working install path stops and reports naming the missing executable rather than reimplementing CLI operations.
 - Manually create the first planlet for implementing the CLI core and use it to exercise planning, implementation handoff, incremental task updates, and completion.
 
-Phase 0 is temporary scaffolding for dogfooding, not a second implementation of Planlet's deterministic behavior. Skills should not grow their own general-purpose parser or lifecycle engine. As each required CLI operation becomes available, the skills should delegate to it and retain manual behavior only as a small, clearly identified fallback. The bootstrap skills may be revised during development; Phase 2 hardens them after the CLI contract exists.
+Phase 0 was temporary scaffolding for dogfooding, not a second implementation of Planlet's deterministic behavior. Skills should not grow their own general-purpose parser or lifecycle engine. The CLI-unavailable fallback was retired on 2026-08-05, once every lifecycle operation it covered existed in the published CLI; the skills require an available executable and stop with install guidance when none can be run. The bootstrap skills were revised during development; Phase 2 hardens them after the CLI contract exists.
 
 ### Phase 1: File and CLI core
 
@@ -1098,7 +1096,7 @@ Phase 0 is temporary scaffolding for dogfooding, not a second implementation of 
 
 - Harden the bootstrap `planlet-plan`, `planlet-implement`, and `planlet-complete` skills against the implemented CLI contract.
 - Finalize plan and task templates.
-- Minimize and test the CLI-unavailable fallback.
+- Test that the skills require the CLI and never describe a manual lifecycle fallback.
 - Skill scenario evaluations.
 
 ### Phase 3: Harness installation

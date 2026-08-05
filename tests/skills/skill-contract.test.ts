@@ -43,7 +43,7 @@ test("canonical skills expose valid metadata and resolvable local resources", ()
   }
 });
 
-test("skills use supported rooted CLI forms and operation-specific fallback", () => {
+test("skills use supported rooted CLI forms and require the planlet CLI", () => {
   const plan = read("skills/planlet-plan/SKILL.md");
   const implement = read("skills/planlet-implement/SKILL.md");
   const complete = read("skills/planlet-complete/SKILL.md");
@@ -77,11 +77,14 @@ test("skills use supported rooted CLI forms and operation-specific fallback", ()
   for (const markdown of [plan, implement, complete]) {
     assert.match(markdown, /shell-specific escaping/);
     assert.doesNotMatch(markdown, /--root <repository-root>/);
-    assert.match(markdown, /fallback for that operation only/);
+    assert.match(markdown, /The `planlet` CLI is required\./);
+    assert.match(markdown, /npm install -g @vipentti\/planlet/);
+    assert.match(markdown, /npx @vipentti\/planlet/);
     assert.match(
       markdown,
-      /Continue using (?:the )?supported CLI operations|Continue using CLI for every supported operation/,
+      /Do not reimplement CLI\s+operations by editing planlet files/,
     );
+    assert.doesNotMatch(markdown, /fallback/i);
     assert.doesNotMatch(markdown, /planlet (?:init|update|tools|archive)\b/);
   }
 });

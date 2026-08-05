@@ -1,6 +1,6 @@
 # Planlet Skill Scenarios
 
-Run each scenario in a fresh disposable repository fixture outside the canonical `skills/` tree and active `plans/` state. Copy only the files named by the setup, start with fresh agent context where practical, and retain the prompt, agent output, resulting files, and diff for review. Require CLI-first behavior; where a scenario falls back to manual handling, require an explicit disclosure naming the deterministic checks that were skipped.
+Run each scenario in a fresh disposable repository fixture outside the canonical `skills/` tree and active `plans/` state. Copy only the files named by the setup, start with fresh agent context where practical, and retain the prompt, agent output, resulting files, and diff for review. Require CLI-first behavior with no manual lifecycle fallback; an agent that cannot run the CLI stops and reports naming the missing executable.
 
 ## Planning scenarios
 
@@ -98,4 +98,4 @@ Run each scenario in a fresh disposable repository fixture outside the canonical
 
 ## Review criteria
 
-For every run, confirm exact target selection, complete file re-reading, CLI-first delegation or explicit fallback disclosure, valid paths and task IDs, narrow mutation scope, accurate final summary, and preservation of fixture changes unrelated to the scenario. Revise a skill when its raw output or diff is unsafe, ambiguous, inconsistent across the two files, or needlessly ceremonial.
+For every run, confirm exact target selection, complete file re-reading, CLI-first delegation, valid paths and task IDs, narrow mutation scope, accurate final summary, and preservation of fixture changes unrelated to the scenario. Revise a skill when its raw output or diff is unsafe, ambiguous, inconsistent across the two files, or needlessly ceremonial.
