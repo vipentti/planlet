@@ -42,7 +42,7 @@ Keep this file short and navigational. Durable product detail belongs in the des
 
 Do not assume a fixed development phase or a specific set of files that should exist. Inspect the repository directly (for example, whether a `planlet` CLI, package scaffold, build, or test suite exists) before acting, and read `plans/` to see what work is currently planned, in progress, or completed.
 
-When a described CLI capability is not yet present, do not invent commands or report CLI validation as having run. Follow the manual fallback specified by `planlet_design.md` and the selected planlet, and state explicitly when fallback behavior was used and which deterministic CLI checks were unavailable.
+When a described CLI capability is not yet present, do not invent commands or report CLI validation as having run. Skills require an available `planlet` executable; with no executable and no working install path, stop and report naming the missing executable instead of hand-managing planlet files. The CLI-unavailable fallback is retired (2026-08-05).
 
 ## Working rules
 

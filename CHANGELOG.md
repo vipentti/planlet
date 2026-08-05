@@ -13,6 +13,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and thi
 
 ### Changed
 
+- Skills now require an available `planlet` executable and no longer describe a CLI-unavailable fallback; with no working install path, agents stop and report naming the missing executable instead of hand-managing planlet files.
 - `show --part plan|tasks` compacts oversized content with a preview and size
   metadata; `--full` returns the complete content, and non-show output is no
   longer truncated.

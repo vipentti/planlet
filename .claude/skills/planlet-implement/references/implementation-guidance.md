@@ -1,19 +1,11 @@
 # Implementation Guidance
 
-## Validate the target manually when needed
+## Trust the CLI as the target authority
 
-Use this narrow fallback only for CLI operations that are unavailable:
-
-- Accept slugs matching `^[a-z0-9]+(?:-[a-z0-9]+)*$` and resolve them only as direct children of `<repository-root>/plans/`.
-- Exclude `plans/completed/` from active selection.
-- Require readable `plan.md` and `tasks.md`, each beginning with an H1.
-- Recognize only top-level lines shaped as `- [ ] T<number> Description` or `- [x] T<number> Description` with non-empty descriptions.
-- Refuse duplicate task IDs or malformed files. Do not interpret a missing or malformed checklist as zero remaining work.
-- Report that the CLI could not provide canonical validation, status calculation, structured errors, or atomic task updates, as applicable.
-
-Do not grow this fallback into a general Markdown parser.
-
-CLI support is operation-specific. Missing `show` permits direct reads; missing `validate` permits narrow structural validation; missing `tasks` or `status` permits reporting counts from already validated recognized lines; missing `task check` permits one safe checkbox edit. A supported operation returning a non-zero exit is a workflow failure, not evidence that operation is unavailable.
+`validate`, `list`, `tasks`, and `status` are the only authorities on whether a planlet exists, is
+active, and is well formed. Do not re-derive slug rules, headings, or task-line grammar by reading
+the files; a non-zero exit is a workflow failure to report, never a reason to parse Markdown
+yourself.
 
 ## Evaluate drift
 
@@ -29,9 +21,11 @@ If a check fails, distinguish an in-scope defect from unrelated existing failure
 
 Treat CLI exit status and stable structured error code as authoritative. Do not parse field order, whitespace, or incidental TOON layout. After a successful task check, inspect canonical task and status results instead of inferring progress from command prose.
 
-For newly discovered necessary work, determine whether it is a small implementation detail or a material scope addition. Incorporate small details transparently. For material additions, propose consistent edits to both `plan.md` and `tasks.md`; preserve existing IDs and allocate new IDs above the highest current numeric suffix.
+For newly discovered necessary work, determine whether it is a small implementation detail or a material scope addition. Incorporate small details transparently. For material additions, propose consistent edits to both `plan.md` and `tasks.md`; preserve existing IDs and allocate new IDs above the highest current numeric suffix. The CLI has no revision operation, so these are direct file edits.
 
-Use safe writes for fallback checkbox changes. Re-read immediately before editing, change one uniquely matching task ID, avoid rewriting unrelated Markdown, and verify the resulting task list afterward. If the file changed concurrently or the ID is missing or duplicated, stop without guessing.
+When editing `tasks.md` for an approved scope revision or an exceptional evidence note, re-read
+immediately before editing, avoid rewriting unrelated Markdown, and never touch a checkbox marker.
+No CLI command performs either write; `task check` and `task uncheck` own only checkbox state.
 
 ## Record evidence only when it is exceptional
 

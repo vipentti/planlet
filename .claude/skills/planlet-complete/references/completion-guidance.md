@@ -1,19 +1,11 @@
 # Completion Guidance
 
-## Validate the target manually when needed
+## Trust the CLI as the target authority
 
-Use manual behavior only for missing CLI operations:
-
-- Accept a logical slug only when it matches `^[a-z0-9]+(?:-[a-z0-9]+)*$` and resolves to a direct child of `<repository-root>/plans/`.
-- Exclude `plans/completed/` from active selection and keep every path inside the repository root.
-- Require readable `plan.md` and `tasks.md`, each beginning with an H1.
-- Recognize only top-level task lines shaped as `- [ ] T<number> Description` or `- [x] T<number> Description`. Require non-empty descriptions and unique IDs.
-- Interpret malformed task-like lines as a structural error requiring review, not as completed or ignorable work.
-- Inspect every entry in `plans/completed/` that has a valid real `YYYY-MM-DD-<slug>` archive name. Refuse completion if any parsed logical slug equals the target, even when its date differs.
-
-Do not turn the fallback into a general parser or use it when the corresponding CLI operation exists.
-
-CLI support is operation-specific. Missing `show` permits direct reads; missing `tasks` permits remaining-task inspection from already validated recognized lines; missing `validate` permits narrow structural validation; missing `complete` permits manual audit and movement. A supported operation returning a non-zero exit is a workflow failure, not evidence that operation is unavailable.
+`validate`, `list`, `tasks`, and `status` are the only authorities on whether a planlet exists, is
+active, and is well formed. Do not re-derive slug rules, headings, or task-line grammar by reading
+the files; a non-zero exit is a workflow failure to report, never a reason to parse Markdown
+yourself.
 
 ## Require explicit incomplete approval
 
@@ -21,11 +13,9 @@ List each remaining task ID and description before asking. Explain that an overr
 
 Use reason exactly as approved except necessary surrounding-whitespace trimming. Never invent, generalize, or reuse reason from another planlet.
 
-## Record one completion instant
+## Read the completion record
 
-Capture one current UTC timestamp in ISO 8601 form with a `Z` suffix, such as `2026-07-22T12:34:56Z`. Derive `YYYY-MM-DD` from that exact value. Do not read the clock again for archive naming.
-
-Append one completion section to `tasks.md`. When the harness exposes a dedicated file-reading capability, read the file with it before editing, because such a harness can reject an edit to a file it has not read and may not count a shell read.
+`complete` appends one completion section to `tasks.md` in this shape:
 
 ```markdown
 ## Completion
@@ -34,7 +24,7 @@ Append one completion section to `tasks.md`. When the harness exposes a dedicate
 - Mode: normal
 ```
 
-For an approved override, use:
+For an approved override, the shape is:
 
 ```markdown
 ## Completion
@@ -45,12 +35,9 @@ For an approved override, use:
 - Reason: <user-approved reason>
 ```
 
+The templates above are read-only reference: report what `complete` wrote and recognize a
+conflicting record from it, but never write the section by hand.
+
 Refuse a pre-existing or conflicting completion record rather than silently rewriting history.
 
 The completion record is a lifecycle audit: it proves when and under what authority the planlet moved, never that verification passed. Leave any optional `## Verification Evidence` section untouched and archive it as written; do not merge it into the completion record, extend the record with verification fields, or add evidence during completion. Such a section is exceptional, so a planlet without one is complete as it stands.
-
-## Move safely
-
-Before writing, verify that `plans/completed/` is inside the repository and that neither a logical-slug conflict nor `plans/completed/<YYYY-MM-DD>-<slug>` exists. Write the completion record safely and re-read it. Recheck the destination immediately before a plain filesystem move of the entire source directory.
-
-If writing the record succeeds but movement fails, leave the source recoverable, do not copy or delete around the failure, and report that the completion record remains in the active planlet. Never merge with or replace an existing archive.
