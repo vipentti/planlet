@@ -48,6 +48,24 @@ export function countFlags(args, prefix) {
   return args.filter((a) => a === prefix || a.startsWith(prefix + "=")).length;
 }
 
+export function packageLockMismatch(lock, version) {
+  if (lock.version !== version)
+    return (
+      "package-lock.json.version is " + lock.version + ", expected " + version
+    );
+  const rootEntry = lock.packages?.[""];
+  if (!rootEntry || typeof rootEntry !== "object")
+    return 'package-lock.json.packages[""] is missing or not an object';
+  if (rootEntry.version !== version)
+    return (
+      'package-lock.json.packages[""].version is ' +
+      rootEntry.version +
+      ", expected " +
+      version
+    );
+  return null;
+}
+
 const todayUtc = new Date().toISOString().slice(0, 10);
 
 function assertNotPast(date, description) {

@@ -19,7 +19,9 @@ import { fileURLToPath } from "node:url";
 import {
   countFlags,
   isValidCalendarDate,
+  packageLockMismatch,
 } from "./assert-changelog-release-ready.mjs";
+import { verifyReleaseTag } from "./verify-release-tag.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const changelogPath = resolve(root, "CHANGELOG.md");
@@ -85,20 +87,8 @@ function validateReleaseContents(version, date) {
   if (pkg.version !== version)
     fail("package.json.version is " + pkg.version + ", expected " + version);
   const lock = JSON.parse(readFileSync(packageLockPath, "utf8"));
-  if (lock.version !== version)
-    fail(
-      "package-lock.json.version is " + lock.version + ", expected " + version,
-    );
-  const pkgEntry = lock.packages?.[""];
-  if (!pkgEntry || typeof pkgEntry !== "object")
-    fail('package-lock.json.packages[""] is missing or not an object');
-  if (pkgEntry.version !== version)
-    fail(
-      'package-lock.json.packages[""].version is ' +
-        pkgEntry.version +
-        ", expected " +
-        version,
-    );
+  const lockMismatch = packageLockMismatch(lock, version);
+  if (lockMismatch) fail(lockMismatch);
   // changelog validation via the helper's strict preparation mode
   const r = spawnSync(
     process.execPath,
@@ -558,26 +548,13 @@ function cmdTag() {
   if (tagExistsLocally) {
     // Validate existing local tag through the shared verifier so the workflow
     // and the maintainer utility agree on what an exact release tag is.
-    const localVerify = spawnSync(
-      process.execPath,
-      [
-        "scripts/verify-release-tag.mjs",
-        "--tag",
-        "v" + version,
-        "--target",
-        headSha,
-        "--message",
-        "Release v" + version,
-      ],
-      { cwd: root, encoding: "utf8" },
-    );
-    if (localVerify.status !== 0)
-      fail(
-        "Local tag v" +
-          version +
-          " is invalid:\n" +
-          (localVerify.stderr || localVerify.stdout).trim(),
-      );
+    const localVerify = verifyReleaseTag({
+      tag: "v" + version,
+      target: headSha,
+      message: "Release v" + version,
+    });
+    if (!localVerify.ok)
+      fail("Local tag v" + version + " is invalid:\n" + localVerify.error);
 
     if (!isExecute) {
       plan(
@@ -617,26 +594,13 @@ function cmdTag() {
     if (tag.status !== 0)
       fail("git tag creation failed:\n" + tag.stderr.trim());
 
-    const verify = spawnSync(
-      process.execPath,
-      [
-        "scripts/verify-release-tag.mjs",
-        "--tag",
-        "v" + version,
-        "--target",
-        headSha,
-        "--message",
-        "Release v" + version,
-      ],
-      { cwd: root, encoding: "utf8" },
-    );
-    if (verify.status !== 0)
-      fail(
-        "Tag v" +
-          version +
-          " failed verification:\n" +
-          (verify.stderr || verify.stdout).trim(),
-      );
+    const verify = verifyReleaseTag({
+      tag: "v" + version,
+      target: headSha,
+      message: "Release v" + version,
+    });
+    if (!verify.ok)
+      fail("Tag v" + version + " failed verification:\n" + verify.error);
   }
 
   // Push if --push

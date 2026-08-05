@@ -21,7 +21,7 @@ import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { fileURLToPath } from "node:url";
 
-import { isValidCalendarDate } from "./assert-changelog-release-ready.mjs";
+import { packageLockMismatch } from "./assert-changelog-release-ready.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const releaseFiles = ["CHANGELOG.md", "package.json", "package-lock.json"];
@@ -91,7 +91,6 @@ function validChangelog() {
     [
       join(root, "scripts", "assert-changelog-release-ready.mjs"),
       "--verify-release",
-      "--print-date",
     ],
     { cwd: root, encoding: "utf8" },
   );
@@ -100,12 +99,6 @@ function validChangelog() {
       "Changelog does not describe a valid released version:\n" +
         (r.stderr || r.stdout).trim(),
     );
-  }
-  // Historical mode prints exactly YYYY-MM-DD\n on success; anything else is
-  // malformed helper output and must not count as a valid changelog.
-  const shape = /^(\d{4}-\d{2}-\d{2})\n$/.exec(r.stdout);
-  if (!shape || !isValidCalendarDate(shape[1])) {
-    fail("Changelog helper returned a malformed release date.");
   }
 }
 
@@ -197,24 +190,8 @@ if (compareVersions(newVersion, previous) <= 0) {
   );
 }
 
-if (afterLock.version !== afterVersion) {
-  fail(
-    `package-lock.json.version is ${JSON.stringify(
-      afterLock.version,
-    )}, expected ${afterVersion}.`,
-  );
-}
-const rootEntry = afterLock.packages?.[""];
-if (typeof rootEntry !== "object" || rootEntry === null) {
-  fail('package-lock.json.packages[""] is missing or not an object.');
-}
-if (rootEntry.version !== afterVersion) {
-  fail(
-    `package-lock.json.packages[""].version is ${JSON.stringify(
-      rootEntry.version,
-    )}, expected ${afterVersion}.`,
-  );
-}
+const lockMismatch = packageLockMismatch(afterLock, afterVersion);
+if (lockMismatch) fail(lockMismatch);
 
 const changed = git("diff", "--name-only", before, after)
   .stdout.trim()

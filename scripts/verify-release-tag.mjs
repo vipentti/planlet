@@ -3,101 +3,102 @@
 /**
  * Verify an annotated signed release tag in the current repository.
  *
- * Usage:
- *   node scripts/verify-release-tag.mjs --tag v1.2.3 --target <sha> --message "v1.2.3"
+ * CLI:
+ *   node scripts/verify-release-tag.mjs --tag v1.2.3 --target <sha> --message "Release v1.2.3"
  *
- * Requires the tag to be an annotated object, to point at the exact target
- * commit, to have the exact expected message subject, and to carry a
- * signature Git verifies (git verify-tag). Prints the tag object SHA on
- * success; writes a diagnostic to stderr and exits nonzero otherwise.
+ * Requires an annotated object at the exact target commit with the exact
+ * message subject and a Git-verified signature. Prints the tag object SHA on
+ * success; diagnostics to stderr, nonzero exit otherwise.
  */
 
 import { spawnSync } from "node:child_process";
+import { resolve } from "node:path";
 import { parseArgs } from "node:util";
-
-function fail(message) {
-  console.error(message);
-  process.exit(1);
-}
+import { fileURLToPath } from "node:url";
 
 function git(...args) {
   return spawnSync("git", args, { encoding: "utf8" });
 }
 
-let values;
-try {
-  ({ values } = parseArgs({
-    args: process.argv.slice(2),
-    options: {
-      tag: { type: "string" },
-      target: { type: "string" },
-      message: { type: "string" },
-      help: { type: "boolean", short: "h" },
-    },
-    strict: true,
-  }));
-} catch (error) {
-  fail(error instanceof Error ? error.message : String(error));
-}
-
-if (values.help) {
-  console.log(
-    "Usage: node scripts/verify-release-tag.mjs --tag vX.Y.Z --target <sha> --message <expected>",
+export function verifyReleaseTag({ tag, target, message }) {
+  const ref = "refs/tags/" + tag;
+  const type = git("cat-file", "-t", ref);
+  if (type.status !== 0 || type.stdout.trim() !== "tag")
+    return {
+      ok: false,
+      error: `Release tag ${tag} is not an annotated tag (found ${
+        type.stdout.trim() || "(missing)"
+      }).`,
+    };
+  const targetCommit = git(
+    "rev-parse",
+    "--verify",
+    "--quiet",
+    ref + "^{commit}",
   );
-  process.exit(0);
+  if (targetCommit.status !== 0 || targetCommit.stdout.trim() !== target)
+    return {
+      ok: false,
+      error: `Tag ${tag} points to ${
+        targetCommit.stdout.trim() || "(unresolvable)"
+      }, expected ${target}.`,
+    };
+  const subject = git("tag", "-l", "--format=%(contents:subject)", tag);
+  if (subject.status !== 0 || subject.stdout.trim() !== message)
+    return {
+      ok: false,
+      error: `Tag ${tag} message is ${JSON.stringify(
+        subject.stdout.trim(),
+      )}, expected ${JSON.stringify(message)}.`,
+    };
+  const verify = git("verify-tag", tag);
+  if (verify.status !== 0)
+    return {
+      ok: false,
+      error: `git verify-tag failed for ${tag}:\n${verify.stderr.trim()}`,
+    };
+  const objectSha = git("rev-parse", ref);
+  if (objectSha.status !== 0 || !/^[0-9a-f]{40}$/.test(objectSha.stdout.trim()))
+    return { ok: false, error: `Could not resolve tag object SHA for ${tag}.` };
+  return { ok: true, objectSha: objectSha.stdout.trim() };
 }
 
-if (typeof values.tag !== "string" || values.tag === "") {
-  fail("Missing --tag.");
-}
+// CLI entry only; importing this module must not run argument parsing.
 if (
-  typeof values.target !== "string" ||
-  !/^[0-9a-f]{40}$/.test(values.target)
+  process.argv[1] !== undefined &&
+  fileURLToPath(import.meta.url) === resolve(process.argv[1])
 ) {
-  fail("Missing or malformed --target (expected a 40-character hex SHA).");
+  let values;
+  try {
+    ({ values } = parseArgs({
+      args: process.argv.slice(2),
+      options: {
+        tag: { type: "string" },
+        target: { type: "string" },
+        message: { type: "string" },
+        help: { type: "boolean", short: "h" },
+      },
+      strict: true,
+    }));
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  }
+  const usage =
+    "Usage: node scripts/verify-release-tag.mjs --tag vX.Y.Z --target <sha> --message <expected>";
+  if (values.help) {
+    console.log(usage);
+    process.exit(0);
+  }
+  const { tag, target, message } = values;
+  if (!tag || !/^[0-9a-f]{40}$/.test(target ?? "") || !message) {
+    console.error(usage);
+    process.exit(1);
+  }
+  const result = verifyReleaseTag({ tag, target, message });
+  if (!result.ok) {
+    console.error(result.error);
+    process.exit(1);
+  }
+  console.log(result.objectSha);
 }
-if (typeof values.message !== "string" || values.message === "") {
-  fail("Missing --message.");
-}
-
-const tag = values.tag;
-const ref = "refs/tags/" + tag;
-
-const objectType = git("cat-file", "-t", ref);
-if (objectType.status !== 0 || objectType.stdout.trim() !== "tag") {
-  fail(
-    `Release tag ${tag} is not an annotated tag (found ${
-      objectType.stdout.trim() || "(missing)"
-    }).`,
-  );
-}
-
-const targetCommit = git("rev-parse", "--verify", "--quiet", ref + "^{commit}");
-if (targetCommit.status !== 0 || targetCommit.stdout.trim() !== values.target) {
-  fail(
-    `Tag ${tag} points to ${
-      targetCommit.stdout.trim() || "(unresolvable)"
-    }, expected ${values.target}.`,
-  );
-}
-
-const subject = git("tag", "-l", "--format=%(contents:subject)", tag);
-if (subject.status !== 0 || subject.stdout.trim() !== values.message) {
-  fail(
-    `Tag ${tag} message is ${JSON.stringify(
-      subject.stdout.trim(),
-    )}, expected ${JSON.stringify(values.message)}.`,
-  );
-}
-
-const verify = git("verify-tag", tag);
-if (verify.status !== 0) {
-  fail(`git verify-tag failed for ${tag}:\n${verify.stderr.trim()}`);
-}
-
-const objectSha = git("rev-parse", ref);
-if (objectSha.status !== 0 || !/^[0-9a-f]{40}$/.test(objectSha.stdout.trim())) {
-  fail(`Could not resolve tag object SHA for ${tag}.`);
-}
-
-console.log(objectSha.stdout.trim());

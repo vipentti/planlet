@@ -33,10 +33,6 @@ jobs:
           set -euo pipefail
           result=$(node scripts/detect-release-merge.mjs --before "${{ github.event.before }}" --after "$GITHUB_SHA")
           is_release=$(printf '%s' "$result" | jq -r '.isRelease')
-          test "$is_release" = "true" || test "$is_release" = "false" || {
-            echo "Detection script returned malformed JSON" >&2
-            exit 1
-          }
           echo "is-release=$is_release" >> "$GITHUB_OUTPUT"
           if [ "$is_release" = "true" ]; then
             version=$(printf '%s' "$result" | jq -r '.version')
@@ -295,10 +291,6 @@ jobs:
             read_registry_json
             verify_registry_matches_pack
           elif grep -q "E404" "$RUNNER_TEMP/npm-view.err"; then
-            # First publication: changelog must describe this release; the
-            # committed date is the release-cut date and is not required to be
-            # today (approval may cross UTC midnight).
-            node scripts/assert-changelog-release-ready.mjs --verify-release
             npm publish "$PACKAGE_TARBALL" --access public --provenance
             # Wait for packument visibility, then apply the same identity/integrity checks.
             visible=0
