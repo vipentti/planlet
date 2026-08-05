@@ -19,6 +19,7 @@ import { fileURLToPath } from "node:url";
 import {
   countFlags,
   isValidCalendarDate,
+  packageIdentityMismatch,
   packageLockMismatch,
 } from "./assert-changelog-release-ready.mjs";
 import { verifyReleaseTag } from "./verify-release-tag.mjs";
@@ -87,6 +88,12 @@ function validateReleaseContents(version, date) {
   if (pkg.version !== version)
     fail("package.json.version is " + pkg.version + ", expected " + version);
   const lock = JSON.parse(readFileSync(packageLockPath, "utf8"));
+  const identityMismatch = packageIdentityMismatch(
+    pkg,
+    lock,
+    "@vipentti/planlet",
+  );
+  if (identityMismatch) fail(identityMismatch);
   const lockMismatch = packageLockMismatch(lock, version);
   if (lockMismatch) fail(lockMismatch);
   // changelog validation via the helper's strict preparation mode
@@ -532,6 +539,13 @@ function cmdTag() {
     fail(
       "package.json.version is " + pkg.version + ", expected " + version + ".",
     );
+  const lock = JSON.parse(readFileSync(packageLockPath, "utf8"));
+  const identityMismatch = packageIdentityMismatch(
+    pkg,
+    lock,
+    "@vipentti/planlet",
+  );
+  if (identityMismatch) fail(identityMismatch);
 
   // 4. Remote tag exists?
   const tagRef = "refs/tags/v" + version;

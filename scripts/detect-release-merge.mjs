@@ -21,7 +21,10 @@ import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { fileURLToPath } from "node:url";
 
-import { packageLockMismatch } from "./assert-changelog-release-ready.mjs";
+import {
+  packageIdentityMismatch,
+  packageLockMismatch,
+} from "./assert-changelog-release-ready.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const releaseFiles = ["CHANGELOG.md", "package.json", "package-lock.json"];
@@ -192,6 +195,13 @@ if (compareVersions(newVersion, previous) <= 0) {
 
 const lockMismatch = packageLockMismatch(afterLock, afterVersion);
 if (lockMismatch) fail(lockMismatch);
+
+const identityMismatch = packageIdentityMismatch(
+  afterPkg,
+  afterLock,
+  "@vipentti/planlet",
+);
+if (identityMismatch) fail(identityMismatch);
 
 const changed = git("diff", "--name-only", before, after)
   .stdout.trim()

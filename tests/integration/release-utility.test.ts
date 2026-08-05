@@ -144,12 +144,17 @@ function makeRepo(options: MakeOptions = {}): Repo {
   // Repository content.
   writeFileSync(
     join(dir, "package.json"),
-    JSON.stringify({ name: "x", version }, null, 2) + "\n",
+    JSON.stringify({ name: FIXED_NAME, version }, null, 2) + "\n",
   );
   writeFileSync(
     join(dir, "package-lock.json"),
     JSON.stringify(
-      { name: "x", version, lockfileVersion: 3, packages: { "": { version } } },
+      {
+        name: FIXED_NAME,
+        version,
+        lockfileVersion: 3,
+        packages: { "": { name: FIXED_NAME, version } },
+      },
       null,
       2,
     ) + "\n",
@@ -228,6 +233,7 @@ function ghCalls(repo: Repo): string[] {
 }
 
 const GOOD = "0.1.0";
+const FIXED_NAME = "@vipentti/planlet";
 
 // ---------------------------------------------------------------------------
 // T1: CLI parsing
@@ -762,6 +768,23 @@ test("tag rejects an existing local tag with a bare v<version> subject", () => {
       .status,
     2,
   );
+});
+
+test("tag refuses a mismatched package identity", () => {
+  const repo = makeRepo({ released: true });
+  const pkg = readJson(repo, "package.json");
+  pkg.name = "other";
+  writeFileSync(
+    join(repo.dir, "package.json"),
+    JSON.stringify(pkg, null, 2) + "\n",
+  );
+  git(repo, "add", "package.json");
+  git(repo, "commit", "-q", "-m", "rename");
+  git(repo, "push", "-q", "origin", "main");
+
+  const out = release(repo, "tag", "--version", GOOD, "--execute");
+  assert.notEqual(out.status, 0);
+  assert.match(out.stdout + out.stderr, /package\.json\.name is/);
 });
 
 test("break-glass tag satisfies the same verifier arguments as the workflow", () => {

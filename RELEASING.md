@@ -137,9 +137,13 @@ not read release secrets, and creates no tag, npm package, or GitHub release.
 A version-changing push must change exactly `CHANGELOG.md`, `package.json`, and
 `package-lock.json`, keep the three root version fields in agreement, use a
 stable `X.Y.Z` version greater than the previous one, and carry a valid dated
-changelog section with empty `[Unreleased]`. Malformed or missing previous
-SHAs, mismatched files, invalid versions, or nonempty unreleased notes fail
-closed rather than being treated as an ordinary push.
+changelog section with empty `[Unreleased]`. The detector also requires the
+fixed package identity `@vipentti/planlet` in `package.json.name`,
+`package-lock.json.name`, and `package-lock.json.packages[""].name`, so package
+and lockfile names are validated before any environment approval. Malformed or
+missing previous SHAs, mismatched files, invalid versions, mismatched names,
+or nonempty unreleased notes fail closed rather than being treated as an
+ordinary push.
 
 Only the protected `release` job references `environment: release` and only its
 steps read the release secrets. After approval the job runs, in order:
@@ -149,9 +153,12 @@ steps read the release secrets. After approval the job runs, in order:
 3. Install dependencies from the lockfile (`npm ci`).
 4. Run `format:check`, `lint`, `type-check`, `build`, tests, `git diff --check`,
    generated-skill parity, and the clean-source check.
-5. Verify the committed changelog release state and extract release notes.
+5. Extract release notes from the committed changelog. (The detector already
+   validated the changelog release state against the exact commit before
+   approval.)
 6. Build the reviewed package artifact with `npm pack --json --ignore-scripts`
-   and validate its metadata locally.
+   and validate its metadata and exact tarball basename locally before
+   recording the artifact path.
 7. Configure the isolated temporary GPG environment for release-tag signing.
 8. Generate the short-lived GitHub App installation token when the remote tag
    is absent (existing-tag reruns skip token generation).
@@ -159,8 +166,9 @@ steps read the release secrets. After approval the job runs, in order:
    exact remote tag.
 10. Push only that tag ref when the remote tag is absent.
 11. Confirm GitHub reports the tag signature verified.
-12. Publish the npm artifact with provenance, or verify the already-published
-    version by exact identity and integrity.
+12. Publish the npm artifact with provenance (npm pinned to the exact version
+    `11.5.1`), or verify the already-published version by exact identity and
+    integrity.
 13. Create or update the GitHub release from the changelog notes.
 
 The remote tag is the final irreversible mutation before npm publication.
@@ -233,6 +241,27 @@ never used for npm and never used for GitHub release operations (those use
 `GITHUB_TOKEN`). A tag push rejected by repository rules fails the job with
 git's diagnostic. A maintainer fine-grained PAT is not workflow configuration;
 it is only a last-resort manual recovery option.
+
+## Main-only release environment policy
+
+The `release` GitHub Environment must restrict deployments to `main`: under
+GitHub Environment settings, set **Deployment branches and tags** to
+**Selected branches and tags** with **Allowed branch: `main`**. The workflow's
+own `push: main` trigger is **not sufficient** — another workflow file on
+another branch could reference `environment: release` and start a protected
+release run. The Environment-level branch restriction is the authorization
+boundary.
+
+Optional policy choices, applied by the repository owner as appropriate:
+
+- Enable **Prevent self-review** only when another reliable release approver
+  exists. It is not required for a sole maintainer.
+- Restrict **Allow administrators to bypass required reviewers** when stronger
+  dual control is desired and an acceptable recovery process exists for an
+  unavailable approver.
+
+These Environment settings are applied manually through GitHub; the repository
+never changes live Environment configuration.
 
 ## Key rotation
 

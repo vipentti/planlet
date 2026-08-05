@@ -66,6 +66,34 @@ export function packageLockMismatch(lock, version) {
   return null;
 }
 
+export function packageIdentityMismatch(pkg, lock, expectedName) {
+  if (pkg.name !== expectedName)
+    return (
+      "package.json.name is " +
+      JSON.stringify(pkg.name) +
+      ", expected " +
+      JSON.stringify(expectedName)
+    );
+  if (lock.name !== expectedName)
+    return (
+      "package-lock.json.name is " +
+      JSON.stringify(lock.name) +
+      ", expected " +
+      JSON.stringify(expectedName)
+    );
+  const rootEntry = lock.packages?.[""];
+  if (!rootEntry || typeof rootEntry !== "object")
+    return 'package-lock.json.packages[""] is missing or not an object';
+  if (rootEntry.name !== expectedName)
+    return (
+      'package-lock.json.packages[""].name is ' +
+      JSON.stringify(rootEntry.name) +
+      ", expected " +
+      JSON.stringify(expectedName)
+    );
+  return null;
+}
+
 const todayUtc = new Date().toISOString().slice(0, 10);
 
 function assertNotPast(date, description) {

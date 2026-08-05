@@ -30,6 +30,7 @@ test.after(() => {
 const BASE_VERSION = "0.2.0";
 const NEW_VERSION = "0.3.0";
 const RELEASE_DATE = "2026-08-04";
+const FIXED_NAME = "@vipentti/planlet";
 
 function git(repo: string, ...args: string[]) {
   return spawnSync("git", args, { cwd: repo, encoding: "utf8" });
@@ -57,12 +58,12 @@ function makeRepo(): Repo {
     readFileSync(sourceHelper),
   );
 
-  writeJson(dir, "package.json", { name: "x", version: BASE_VERSION });
+  writeJson(dir, "package.json", { name: FIXED_NAME, version: BASE_VERSION });
   writeJson(dir, "package-lock.json", {
-    name: "x",
+    name: FIXED_NAME,
     version: BASE_VERSION,
     lockfileVersion: 3,
-    packages: { "": { version: BASE_VERSION } },
+    packages: { "": { name: FIXED_NAME, version: BASE_VERSION } },
   });
   writeFileSync(join(dir, "CHANGELOG.md"), baseChangelog(), "utf8");
 
@@ -121,17 +122,24 @@ function writeReleaseState(
     version?: string;
     lockVersion?: string;
     lockRootVersion?: string;
+    name?: string | undefined;
+    lockName?: string | undefined;
+    lockRootName?: string | undefined;
     changelog?: string;
   } = {},
 ): void {
   const version = options.version ?? NEW_VERSION;
-  writeJson(repo, "package.json", { name: "x", version });
+  const name = options.name ?? FIXED_NAME;
+  const lockName = options.lockName ?? name;
+  const lockRootName = options.lockRootName ?? lockName;
+  writeJson(repo, "package.json", { name, version });
   writeJson(repo, "package-lock.json", {
-    name: "x",
+    name: lockName,
     version: options.lockVersion ?? version,
     lockfileVersion: 3,
     packages: {
       "": {
+        name: lockRootName,
         version: options.lockRootVersion ?? options.lockVersion ?? version,
       },
     },
@@ -222,6 +230,39 @@ test("lockfile root package version mismatch refuses", () => {
   writeReleaseState(repo.dir, { lockRootVersion: BASE_VERSION });
   const after = commitAll(repo.dir, "root mismatch");
   assertRefused(detect(repo.dir, ["--before", repo.baseSha, "--after", after]));
+});
+
+test("package identity mismatches refuse before release", () => {
+  const cases: Array<{
+    label: string;
+    name?: string;
+    lockName?: string;
+    lockRootName?: string;
+  }> = [
+    { label: "package.json.name", name: "other" },
+    { label: "package-lock.json.name", lockName: "other" },
+    { label: "package-lock.json.packages[''].name", lockRootName: "other" },
+    {
+      label: "package.json.name containing LF",
+      name: "@vipentti/planlet\nPWNED=1",
+    },
+    {
+      label: "package.json.name containing CR",
+      name: "@vipentti/planlet\rPWNED=1",
+    },
+  ];
+  for (const c of cases) {
+    const repo = makeRepo();
+    writeReleaseState(repo.dir, {
+      name: c.name,
+      lockName: c.lockName,
+      lockRootName: c.lockRootName,
+    });
+    const after = commitAll(repo.dir, "identity mismatch");
+    const out = detect(repo.dir, ["--before", repo.baseSha, "--after", after]);
+    assert.notEqual(out.status, 0, c.label);
+    assert.match(out.stderr, /name is/i, c.label);
+  }
 });
 
 test("malformed semver refuses", () => {

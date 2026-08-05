@@ -132,3 +132,27 @@ test("workflow contains no real credential material", () => {
   assert.doesNotMatch(workflow, /github_pat_[A-Za-z0-9_]+/);
   assert.doesNotMatch(workflow, /RELEASE_APP_ID: \d+/);
 });
+
+test("package name is a trusted constant, never derived from package.json", () => {
+  assert.match(workflow, /PACKAGE_NAME: ["']@vipentti\/planlet["']/);
+  assert.doesNotMatch(workflow, /PACKAGE_NAME=.*node -p/);
+  assert.doesNotMatch(workflow, /require\(['"]\.\/package\.json['"]\)\.name/);
+});
+
+test("npm is pinned to an exact version and asserted before publication", () => {
+  assert.match(workflow, /npm install --global npm@11\.5\.1/);
+  assert.match(workflow, /test "\$\(npm --version\)" = "11\.5\.1"/);
+  assert.doesNotMatch(workflow, /npm@\^|npm@~|npm@latest|npm@\*/);
+});
+
+test("packed artifact validation runs through the helper before any env write", () => {
+  assert.match(workflow, /npm pack --json --ignore-scripts/);
+  assert.match(workflow, /node scripts\/validate-packed-artifact\.mjs/);
+  assert.doesNotMatch(workflow, /PACKAGE_TARBALL=\$|PACKAGE_TARBALL=\$\{/);
+});
+
+test("duplicate protected-job changelog verification is removed", () => {
+  assert.doesNotMatch(workflow, /Verify committed changelog release state/);
+  // The detector still performs historical changelog validation.
+  assert.match(workflow, /scripts\/detect-release-merge\.mjs/);
+});
