@@ -16,7 +16,7 @@ The manifest lives inside the destination directory, so the installed tool set i
   - `parseInstallationManifest` accepts schema v2 and legacy schema v1 with valid `files`; v1 normalizes to the files-only v2 representation, with legacy `tools` values deliberately ignored and never validated against `HARNESS_ADAPTERS`. Serialization stays v2-only. It rejects unknown `schemaVersion`, malformed `files`, and v2 manifests carrying a `tools` key.
   - `inspectDestination` compares the original manifest text with the desired v2 serialization, so `update` rewrites a valid v1 manifest to v2 even when every skill file is unchanged.
   - `manifestMatches` becomes `sameRecord(manifest.files, desiredManifest.files)`; all `manifest.tools` references and the `HARNESS_ADAPTERS` membership validation are removed (the import stays for `detectHarnesses`).
-- Tests: unit manifest parse/round-trip and invalid-manifest cases, installed/modified state tests, harness-installation integration expectations, and unit harness-installer tests that assert parsed-manifest `tools`.
+- Tests: schema-v2 files-only parsing/serialization; schema-v1 normalization to the v2 representation; rejection of malformed manifests and unknown schemas; automatic v1-to-v2 rewriting; idempotent subsequent updates; installed/modified destination classification; harness-installation integration expectations.
 - Both tracked `.planlet-manifest.json` files regenerated via `planlet update --tools all`.
 - `CHANGELOG.md` `[Unreleased]` entry.
 
