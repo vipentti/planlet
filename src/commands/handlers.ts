@@ -1,4 +1,4 @@
-import { renderAgentSnippet } from "../core/agent-snippet.js";
+import { AGENT_SNIPPET } from "../core/agent-snippet.js";
 import { createPlanlet } from "../core/creation.js";
 import {
   detectHarnesses,
@@ -38,7 +38,7 @@ export interface HarnessCommandArguments {
 }
 
 export function handleOnboard(context: ExecutionContext): ExitCode {
-  context.stdout(`${renderAgentSnippet()}\n`);
+  context.stdout(`${AGENT_SNIPPET}\n`);
   return EXIT_CODES.success;
 }
 

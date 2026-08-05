@@ -55,16 +55,12 @@ const DEFAULT_DEPENDENCIES: AgentFileDependencies = {
     writeFileSync(path, content, { encoding: "utf8" }),
 };
 
-export function renderAgentSnippet(): string {
-  return AGENT_SNIPPET;
+export function agentsSectionHash(): string {
+  return sha256(Buffer.from(AGENT_SNIPPET, "utf8")).slice(0, 8);
 }
 
-export function agentsSectionHash(body: string = AGENT_SNIPPET): string {
-  return sha256(Buffer.from(body, "utf8")).slice(0, 8);
-}
-
-export function renderAgentsSection(body: string = AGENT_SNIPPET): string {
-  return `${BEGIN_MARKER_PREFIX} v:${AGENTS_SECTION_VERSION} hash:${agentsSectionHash(body)} -->\n${body}\n${END_MARKER}\n`;
+export function renderAgentsSection(): string {
+  return `${BEGIN_MARKER_PREFIX} v:${AGENTS_SECTION_VERSION} hash:${agentsSectionHash()} -->\n${AGENT_SNIPPET}\n${END_MARKER}\n`;
 }
 
 /**
@@ -74,7 +70,6 @@ export function renderAgentsSection(body: string = AGENT_SNIPPET): string {
  */
 function updateSection(
   content: string,
-  body: string = AGENT_SNIPPET,
 ):
   | { readonly content: string; readonly state: "updated" | "unchanged" }
   | { readonly state: "left-alone"; readonly reason: string } {
@@ -82,7 +77,7 @@ function updateSection(
   if (beginIdx === -1) {
     const separator = content.endsWith("\n") ? "" : "\n";
     return {
-      content: `${content}${separator}\n${renderAgentsSection(body)}`,
+      content: `${content}${separator}\n${renderAgentsSection()}`,
       state: "updated",
     };
   }
@@ -97,7 +92,7 @@ function updateSection(
 
   const firstLine = content.slice(beginIdx).split("\n", 1)[0]!;
   const existingHash = /hash:([0-9a-f]+)/.exec(firstLine)?.[1];
-  if (existingHash === agentsSectionHash(body)) {
+  if (existingHash === agentsSectionHash()) {
     return { content, state: "unchanged" };
   }
 
@@ -111,7 +106,7 @@ function updateSection(
   return {
     content:
       content.slice(0, beginIdx) +
-      renderAgentsSection(body) +
+      renderAgentsSection() +
       content.slice(consumed),
     state: "updated",
   };
@@ -163,12 +158,7 @@ function updateAgentFile(
     if (operation === "update" || file === "CLAUDE.md") {
       return { state: "skipped" };
     }
-    writeAgentFile(
-      dependencies,
-      path,
-      file,
-      renderAgentsSection(AGENT_SNIPPET),
-    );
+    writeAgentFile(dependencies, path, file, renderAgentsSection());
     return { state: "added" };
   }
   if (!stats.isFile()) {

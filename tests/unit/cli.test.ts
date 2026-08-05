@@ -6,7 +6,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { main } from "../../src/cli.js";
-import { renderAgentSnippet } from "../../src/core/agent-snippet.js";
+import { AGENT_SNIPPET } from "../../src/core/agent-snippet.js";
 
 test("help exits successfully without using process I/O or repository state", async () => {
   const stdout: string[] = [];
@@ -88,7 +88,7 @@ test("onboard prints exactly the agent snippet and works outside a repository", 
     }),
     0,
   );
-  assert.equal(stdout.join(""), `${renderAgentSnippet()}\n`);
+  assert.equal(stdout.join(""), `${AGENT_SNIPPET}\n`);
   assert.equal(stderr.join(""), "");
 });
 
@@ -104,7 +104,7 @@ test("onboard in a non-repository directory writes no files", async () => {
       }),
       0,
     );
-    assert.equal(stdout.join(""), `${renderAgentSnippet()}\n`);
+    assert.equal(stdout.join(""), `${AGENT_SNIPPET}\n`);
     assert.deepEqual(readdirSync(root), []);
   } finally {
     rmSync(root, { recursive: true, force: true });

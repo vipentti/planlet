@@ -15,7 +15,6 @@ import { fileURLToPath } from "node:url";
 import {
   AGENT_SNIPPET,
   agentsSectionHash,
-  renderAgentSnippet,
   renderAgentsSection,
   updateAgentFiles,
 } from "../../src/core/agent-snippet.js";
@@ -31,9 +30,8 @@ function withRoot(run: (root: string) => void): void {
 }
 
 test("snippet source is shared and section rendering is deterministic", () => {
-  assert.equal(renderAgentSnippet(), AGENT_SNIPPET);
-  assert.match(renderAgentSnippet(), /^## Planning with Planlet\n/);
-  assert.match(renderAgentSnippet(), /stop and say so\. Do not hand-create\n/);
+  assert.match(AGENT_SNIPPET, /^## Planning with Planlet\n/);
+  assert.match(AGENT_SNIPPET, /stop and say so\. Do not hand-create\n/);
 
   const section = renderAgentsSection();
   assert.match(
@@ -54,7 +52,7 @@ test("README quotes the CLI-owned snippet exactly", () => {
   const quote = readme.match(
     /## Agent onboarding\n[\s\S]*?```markdown\n([\s\S]*?)\n```\n/,
   )?.[1];
-  assert.equal(quote, renderAgentSnippet());
+  assert.equal(quote, AGENT_SNIPPET);
 });
 
 test("init creates AGENTS.md and skips absent CLAUDE.md", () => {

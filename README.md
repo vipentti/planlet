@@ -96,7 +96,8 @@ paste. It also writes the section to `CLAUDE.md` when that file exists as a
 regular file and does not already import `AGENTS.md`. `planlet update`
 refreshes the section where the marker already exists; it never creates it in
 repositories that opted out. Pass `--no-agents` to skip both files, or print
-the snippet for a manual paste into another instructions file:
+the snippet for a manual paste into another instructions file. Written files
+are staged with `git add` when the repository uses git:
 
 ```markdown
 ## Planning with Planlet
