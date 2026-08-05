@@ -63,6 +63,12 @@ When a described CLI capability is not yet present, do not invent commands or re
 
 When creating a pull request against this repository, structure the description with [`.github/pull_request_template.md`](.github/pull_request_template.md). Keep it proportional to the change, remove sections that do not apply, and check only the verification commands actually run. The template’s contributor checklist already includes the `CHANGELOG.md` → `Unreleased` item.
 
+A pull request that finishes a planlet task must also carry that task’s `- [x]` in
+`plans/<slug>/tasks.md`. Run `planlet --root "<repository-root>" task check <slug> <task-id>`
+before opening the PR and include the resulting `tasks.md` change in the same branch. An
+implementation PR that merges with its own task still unchecked is an incomplete PR, not a
+deferred bookkeeping item.
+
 ## Changelog
 
 When a change is user-visible product, Planlet CLI (`planlet`), or published-skill

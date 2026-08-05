@@ -53,6 +53,7 @@ Do not narrate code that is already clear from the diff.
 - [ ] Tests cover new or changed behavior, or no test change is needed.
 - [ ] User-facing documentation and CLI help are updated, or no update is needed.
 - [ ] User-visible changes are recorded under `CHANGELOG.md` → `Unreleased`, or no changelog entry is needed.
+- [ ] Every planlet task this PR completes is checked with `planlet task check <slug> <task-id>` in this branch, or the PR completes no planlet task.
 - [ ] Canonical skill changes have been regenerated with `node dist/planlet.mjs update --tools all`, or no skill changed.
 - [ ] The change preserves supported Node.js and operating-system compatibility.
 
