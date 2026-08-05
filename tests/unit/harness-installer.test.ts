@@ -83,10 +83,24 @@ test("manifest schema and hashes are deterministic and validated", () => {
   assert.equal(serialized, serializeInstallationManifest(manifest));
   assert.deepEqual(parseInstallationManifest(serialized), manifest);
   assert.equal(serialized.includes('"tools"'), false);
+  const files = Object.fromEntries(
+    BASE_SOURCE.files.map((file) => [file.relativePath, file.digest]),
+  );
+  for (const v1 of [
+    { schemaVersion: 1, tools: ["agents"], files },
+    { schemaVersion: 1, tools: ["gemini", "copilot"], files },
+    { schemaVersion: 1, tools: 42, files },
+  ]) {
+    assert.deepEqual(
+      parseInstallationManifest(JSON.stringify(v1)),
+      createInstallationManifest(BASE_SOURCE),
+    );
+  }
   for (const invalid of [
     '{"schemaVersion":2}',
-    '{"schemaVersion":1,"tools":["agents"],"files":{}}',
-    '{"schemaVersion":1,"files":{}}',
+    '{"schemaVersion":1,"tools":["agents"]}',
+    '{"schemaVersion":1,"tools":["agents"],"files":[]}',
+    '{"schemaVersion":1,"tools":[],"files":{"planlet-example/SKILL.md":1}}',
     '{"schemaVersion":2,"tools":["agents"],"files":{}}',
     '{"schemaVersion":2,"tools":[],"files":{}}',
     '{"schemaVersion":3,"files":{}}',
@@ -159,6 +173,60 @@ test("init with none creates plans without resolving or installing skills", () =
     assert.deepEqual(result.data.destinations, []);
     assert.equal(existsSync(join(root, "plans")), true);
     assert.equal(existsSync(join(root, ".agents")), false);
+  });
+});
+
+test("update upgrades a v1 manifest to v2 without touching unchanged skills", () => {
+  withRoot((root) => {
+    installHarnessSkills({
+      repositoryRoot: root,
+      operation: "init",
+      tools: "agents",
+      source: BASE_SOURCE,
+    });
+    const skillPath = join(
+      root,
+      ".agents",
+      "skills",
+      "planlet-example",
+      "SKILL.md",
+    );
+    const skillBefore = readFileSync(skillPath, "utf8");
+    const manifestPath = join(root, ".agents", "skills", INSTALLATION_MANIFEST);
+    writeFileSync(
+      manifestPath,
+      JSON.stringify({
+        schemaVersion: 1,
+        tools: ["agents"],
+        files: Object.fromEntries(
+          BASE_SOURCE.files.map((file) => [file.relativePath, file.digest]),
+        ),
+      }),
+    );
+
+    const upgraded = installHarnessSkills({
+      repositoryRoot: root,
+      operation: "update",
+      tools: "agents",
+      source: BASE_SOURCE,
+    });
+    assert.equal(upgraded.data.changed, true);
+    assert.equal(readFileSync(skillPath, "utf8"), skillBefore);
+    const manifestText = readFileSync(manifestPath, "utf8");
+    assert.equal(manifestText.includes('"tools"'), false);
+    assert.equal(manifestText.includes('"schemaVersion": 2'), true);
+    assert.deepEqual(
+      parseInstallationManifest(manifestText),
+      createInstallationManifest(BASE_SOURCE),
+    );
+
+    const repeated = installHarnessSkills({
+      repositoryRoot: root,
+      operation: "update",
+      tools: "agents",
+      source: BASE_SOURCE,
+    });
+    assert.equal(repeated.data.changed, false);
   });
 });
 
@@ -327,7 +395,7 @@ test("tool detection classifies malformed manifests as modified", () => {
     ];
     for (const manifestText of [
       "invalid\n",
-      '{"schemaVersion":1,"tools":["agents"],"files":{}}',
+      '{"schemaVersion":1,"tools":["agents"]}',
     ]) {
       writeFileSync(manifestPath, manifestText);
       assert.deepEqual(

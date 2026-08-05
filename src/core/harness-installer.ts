@@ -149,16 +149,19 @@ export function parseInstallationManifest(
   }
   const candidate = value as Record<string, unknown>;
   const files = candidate.files;
+  const schemaVersion = candidate.schemaVersion;
+  const isV1 = schemaVersion === 1;
   if (
-    candidate.schemaVersion !== INSTALLATION_MANIFEST_VERSION ||
-    candidate.tools !== undefined ||
+    (!isV1 && schemaVersion !== INSTALLATION_MANIFEST_VERSION) ||
+    (schemaVersion === INSTALLATION_MANIFEST_VERSION &&
+      candidate.tools !== undefined) ||
     !isStringRecord(files)
   ) {
     throw new PlanletError(
       "write_conflict",
       `Invalid installation manifest: ${path}`,
       {
-        details: { path, schemaVersion: candidate.schemaVersion },
+        details: { path, schemaVersion },
       },
     );
   }
