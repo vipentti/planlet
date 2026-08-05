@@ -34,9 +34,10 @@ interface CommandOutcome {
 }
 
 type SlugCommand = (slug: string) => (context: ExecutionContext) => ExitCode;
+type SlugName = "create" | "show" | "validate" | "tasks";
 
 /** The four commands this cross-cutting safety pass covers. */
-const SLUG_COMMANDS: Readonly<Record<string, SlugCommand>> = Object.freeze({
+const SLUG_COMMANDS: Readonly<Record<SlugName, SlugCommand>> = Object.freeze({
   create: (slug) => (context) => handleCreate({ slug }, context),
   show: (slug) => (context) => handleShow({ slug }, context),
   validate: (slug) => (context) => handleValidate({ slug }, context),
@@ -181,7 +182,7 @@ test("malformed planlet structures fail read-only commands with plan-level error
       writePlanlet(root, entry.slug, entry.files);
 
       for (const command of ["show", "tasks"] as const) {
-        const outcome = run(root, SLUG_COMMANDS[command]!(entry.slug));
+        const outcome = run(root, SLUG_COMMANDS[command](entry.slug));
         assert.equal(outcome.exitCode, 3, `${command} ${entry.slug}`);
         assert.equal(
           errorCode(outcome),
@@ -192,7 +193,7 @@ test("malformed planlet structures fail read-only commands with plan-level error
       }
 
       // validate reports malformed structures as data rather than throwing.
-      const validated = run(root, SLUG_COMMANDS.validate!(entry.slug));
+      const validated = run(root, SLUG_COMMANDS.validate(entry.slug));
       assert.equal(validated.exitCode, 3, `validate ${entry.slug}`);
       assert.deepEqual(validationErrorCodes(validated), [entry.code]);
     });
@@ -268,14 +269,14 @@ test("a planlet file symlinked outside the repository is refused", () => {
     symlinkSync(escapedTasks, join(directory, "tasks.md"), "file");
 
     for (const command of ["show", "tasks"] as const) {
-      const outcome = run(root, SLUG_COMMANDS[command]!("escaped-file"));
+      const outcome = run(root, SLUG_COMMANDS[command]("escaped-file"));
       assert.equal(outcome.exitCode, 5, command);
       assert.equal(errorCode(outcome), "unsafe_path", command);
       assert.equal(outcome.stdout, "", command);
     }
 
     // validate reports a per-planlet escape as an invalid entry, not a throw.
-    const validated = run(root, SLUG_COMMANDS.validate!("escaped-file"));
+    const validated = run(root, SLUG_COMMANDS.validate("escaped-file"));
     assert.equal(validated.exitCode, 3);
     assert.deepEqual(validationErrorCodes(validated), ["unsafe_path"]);
   });
@@ -289,7 +290,7 @@ test("symlinks that stay inside the repository remain usable", () => {
     });
     symlinkSync(real, join(root, "plans", "linked-plan"), "dir");
 
-    const outcome = run(root, SLUG_COMMANDS.show!("linked-plan"));
+    const outcome = run(root, SLUG_COMMANDS.show("linked-plan"));
     assert.equal(outcome.exitCode, 0);
     assert.equal(outcome.stderr, "");
   });
@@ -309,14 +310,27 @@ test("targeted reads ignore unrelated escaping planlet symlinks", () => {
     );
 
     for (const command of ["show", "tasks", "validate"] as const) {
-      const outcome = run(root, SLUG_COMMANDS[command]!("valid-plan"));
+      const outcome = run(root, SLUG_COMMANDS[command]("valid-plan"));
       assert.equal(outcome.exitCode, 0, command);
       assert.equal(outcome.stderr, "", command);
     }
 
     const all = run(root, (context) => handleValidate({}, context));
     assert.equal(all.exitCode, 3);
-    assert.deepEqual(validationErrorCodes(all), ["unsafe_path", "undefined"]);
+    const decoded = decode(all.stdout.trimEnd()) as {
+      entries?: ReadonlyArray<{
+        slug?: string;
+        valid?: boolean;
+        error?: { code?: unknown };
+      }>;
+    };
+    const entries = decoded.entries ?? [];
+    const unrelated = entries.find((entry) => entry.slug === "unrelated-plan");
+    assert.equal(unrelated?.valid, false);
+    assert.equal(unrelated?.error?.code, "unsafe_path");
+    const valid = entries.find((entry) => entry.slug === "valid-plan");
+    assert.equal(valid?.valid, true);
+    assert.equal(valid?.error, undefined);
   });
 });
 

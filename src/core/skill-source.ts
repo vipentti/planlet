@@ -115,10 +115,31 @@ function enumerateDirectory(
 export function enumerateCanonicalSkills(
   sourceRoot: string = resolveCanonicalSkillsPath(),
 ): CanonicalSkillSource {
-  const root = realpathSync(sourceRoot);
-  const skills = directoryEntries(root)
-    .filter((entry) => entry.isDirectory() && entry.name.startsWith("planlet-"))
-    .map((entry) => entry.name);
+  let root: string;
+  try {
+    root = realpathSync(sourceRoot);
+  } catch (error) {
+    throw new PlanletError(
+      "write_conflict",
+      `Cannot resolve canonical skill source: ${sourceRoot}`,
+      { details: { path: sourceRoot }, cause: error },
+    );
+  }
+
+  let skills: string[];
+  try {
+    skills = directoryEntries(root)
+      .filter(
+        (entry) => entry.isDirectory() && entry.name.startsWith("planlet-"),
+      )
+      .map((entry) => entry.name);
+  } catch (error) {
+    throw new PlanletError(
+      "write_conflict",
+      `Cannot enumerate canonical skill source: ${root}`,
+      { details: { path: root }, cause: error },
+    );
+  }
   if (skills.length === 0) {
     throw new PlanletError(
       "write_conflict",

@@ -10,7 +10,7 @@
       unchanged, non-show untruncated). Update README/CLI-help/design-doc `--full`
       wording and add the `[Unreleased]` changelog entry.
 - [ ] T2 Record the interactive-init tool-selector decision in AGENTS.md
-- [ ] T3 Mechanical deletions PR (no behavior change): remove dead
+- [x] T3 Mechanical deletions PR (no behavior change): remove dead
       `scripts/release.mjs` symbols (`execSync`, `parseVersionSuffix`,
       `getChangelogReleaseDate`, `escapeRegex`), the fake `DECISION_RULES`
       evaluator in `tests/skills/skill-contract.test.ts`, and the duplicate help

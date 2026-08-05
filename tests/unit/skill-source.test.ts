@@ -98,3 +98,39 @@ test("canonical enumeration rejects source symlinks", () => {
     rmSync(outside, { recursive: true, force: true });
   }
 });
+
+test("canonical enumeration reports a missing source", () => {
+  const root = mkdtempSync(join(tmpdir(), "planlet-missing-"));
+  rmSync(root, { recursive: true, force: true });
+  try {
+    assert.throws(
+      () => enumerateCanonicalSkills(root),
+      (error) =>
+        error instanceof PlanletError &&
+        error.code === "write_conflict" &&
+        error.message.includes("Cannot resolve canonical skill source") &&
+        error.message.includes(root),
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("canonical enumeration reports a source that cannot be enumerated", () => {
+  const root = mkdtempSync(join(tmpdir(), "planlet-file-"));
+  try {
+    const file = join(root, "skills-file");
+    writeFileSync(file, "# Not a directory\n");
+
+    assert.throws(
+      () => enumerateCanonicalSkills(file),
+      (error) =>
+        error instanceof PlanletError &&
+        error.code === "write_conflict" &&
+        error.message.includes("Cannot enumerate canonical skill source") &&
+        error.message.includes(file),
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
