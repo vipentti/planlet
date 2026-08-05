@@ -16,6 +16,11 @@ import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { fileURLToPath } from "node:url";
 
+import {
+  countFlags,
+  isValidCalendarDate,
+} from "./assert-changelog-release-ready.mjs";
+
 const root = fileURLToPath(new URL("..", import.meta.url));
 const changelogPath = resolve(root, "CHANGELOG.md");
 const packageJsonPath = resolve(root, "package.json");
@@ -27,8 +32,7 @@ function fail(msg) {
 }
 
 function git(...args) {
-  const r = spawnSync("git", args, { cwd: root, encoding: "utf8" });
-  return r;
+  return spawnSync("git", args, { cwd: root, encoding: "utf8" });
 }
 
 function gh(...args) {
@@ -36,12 +40,11 @@ function gh(...args) {
   // extension, must resolve through a shell (cmd.exe) to honor PATHEXT, so a
   // test stub provided as gh.cmd remains reachable. POSIX spawns the argv
   // directly to keep arguments verbatim.
-  const r = spawnSync("gh", args, {
+  return spawnSync("gh", args, {
     cwd: root,
     encoding: "utf8",
     shell: process.platform === "win32",
   });
-  return r;
 }
 
 function hasGitClean() {
@@ -70,17 +73,11 @@ function remoteRefExists(ref) {
   if (r.status === 0) return true;
   if (r.status === 2) return false;
   fail("git ls-remote failed for " + ref + ": " + r.stderr.trim());
+  return false;
 }
 
 function todayUtc() {
   return new Date().toISOString().slice(0, 10);
-}
-
-function isValidCalendarDate(value) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
-  const instant = new Date(`${value}T00:00:00.000Z`);
-  if (Number.isNaN(instant.getTime())) return false;
-  return instant.toISOString().slice(0, 10) === value;
 }
 
 function validateReleaseContents(version, date) {
@@ -172,12 +169,7 @@ try {
 
 // Reject duplicate value flags (parseArgs is last-wins by default).
 for (const name of ["version", "release-date"]) {
-  if (
-    args
-      .slice(1)
-      .filter((a) => a === "--" + name || a.startsWith("--" + name + "="))
-      .length > 1
-  ) {
+  if (countFlags(args.slice(1), "--" + name) > 1) {
     fail("Duplicate --" + name + " option.");
   }
 }
@@ -209,7 +201,7 @@ function plan(msg) {
 // prepare
 // ===================================================================
 
-async function cmdPrepare() {
+function cmdPrepare() {
   const branchName = "release/v" + version;
 
   plan("Subcommand: prepare");
@@ -488,7 +480,7 @@ async function cmdPrepare() {
 // tag
 // ===================================================================
 
-async function cmdTag() {
+function cmdTag() {
   // Read the release date from the changelog via the helper's historical mode.
   // Accept stdout only as exactly one YYYY-MM-DD line with a single trailing
   // newline and nothing else; refuse on malformed output or nonzero exit.
@@ -665,11 +657,15 @@ async function cmdTag() {
 // --- Dispatch ---
 
 if (subcommand === "prepare") {
-  cmdPrepare().catch((err) =>
-    fail(err instanceof Error ? err.message : String(err)),
-  );
-} else if (subcommand === "tag") {
-  cmdTag().catch((err) =>
-    fail(err instanceof Error ? err.message : String(err)),
-  );
+  try {
+    cmdPrepare();
+  } catch (err) {
+    fail(err instanceof Error ? err.message : String(err));
+  }
+} else {
+  try {
+    cmdTag();
+  } catch (err) {
+    fail(err instanceof Error ? err.message : String(err));
+  }
 }

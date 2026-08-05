@@ -38,29 +38,6 @@ const VERSION = (
   createRequire(import.meta.url)("../package.json") as { version: string }
 ).version;
 
-const HELP = `Usage: planlet [--root <path>] [--full] [--version] <command> [options]
-
-Commands:
-  init [--tools <ids>] [--force]
-  update [--tools <ids>] [--force]
-  tools
-  list [--state <state>] [--completed]
-  create <slug> [--title <title>]
-  show <slug> [--part plan|tasks|summary]
-  status <slug>
-  validate [<slug>|--all]
-  tasks <slug> [--remaining|--completed]
-  task check|uncheck <slug> <task-id>
-  complete <slug> [--allow-incomplete --reason <text>]
-  help [command]
-
-Global options:
-  --version   Print the Planlet version and exit.
-  --full      Return complete show --part plan|tasks content.
-
-Running planlet without a command displays the active-plan dashboard.
-`;
-
 const COMMAND_HELP: Readonly<Record<string, string>> = {
   init:
     "Usage: planlet init [--tools <ids>] [--force]\n\n" +
@@ -81,6 +58,27 @@ const COMMAND_HELP: Readonly<Record<string, string>> = {
   complete:
     "Usage: planlet complete <slug> [--allow-incomplete --reason <text>]\n",
 };
+
+function renderHelp(): string {
+  const commands = [
+    ...Object.entries(COMMAND_HELP).map(
+      ([, help]) => `  ${help.split("\n")[0]!.slice("Usage: planlet ".length)}`,
+    ),
+    "  help [command]",
+  ].join("\n");
+
+  return `Usage: planlet [--root <path>] [--full] [--version] <command> [options]
+
+Commands:
+${commands}
+
+Global options:
+  --version   Print the Planlet version and exit.
+  --full      Return complete show --part plan|tasks content.
+
+Running planlet without a command displays the active-plan dashboard.
+`;
+}
 
 export interface CliRuntime {
   readonly cwd: string;
@@ -131,7 +129,7 @@ function requirePositionals(
 }
 
 function helpFor(command: string | undefined): string {
-  if (command === undefined) return HELP;
+  if (command === undefined) return renderHelp();
   const commandHelp = COMMAND_HELP[command];
   if (commandHelp === undefined) usage(`Unknown command: ${command}`);
   return commandHelp;
