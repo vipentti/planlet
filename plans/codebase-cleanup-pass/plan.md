@@ -40,7 +40,11 @@ work is included.
   `DECISION_RULES` evaluator in `tests/skills/skill-contract.test.ts`; duplicate
   help test in `tests/integration/cli-in-process.test.ts`; add `scripts/**/*.mjs`
   to the `lint` globs in `package.json` (the `format`/`format:check` globs already
-  list scripts\); remove boilerplate `forceConsistentCasingInFileNames` from
+  list scripts) and update the docs that describe the lint scope so they state it
+  covers source, tests, and maintainer scripts — README dev-command table
+  (`README.md:147` "Lint the TypeScript source and tests") and AGENTS.md
+  repository-command table (`AGENTS.md:141` "Run ESLint over `src/` and
+  `tests/`"); remove boilerplate `forceConsistentCasingInFileNames` from
   `tsconfig.json` (TS default); remove speculative `coverage/` ignores in
   `eslint.config.js`, `.gitignore`, `.prettierignore`.
 - **Byte-identical dedup (T4)**: share the mutation-side
@@ -95,7 +99,8 @@ work is included.
 - **Decision record (T2):** one bullet in the `AGENTS.md` rejected-simplifications
   list; no code.
 - **Mechanical deletions (T3):** pure removals and glob/config trims that leave
-  behavior byte-identical; a clean diff an ordinary review can approve.
+  behavior byte-identical, plus syncing the README and AGENTS.md command tables to
+  describe the widened lint scope; a clean diff an ordinary review can approve.
 - **Dedup and ordering (T4):** extract the pair of byte-identical mutation-side
   helpers; replace `localeCompare` with a codepoint comparator so ordering no longer
   depends on host locale. Validate that error messages, structured details, and
@@ -106,8 +111,8 @@ work is included.
   artifacts (`planlet_design.md`, `tests/fixtures/skills/scenarios.json`) and add
   them to the format scripts; add real teardown to leaking integration-test
   fixtures; replace bare non-null map-lookup assertions with explicit typed
-  lookups; guard the unguarded `realpathSync`; fix the `"undefined"` assertion to
-  check real semantics.
+  lookups; guard canonical-skill source canonicalization/enumeration errors; fix
+  the `"undefined"` assertion to check real semantics.
 - Each PR (T3, T4, T5) lands independently and runs the suite before merge; T6 is
   the closing full-suite gate.
 
@@ -247,23 +252,33 @@ content: {
      `npm run format` and `npm run format:check` in `package.json`, keeping the two
      commands symmetric over the same project-owned inputs. `npm run format:check`
      remains the authoritative formatting gate and stays green.
-2. **Leaked temp fixtures** — `tests/integration/changelog.test.ts` `fixture()`
-   (line ~20) and `tests/integration/release-utility.test.ts:95`
-   (`const base = mkdtempSync(...)`) create temp directories that are never removed.
-   Add `finally` teardown (`rmSync(dir, { recursive: true, force: true })`); the
-   tests still pass and leave no `planlet-changelog-ready-*` / `planlet-release-*`
-   dirs behind.
+2. **Leaked temp fixtures** — `tests/integration/changelog.test.ts` leaks two kinds
+   of directories: `fixture()` creates one with prefix `planlet-changelog-ready-`
+   (line 31) and the first test creates one directly with prefix
+   `planlet-changelog-` (line 53). `tests/integration/release-utility.test.ts:95`
+   creates an outer `planlet-release-` root (`base`) that holds the nested `work`
+   repository and `origin.git`. Add `finally` teardown
+   (`rmSync(dir, { recursive: true, force: true })`) covering both changelog
+   directories and the release-utility outer `base` directory (not only its nested
+   `work` repo). The tests still pass and leave no directories with any of the
+   prefixes `planlet-changelog-*`, `planlet-changelog-ready-*`, or
+   `planlet-release-*`.
 3. **Bare non-null map lookup assertions** — `tests/integration/safety.test.ts`
    lines 184, 271, 312 use `SLUG_COMMANDS[command]!`. Replace with a typed
    lookup that cannot be `undefined` (type the map by command name and index by a
    guaranteed key) so the bare `!` is removed; the test still exercises the same
    commands.
-4. **Unguarded `realpathSync`** — `src/core/skill-source.ts:118`
-   (`enumerateCanonicalSkills`: `const root = realpathSync(sourceRoot);`) has no
-   guard, so an unreadable/missing source throws a raw filesystem error. Guard it
-   (try/catch → structured `PlanletError`) consistent with the pattern in
-   `src/core/paths.ts`; add/extend a canonical-enumeration test for the structured
-   error.
+4. **Canonical-skill source errors** — `src/core/skill-source.ts:118`
+   (`enumerateCanonicalSkills`) leaves both the `realpathSync(sourceRoot)` call and
+   the `directoryEntries(root)` / `readdirSync` enumeration unguarded, so a missing
+   source, a regular-file source, or an inaccessible directory throws a raw
+   filesystem error. Translate failures from both canonicalizing `sourceRoot` and
+   enumerating the resolved root directory into a structured `PlanletError`
+   consistent with the skill-source error contract (mirroring the guard pattern in
+   `src/core/paths.ts`). Cover with tests for (a) a missing source path and (b) a
+   path that resolves but cannot be enumerated — preferably a regular file for a
+   portable `ENOTDIR` case; a POSIX-only inaccessible-directory case may supplement
+   but must not be the only proof.
 5. **Assertion against stringified `"undefined"`** —
    `tests/integration/safety.test.ts:319` asserts
    `validationErrorCodes(all)` equals `["unsafe_path", "undefined"]`, where the
