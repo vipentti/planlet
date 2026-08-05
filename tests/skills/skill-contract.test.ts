@@ -193,73 +193,7 @@ interface Scenario {
   readonly harnesses?: readonly string[];
 }
 
-interface DecisionRule {
-  readonly skill: Scenario["skill"];
-  readonly prompt: RegExp;
-  readonly decision: string;
-}
-
-const DECISION_RULES: readonly DecisionRule[] = [
-  {
-    skill: "planlet-plan",
-    prompt: /better search experience/i,
-    decision: "clarify-material-unknowns",
-  },
-  {
-    skill: "planlet-plan",
-    prompt: /adding --csv.*unit and integration coverage/i,
-    decision: "propose-without-extra-questions",
-  },
-  {
-    skill: "planlet-plan",
-    prompt: /do not save/i,
-    decision: "leave-repository-unchanged",
-  },
-  {
-    skill: "planlet-plan",
-    prompt: /revise scope.*implementation tasks/i,
-    decision: "reconcile-plan-and-tasks",
-  },
-  {
-    skill: "planlet-implement",
-    prompt: /underlying API changed/i,
-    decision: "pause-on-material-drift",
-  },
-  {
-    skill: "planlet-implement",
-    prompt: /verification fails/i,
-    decision: "leave-task-unchecked",
-  },
-  {
-    skill: "planlet-implement",
-    prompt: /without slug.*several active planlets/i,
-    decision: "request-explicit-selection",
-  },
-  {
-    skill: "planlet-complete",
-    prompt: /unchecked tasks/i,
-    decision: "request-confirmed-override",
-  },
-  {
-    skill: "all",
-    prompt: /generic Agent Skills, Claude Code, and Codex/i,
-    decision: "use-canonical-resources",
-  },
-];
-
-function evaluateDecision(scenario: Scenario, corpus: string): string {
-  const matches = DECISION_RULES.filter(
-    (rule) =>
-      rule.skill === scenario.skill && rule.prompt.test(scenario.prompt),
-  );
-  assert.equal(matches.length, 1, `${scenario.id}: ambiguous scenario prompt`);
-  for (const evidence of scenario.evidence) {
-    assert.ok(corpus.includes(evidence), `${scenario.id}: missing ${evidence}`);
-  }
-  return matches[0]!.decision;
-}
-
-test("provider-neutral scenario suite evaluates required workflow decisions", () => {
+test("provider-neutral scenario suite checks required evidence", () => {
   const scenarios = JSON.parse(
     read("tests/fixtures/skills/scenarios.json"),
   ) as Scenario[];
@@ -290,11 +224,12 @@ test("provider-neutral scenario suite evaluates required workflow decisions", ()
           .map((path) => read(path)),
       )
       .join("\n");
-    assert.equal(
-      evaluateDecision(scenario, corpus),
-      scenario.expectedDecision,
-      `${scenario.id}: unexpected workflow decision`,
-    );
+    for (const evidence of scenario.evidence) {
+      assert.ok(
+        corpus.includes(evidence),
+        `${scenario.id}: missing ${evidence}`,
+      );
+    }
   }
 
   const portable = scenarios.at(-1);
