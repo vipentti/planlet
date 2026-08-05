@@ -13,6 +13,7 @@ import {
   handleCreate,
   handleDashboard,
   handleList,
+  handleOnboard,
   handleShow,
   handleStatus,
   handleTasks,
@@ -40,14 +41,16 @@ const VERSION = (
 
 const COMMAND_HELP: Readonly<Record<string, string>> = {
   init:
-    "Usage: planlet init [--tools <ids>] [--force]\n\n" +
+    "Usage: planlet init [--tools <ids>] [--force] [--no-agents]\n\n" +
     "--tools takes all, none, or comma-separated agents, claude, codex, github-copilot.\n" +
     "Without it, an interactive terminal is asked which destinations to\n" +
-    "install; anything else installs all of them.\n",
+    "install; anything else installs all of them.\n" +
+    "--no-agents skips writing the onboarding section to AGENTS.md and CLAUDE.md.\n",
   update:
     "Usage: planlet update [--tools <ids>] [--force]\n\n" +
     "--tools takes all, none, or comma-separated agents, claude, codex, github-copilot.\n",
   tools: "Usage: planlet tools\n",
+  onboard: "Usage: planlet onboard\n",
   list: "Usage: planlet list [--state <state>] [--completed]\n",
   create: "Usage: planlet create <slug> [--title <title>]\n",
   show: "Usage: planlet show <slug> [--part plan|tasks|summary]\n",
@@ -284,9 +287,14 @@ function prepareCommand(
       const { values, positionals } = parse(arguments_, {
         tools: { type: "string" },
         force: { type: "boolean" },
+        ...(command === "init" ? { "no-agents": { type: "boolean" } } : {}),
       });
       requirePositionals(positionals, 0, command);
-      const commandArguments = { tools: values.tools, force: values.force };
+      const commandArguments = {
+        tools: values.tools,
+        force: values.force,
+        noAgents: values["no-agents"] === true,
+      };
       // An explicit --tools, a pipe, or a redirect keeps init non-interactive.
       const interactive =
         values.tools === undefined &&
@@ -301,6 +309,11 @@ function prepareCommand(
         if (tools === undefined) return EXIT_CODES.usage;
         return handleHarnessInit({ ...commandArguments, tools }, context);
       };
+    }
+    case "onboard": {
+      const { positionals } = parse(arguments_, {});
+      requirePositionals(positionals, 0, command);
+      return (context) => handleOnboard(context);
     }
     case "tools": {
       const { positionals } = parse(arguments_, {});
@@ -478,6 +491,18 @@ export async function main(
     if (command === "help" || command === "--help") {
       runtime.stdout(helpFor(commandArguments[0]));
       return EXIT_CODES.success;
+    }
+
+    if (command === "onboard") {
+      // Repo-independent, read-only: print before repository discovery so the
+      // snippet is available from any directory, including unmarked ones.
+      const preparedCommand = prepareCommand("onboard", commandArguments);
+      return preparedCommand({
+        root: runtime.cwd,
+        stdout: runtime.stdout,
+        stderr: runtime.stderr,
+        clock: runtime.clock,
+      });
     }
 
     const preparedCommand =

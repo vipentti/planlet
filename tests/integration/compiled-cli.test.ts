@@ -59,7 +59,8 @@ function runCli(arguments_: readonly string[], cwd: string): Invocation {
 
 function withRepository(run: (root: string) => void): void {
   const root = mkdtempSync(join(tmpdir(), "planlet-compiled-"));
-  mkdirSync(join(root, ".git"));
+  const init = spawnSync("git", ["init", "-q", root], { encoding: "utf8" });
+  assert.equal(init.status, 0, init.stderr);
   mkdirSync(join(root, "plans"));
   try {
     run(root);

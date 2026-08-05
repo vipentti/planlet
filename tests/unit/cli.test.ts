@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { main } from "../../src/cli.js";
+import { AGENT_SNIPPET } from "../../src/core/agent-snippet.js";
 
 test("help exits successfully without using process I/O or repository state", async () => {
   const stdout: string[] = [];
@@ -52,6 +54,7 @@ test("installation command help documents selectors and force flags", async () =
     ["init", /init \[--tools <ids>\] \[--force\]/],
     ["update", /update \[--tools <ids>\] \[--force\]/],
     ["tools", /planlet tools/],
+    ["onboard", /planlet onboard/],
   ] as const) {
     for (const form of [
       ["help", command],
@@ -70,6 +73,41 @@ test("installation command help documents selectors and force flags", async () =
       assert.match(stdout.join(""), pattern);
       assert.equal(stderr.join(""), "");
     }
+  }
+});
+
+test("onboard prints exactly the agent snippet and works outside a repository", async () => {
+  const stdout: string[] = [];
+  const stderr: string[] = [];
+
+  assert.equal(
+    await main(["onboard"], {
+      cwd: "/path/that/does/not/need/to/exist",
+      stdout: (value) => stdout.push(value),
+      stderr: (value) => stderr.push(value),
+    }),
+    0,
+  );
+  assert.equal(stdout.join(""), `${AGENT_SNIPPET}\n`);
+  assert.equal(stderr.join(""), "");
+});
+
+test("onboard in a non-repository directory writes no files", async () => {
+  const root = mkdtempSync(join(tmpdir(), "planlet-onboard-"));
+  try {
+    const stdout: string[] = [];
+    assert.equal(
+      await main(["onboard"], {
+        cwd: root,
+        stdout: (value) => stdout.push(value),
+        stderr: () => {},
+      }),
+      0,
+    );
+    assert.equal(stdout.join(""), `${AGENT_SNIPPET}\n`);
+    assert.deepEqual(readdirSync(root), []);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
   }
 });
 

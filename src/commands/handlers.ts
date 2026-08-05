@@ -1,3 +1,4 @@
+import { AGENT_SNIPPET } from "../core/agent-snippet.js";
 import { createPlanlet } from "../core/creation.js";
 import {
   detectHarnesses,
@@ -33,6 +34,12 @@ export interface ExecutionContext {
 export interface HarnessCommandArguments {
   readonly tools?: string | undefined;
   readonly force?: boolean | undefined;
+  readonly noAgents?: boolean | undefined;
+}
+
+export function handleOnboard(context: ExecutionContext): ExitCode {
+  context.stdout(`${AGENT_SNIPPET}\n`);
+  return EXIT_CODES.success;
 }
 
 export interface ListCommandArguments {

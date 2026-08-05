@@ -15,6 +15,7 @@ import {
   asWriteConflict,
   isPlanletError,
 } from "../errors/planlet-error.js";
+import { updateAgentFiles, type AgentFileState } from "./agent-snippet.js";
 import {
   HARNESS_ADAPTERS,
   normalizeToolSelector,
@@ -54,6 +55,7 @@ interface InstallationSummary {
   readonly changed: boolean;
   readonly plansInitialized: boolean;
   readonly destinations: readonly HarnessInstallationSummary[];
+  readonly agentFiles: Readonly<Record<string, AgentFileState>>;
 }
 
 /** Summary for stdout plus diagnostics for stderr, never mixed into the data. */
@@ -526,6 +528,7 @@ export function installHarnessSkills(options: {
   readonly operation: "init" | "update";
   readonly tools?: string | undefined;
   readonly force?: boolean | undefined;
+  readonly noAgents?: boolean | undefined;
   readonly source?: CanonicalSkillSource | undefined;
   /** @internal Fault-injection seam for the publish transaction. Tests only. */
   readonly transactionHooks?: InstallTransactionHooks | undefined;
@@ -552,73 +555,78 @@ export function installHarnessSkills(options: {
     );
   }
 
-  if (destinations.length === 0) {
-    const plansInitialized =
-      options.operation === "init" && plansKind === "missing";
-    if (plansInitialized) mkdirSync(plansPath, { recursive: true });
-    return {
-      data: {
-        operation: options.operation,
-        changed: plansInitialized,
-        plansInitialized,
-        destinations: [],
-      },
-      warnings: [],
-    };
-  }
-
   const warnings: string[] = [];
   const { value, releaseWarning } = withHarnessInstallLock(
     options.repositoryRoot,
     () => {
-      const source = options.source ?? enumerateCanonicalSkills();
-      const inspections = destinations.map((destination) =>
-        inspectDestination(destination, source),
-      );
-      const actionable = inspections.filter(
-        (inspection) =>
-          options.operation === "init" || inspection.state !== "missing",
-      );
-      const conflicts = actionable.flatMap((inspection) =>
-        inspection.conflicts.map((path) => ({
-          destination: inspection.destination.relativePath,
-          path,
-        })),
-      );
-      if (conflicts.length > 0 && options.force !== true) {
-        throw new PlanletError(
-          "write_conflict",
-          `Harness installation has locally modified files: ${conflicts[0]!.destination}/${conflicts[0]!.path}`,
-          { details: { conflicts } },
-        );
-      }
-
       const plansInitialized =
         options.operation === "init" && plansKind === "missing";
-      if (plansInitialized) mkdirSync(plansPath, { recursive: true });
-      const summaries = inspections.map((inspection) =>
-        options.operation === "update" && inspection.state === "missing"
-          ? {
-              destination: inspection.destination.relativePath,
-              tools: inspection.destination.selectedToolIds,
-              state: "missing" as const,
-              changed: false,
-              files: 0,
-            }
-          : applyInspectionWithSource(
-              inspection,
-              source,
-              warnings,
-              options.transactionHooks,
-            ),
-      );
+
+      let summaries: readonly HarnessInstallationSummary[] = [];
+      if (destinations.length > 0) {
+        const source = options.source ?? enumerateCanonicalSkills();
+        const inspections = destinations.map((destination) =>
+          inspectDestination(destination, source),
+        );
+        const actionable = inspections.filter(
+          (inspection) =>
+            options.operation === "init" || inspection.state !== "missing",
+        );
+        const conflicts = actionable.flatMap((inspection) =>
+          inspection.conflicts.map((path) => ({
+            destination: inspection.destination.relativePath,
+            path,
+          })),
+        );
+        if (conflicts.length > 0 && options.force !== true) {
+          throw new PlanletError(
+            "write_conflict",
+            `Harness installation has locally modified files: ${conflicts[0]!.destination}/${conflicts[0]!.path}`,
+            { details: { conflicts } },
+          );
+        }
+
+        // Preflight passed: only now mutate the repository.
+        if (plansInitialized) mkdirSync(plansPath, { recursive: true });
+        summaries = inspections.map((inspection) =>
+          options.operation === "update" && inspection.state === "missing"
+            ? {
+                destination: inspection.destination.relativePath,
+                tools: inspection.destination.selectedToolIds,
+                state: "missing" as const,
+                changed: false,
+                files: 0,
+              }
+            : applyInspectionWithSource(
+                inspection,
+                source,
+                warnings,
+                options.transactionHooks,
+              ),
+        );
+      } else if (plansInitialized) {
+        mkdirSync(plansPath, { recursive: true });
+      }
+
+      // Agent files are written only after every destination inspected and
+      // published: a non-forced conflict or publication failure must not leave
+      // AGENTS.md/CLAUDE.md written or staged.
+      const agents = updateAgentFiles({
+        repositoryRoot: options.repositoryRoot,
+        operation: options.operation,
+        skip: options.noAgents,
+      });
+      warnings.push(...agents.warnings);
 
       return {
         operation: options.operation,
         changed:
-          plansInitialized || summaries.some((summary) => summary.changed),
+          plansInitialized ||
+          summaries.some((summary) => summary.changed) ||
+          agents.changed,
         plansInitialized,
         destinations: summaries,
+        agentFiles: agents.files,
       };
     },
     options.lock,
