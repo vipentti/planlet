@@ -51,6 +51,11 @@
       `ENOTDIR` case); fix the stringified-`"undefined"` assertion at
       `safety.test.ts:319`. Keep `npm run format:check` as the authoritative
       formatting gate.
-- [ ] T6 Run the full repository verification suite end-to-end
+- [x] T6 Run the full repository verification suite end-to-end
       (format:check, lint, type-check, build, test, git diff --check, clean
       `git status --porcelain`)
+
+## Completion
+
+- Completed at: 2026-08-05T07:11:31.457Z
+- Mode: normal
