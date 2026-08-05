@@ -2,24 +2,17 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  ERROR_CODES,
   ERROR_EXIT_CODES,
   EXIT_CODES,
+  type ErrorCode,
 } from "../../src/errors/codes.js";
 import {
   PlanletError,
   isPlanletError,
 } from "../../src/errors/planlet-error.js";
 
-test("every stable error code has an exit-code category", () => {
-  assert.deepEqual(
-    Object.keys(ERROR_EXIT_CODES).sort(),
-    [...ERROR_CODES].sort(),
-  );
-});
-
 test("each error code is locked to its exact exit-code category", () => {
-  const expected: Record<(typeof ERROR_CODES)[number], number> = {
+  const expected: Record<ErrorCode, number> = {
     repo_not_found: EXIT_CODES.operational,
     plans_not_initialized: EXIT_CODES.operational,
     invalid_slug: EXIT_CODES.usage,
@@ -37,7 +30,7 @@ test("each error code is locked to its exact exit-code category", () => {
     internal_error: EXIT_CODES.operational,
   };
 
-  for (const code of ERROR_CODES) {
+  for (const code of Object.keys(ERROR_EXIT_CODES) as ErrorCode[]) {
     assert.equal(ERROR_EXIT_CODES[code], expected[code], code);
   }
 });

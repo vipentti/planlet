@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { decode, encode } from "@toon-format/toon";
 
-import { ERROR_CODES, ERROR_EXIT_CODES } from "../../src/errors/codes.js";
+import { ERROR_EXIT_CODES, type ErrorCode } from "../../src/errors/codes.js";
 import { PlanletError } from "../../src/errors/planlet-error.js";
 import {
   compactShowContent,
@@ -79,7 +79,7 @@ test("compactShowContent returns the raw string at or below the limit", () => {
 });
 
 test("renders every stable error on stderr with its mapped exit code", () => {
-  for (const code of ERROR_CODES) {
+  for (const code of Object.keys(ERROR_EXIT_CODES) as ErrorCode[]) {
     const error = new PlanletError(code, `Failure: ${code}`, {
       details: { slug: "cli-core" },
       next: "Inspect the planlet",
