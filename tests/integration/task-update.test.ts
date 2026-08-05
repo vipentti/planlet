@@ -102,6 +102,71 @@ test("uncheck is idempotent and changes only the selected marker", () => {
   });
 });
 
+test("task update results report post-write lifecycle summary", () => {
+  withPlanlet(
+    "# Tasks: Fixture Plan\n\n- [ ] T1 First\n- [ ] T2 Second\n",
+    (root) => {
+      const first = updateTask({
+        operation: "check",
+        repositoryRoot: root,
+        slug: "fixture-plan",
+        taskId: "T1",
+      });
+      assert.equal(first.changed, true);
+      assert.equal(first.state, "in_progress");
+      assert.equal(first.done, 1);
+      assert.equal(first.total, 2);
+      assert.equal(first.next, undefined);
+
+      const final = updateTask({
+        operation: "check",
+        repositoryRoot: root,
+        slug: "fixture-plan",
+        taskId: "T2",
+      });
+      assert.equal(final.state, "ready_to_complete");
+      assert.equal(final.done, 2);
+      assert.equal(final.total, 2);
+      assert.equal(final.next, "planlet complete fixture-plan");
+
+      const idempotent = updateTask({
+        operation: "check",
+        repositoryRoot: root,
+        slug: "fixture-plan",
+        taskId: "T2",
+      });
+      assert.equal(idempotent.changed, false);
+      assert.equal(idempotent.state, "ready_to_complete");
+      assert.equal(idempotent.done, 2);
+      assert.equal(idempotent.total, 2);
+      assert.equal(idempotent.next, "planlet complete fixture-plan");
+
+      const unchecked = updateTask({
+        operation: "uncheck",
+        repositoryRoot: root,
+        slug: "fixture-plan",
+        taskId: "T2",
+      });
+      assert.equal(unchecked.state, "in_progress");
+      assert.equal(unchecked.done, 1);
+      assert.equal(unchecked.total, 2);
+      assert.equal(unchecked.next, undefined);
+
+      const idempotentUncheck = updateTask({
+        operation: "uncheck",
+        repositoryRoot: root,
+        slug: "fixture-plan",
+        taskId: "T2",
+      });
+      assert.equal(idempotentUncheck.changed, false);
+      assert.equal(idempotentUncheck.state, "in_progress");
+      assert.equal(idempotentUncheck.done, 1);
+      assert.equal(idempotentUncheck.total, 2);
+      assert.equal(idempotentUncheck.next, undefined);
+    },
+  );
+});
+
 test("a failed atomic publication preserves tasks.md and removes its sibling temp file", () => {
   withPlanlet(MARKDOWN, (root, tasksPath) => {
     const temporaryName = ".fixture-plan.tasks-fixture.tmp";

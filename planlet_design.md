@@ -606,6 +606,9 @@ Output rules:
 - Diagnostics and warnings go to stderr.
 - Do not use decorative banners or spinners when output is not explicitly human-oriented.
 - List records should normally contain only slug, state, completed count, and total count.
+- Mutating task commands (`task check`, `task uncheck`) return post-write
+  `state`, `done`, `total`, and a conditional `next` hint (present only when
+  the plan becomes `ready_to_complete`).
 - Completed-plan output should keep the logical slug distinct from the archive name and path, and expose the recorded completion timestamp when the selected format requests completion details.
 - Empty results must be explicit, for example `plans[0]` plus summary counts.
 - Large `show --part plan|tasks` content should be truncated with a size hint;

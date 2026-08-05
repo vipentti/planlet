@@ -6,6 +6,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and thi
 
 ## [Unreleased]
 
+### Added
+
+- `task check` and `task uncheck` now report post-write plan `state`, `done`,
+  `total`, and a `next` handoff hint when the plan becomes `ready_to_complete`.
+
 ### Changed
 
 - `show --part plan|tasks` compacts oversized content with a preview and size

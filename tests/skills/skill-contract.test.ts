@@ -208,6 +208,7 @@ test("provider-neutral scenario suite checks required evidence", () => {
       "failed-verification",
       "multiple-targets",
       "incomplete-completion",
+      "ready-handoff",
       "portable-canonical-workflow",
     ],
   );

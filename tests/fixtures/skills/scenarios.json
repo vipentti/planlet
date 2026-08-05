@@ -75,6 +75,17 @@
     ]
   },
   {
+    "id": "ready-handoff",
+    "skill": "planlet-implement",
+    "prompt": "Final task check reports ready_to_complete during implementation.",
+    "expectedDecision": "announce-ready-handoff-without-archiving",
+    "evidence": [
+      "state: ready_to_complete",
+      "ready for the separate completion workflow",
+      "do not archive it here"
+    ]
+  },
+  {
     "id": "portable-canonical-workflow",
     "skill": "all",
     "prompt": "Run same workflow from generic Agent Skills, Claude Code, and Codex copies.",
