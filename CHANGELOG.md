@@ -70,6 +70,7 @@ First release. Everything below is new, so these notes describe what Planlet is 
 - Planlet and repository paths reject directory traversal and symlink escape, and file writes are atomic or recoverable.
 
 [Unreleased]: https://github.com/vipentti/planlet/compare/v0.1.2...HEAD
+[0.2.0]: https://github.com/vipentti/planlet/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/vipentti/planlet/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/vipentti/planlet/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/vipentti/planlet/releases/tag/v0.1.0
