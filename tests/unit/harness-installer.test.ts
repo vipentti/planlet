@@ -23,7 +23,6 @@ import {
   parseInstallationManifest,
   serializeInstallationManifest,
 } from "../../src/core/harness-installer.js";
-import type { HarnessToolId } from "../../src/core/harnesses.js";
 import {
   HARNESS_INSTALL_LOCK_NAME,
   planletLockRoot,
@@ -72,19 +71,35 @@ const BASE_SOURCE = source({
 });
 
 test("manifest schema and hashes are deterministic and validated", () => {
-  const manifest = createInstallationManifest(
-    ["codex", "agents"] as readonly HarnessToolId[],
-    BASE_SOURCE,
-  );
+  const manifest = createInstallationManifest(BASE_SOURCE);
   const serialized = serializeInstallationManifest(manifest);
 
-  assert.deepEqual(manifest.tools, ["agents", "codex"]);
+  assert.deepEqual(manifest, {
+    schemaVersion: 2,
+    files: Object.fromEntries(
+      BASE_SOURCE.files.map((file) => [file.relativePath, file.digest]),
+    ),
+  });
   assert.equal(serialized, serializeInstallationManifest(manifest));
   assert.deepEqual(parseInstallationManifest(serialized), manifest);
-  assert.throws(
-    () => parseInstallationManifest('{"schemaVersion":2}'),
-    (error) => error instanceof PlanletError && error.code === "write_conflict",
-  );
+  assert.equal(serialized.includes('"tools"'), false);
+  for (const invalid of [
+    '{"schemaVersion":2}',
+    '{"schemaVersion":1,"tools":["agents"],"files":{}}',
+    '{"schemaVersion":1,"files":{}}',
+    '{"schemaVersion":2,"tools":["agents"],"files":{}}',
+    '{"schemaVersion":2,"tools":[],"files":{}}',
+    '{"schemaVersion":3,"files":{}}',
+    '{"schemaVersion":2,"files":[]}',
+    '{"schemaVersion":2,"files":{"planlet-example/SKILL.md":1}}',
+  ]) {
+    assert.throws(
+      () => parseInstallationManifest(invalid),
+      (error) =>
+        error instanceof PlanletError && error.code === "write_conflict",
+      invalid,
+    );
+  }
 });
 
 test("init coalesces shared targets, preserves unrelated skills, and is idempotent", () => {
@@ -126,8 +141,8 @@ test("init coalesces shared targets, preserves unrelated skills, and is idempote
           join(root, ".agents", "skills", INSTALLATION_MANIFEST),
           "utf8",
         ),
-      ).tools,
-      ["agents", "codex"],
+      ),
+      createInstallationManifest(BASE_SOURCE),
     );
   });
 });
@@ -305,20 +320,23 @@ test("tool detection classifies malformed manifests as modified", () => {
       tools: "agents",
       source: BASE_SOURCE,
     });
-    writeFileSync(
-      join(root, ".agents", "skills", INSTALLATION_MANIFEST),
+    const manifestPath = join(root, ".agents", "skills", INSTALLATION_MANIFEST);
+    const expected = [
+      { id: "agents", state: "modified" },
+      { id: "codex", state: "modified" },
+    ];
+    for (const manifestText of [
       "invalid\n",
-    );
-
-    assert.deepEqual(
-      detectHarnesses({ repositoryRoot: root, source: BASE_SOURCE })
-        .filter(({ id }) => id === "agents" || id === "codex")
-        .map(({ id, state }) => ({ id, state })),
-      [
-        { id: "agents", state: "modified" },
-        { id: "codex", state: "modified" },
-      ],
-    );
+      '{"schemaVersion":1,"tools":["agents"],"files":{}}',
+    ]) {
+      writeFileSync(manifestPath, manifestText);
+      assert.deepEqual(
+        detectHarnesses({ repositoryRoot: root, source: BASE_SOURCE })
+          .filter(({ id }) => id === "agents" || id === "codex")
+          .map(({ id, state }) => ({ id, state })),
+        expected,
+      );
+    }
   });
 });
 
@@ -798,7 +816,7 @@ test("safe symlink coalesces unselected aliases for selected-only init", () => {
         "utf8",
       ),
     );
-    assert.deepEqual(manifest.tools, ["agents", "claude", "codex"]);
+    assert.deepEqual(manifest, createInstallationManifest(BASE_SOURCE));
     assert.deepEqual(
       detectHarnesses({ repositoryRoot: root, source: BASE_SOURCE }).map(
         ({ id, state }) => ({ id, state }),
@@ -823,8 +841,8 @@ test("safe symlink coalesces unselected aliases for selected-only init", () => {
           join(root, ".agents", "skills", INSTALLATION_MANIFEST),
           "utf8",
         ),
-      ).tools,
-      ["agents", "claude", "codex"],
+      ),
+      createInstallationManifest(BASE_SOURCE),
     );
   });
 });

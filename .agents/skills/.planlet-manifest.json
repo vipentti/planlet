@@ -1,9 +1,5 @@
 {
-  "schemaVersion": 1,
-  "tools": [
-    "agents",
-    "codex"
-  ],
+  "schemaVersion": 2,
   "files": {
     "planlet-complete/SKILL.md": "3e878d483bf6675c632a2d594805914b842566e54c98366e0640e3cfdd71b07b",
     "planlet-complete/agents/openai.yaml": "f4df999b41feddee85f906ceddf84ced3a5ef60daf7467e7a37bec158cb8451e",

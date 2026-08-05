@@ -17,6 +17,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and thi
 
 ### Changed
 
+- Installation manifests are now schema v2 and no longer record a `tools`
+  array — the tool set is implicit in the destination directory. Manifests
+  written by earlier releases (schema v1) are no longer parsed.
 - Skills now require an available `planlet` executable and no longer describe a CLI-unavailable fallback; with no working install path, agents stop and report naming the missing executable instead of hand-managing planlet files.
 - `show --part plan|tasks` compacts oversized content with a preview and size
   metadata; `--full` returns the complete content, and non-show output is no
