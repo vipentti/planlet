@@ -16,13 +16,18 @@ import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { fileURLToPath } from "node:url";
 
-function git(...args) {
-  return spawnSync("git", args, { encoding: "utf8" });
+function git(cwd, ...args) {
+  return spawnSync("git", args, { cwd, encoding: "utf8" });
 }
 
-export function verifyReleaseTag({ tag, target, message }) {
+export function verifyReleaseTag({
+  tag,
+  target,
+  message,
+  cwd = process.cwd(),
+}) {
   const ref = "refs/tags/" + tag;
-  const type = git("cat-file", "-t", ref);
+  const type = git(cwd, "cat-file", "-t", ref);
   if (type.status !== 0 || type.stdout.trim() !== "tag")
     return {
       ok: false,
@@ -31,6 +36,7 @@ export function verifyReleaseTag({ tag, target, message }) {
       }).`,
     };
   const targetCommit = git(
+    cwd,
     "rev-parse",
     "--verify",
     "--quiet",
@@ -43,7 +49,7 @@ export function verifyReleaseTag({ tag, target, message }) {
         targetCommit.stdout.trim() || "(unresolvable)"
       }, expected ${target}.`,
     };
-  const subject = git("tag", "-l", "--format=%(contents:subject)", tag);
+  const subject = git(cwd, "tag", "-l", "--format=%(contents:subject)", tag);
   if (subject.status !== 0 || subject.stdout.trim() !== message)
     return {
       ok: false,
@@ -51,13 +57,13 @@ export function verifyReleaseTag({ tag, target, message }) {
         subject.stdout.trim(),
       )}, expected ${JSON.stringify(message)}.`,
     };
-  const verify = git("verify-tag", tag);
+  const verify = git(cwd, "verify-tag", tag);
   if (verify.status !== 0)
     return {
       ok: false,
       error: `git verify-tag failed for ${tag}:\n${verify.stderr.trim()}`,
     };
-  const objectSha = git("rev-parse", ref);
+  const objectSha = git(cwd, "rev-parse", ref);
   if (objectSha.status !== 0 || !/^[0-9a-f]{40}$/.test(objectSha.stdout.trim()))
     return { ok: false, error: `Could not resolve tag object SHA for ${tag}.` };
   return { ok: true, objectSha: objectSha.stdout.trim() };

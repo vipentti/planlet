@@ -552,6 +552,7 @@ function cmdTag() {
       tag: "v" + version,
       target: headSha,
       message: "Release v" + version,
+      cwd: root,
     });
     if (!localVerify.ok)
       fail("Local tag v" + version + " is invalid:\n" + localVerify.error);
@@ -598,6 +599,7 @@ function cmdTag() {
       tag: "v" + version,
       target: headSha,
       message: "Release v" + version,
+      cwd: root,
     });
     if (!verify.ok)
       fail("Tag v" + version + " failed verification:\n" + verify.error);

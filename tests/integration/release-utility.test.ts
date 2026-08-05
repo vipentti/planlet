@@ -211,6 +211,14 @@ function release(repo: Repo, ...args: string[]) {
   });
 }
 
+function releaseFrom(repo: Repo, cwd: string, ...args: string[]) {
+  return spawnSync(process.execPath, [repo.script, ...args], {
+    cwd,
+    encoding: "utf8",
+    env: repo.env,
+  });
+}
+
 function readJson(repo: Repo, name: string) {
   return JSON.parse(readFileSync(join(repo.dir, name), "utf8"));
 }
@@ -775,4 +783,38 @@ test("break-glass tag satisfies the same verifier arguments as the workflow", ()
     { cwd: repo.dir, encoding: "utf8" },
   );
   assert.equal(verify.status, 0, verify.stderr);
+});
+
+test("fresh break-glass tag verifies when release.mjs runs from an unrelated directory", () => {
+  const repo = makeRepo({ released: true });
+  const outside = join(repo.log, "outside");
+  mkdirSync(outside);
+
+  const out = releaseFrom(repo, outside, "tag", "--version", GOOD, "--execute");
+  assert.equal(out.status, 0, out.stderr + out.stdout);
+  assert.equal(git(repo, "verify-tag", "v" + GOOD).status, 0);
+  const subject = git(
+    repo,
+    "tag",
+    "-l",
+    "--format=%(contents:subject)",
+    "v" + GOOD,
+  );
+  assert.equal(subject.stdout.trim(), "Release v" + GOOD);
+});
+
+test("existing local tag validates when release.mjs runs from an unrelated directory", () => {
+  const repo = makeRepo({ released: true });
+  git(repo, "tag", "-a", "-s", "v" + GOOD, "-m", "Release v" + GOOD, "HEAD");
+  const outside = join(repo.log, "outside");
+  mkdirSync(outside);
+
+  const out = releaseFrom(repo, outside, "tag", "--version", GOOD, "--execute");
+  assert.equal(out.status, 0, out.stderr + out.stdout);
+  assert.match(out.stdout, /exists locally and is valid/);
+  assert.equal(
+    git(repo, "ls-remote", "--exit-code", "origin", "refs/tags/v" + GOOD)
+      .status,
+    2,
+  );
 });
