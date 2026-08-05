@@ -6,7 +6,6 @@ dist/
 *.tsbuildinfo
 
 # Tests and coverage
-coverage/
 .nyc_output/
 test-results/
 

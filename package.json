@@ -47,7 +47,7 @@
     "skills:update": "npm run build && node dist/planlet.mjs update --tools all",
     "format": "prettier --write package.json tsconfig.json eslint.config.js \".github/workflows/*.yml\" README.md CHANGELOG.md RELEASING.md \"src/**/*.ts\" \"tests/**/*.ts\" \"scripts/**/*.mjs\"",
     "format:check": "prettier --check package.json tsconfig.json eslint.config.js \".github/workflows/*.yml\" README.md CHANGELOG.md RELEASING.md \"src/**/*.ts\" \"tests/**/*.ts\" \"scripts/**/*.mjs\"",
-    "lint": "eslint \"src/**/*.ts\" \"tests/**/*.ts\"",
+    "lint": "eslint \"src/**/*.ts\" \"tests/**/*.ts\" \"scripts/**/*.mjs\"",
     "test": "tsx --test \"tests/**/*.test.ts\"",
     "type-check": "tsc --noEmit",
     "prepack": "npm run build",
