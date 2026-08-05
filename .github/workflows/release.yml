@@ -127,6 +127,21 @@ jobs:
           );
           NODE
 
+      - name: Check remote release tag
+        id: check-release-tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${VERSION:-}" || {
+            echo "Missing release version from detection" >&2
+            exit 1
+          }
+          if git ls-remote --exit-code origin "refs/tags/v${VERSION}" >/dev/null 2>&1; then
+            echo "tag-exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag-exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
       # --- Release mutations: GPG key material, tag, npm, GitHub release. ---
 
       - name: Configure GPG signing for release tags
@@ -167,27 +182,39 @@ jobs:
           git config commit.gpgsign false
           git config tag.gpgsign false
 
+      - name: Generate GitHub App installation token
+        if: steps.check-release-tag.outputs.tag-exists == 'false'
+        id: release-app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ vars.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: planlet
+          permission-contents: write
+
       - name: Ensure exact signed release tag
         env:
-          RELEASE_PUSH_TOKEN: ${{ secrets.RELEASE_PUSH_TOKEN }}
+          RELEASE_APP_TOKEN: ${{ steps.release-app-token.outputs.token }}
         shell: bash
         run: |
           set -euo pipefail
-          test -n "${VERSION:-}" || {
-            echo "Missing release version from detection" >&2
-            exit 1
-          }
           tag="v${VERSION}"
           target="$GITHUB_SHA"
-          if git ls-remote --exit-code origin "refs/tags/${tag}" >/dev/null 2>&1; then
+          if [ "${{ steps.check-release-tag.outputs.tag-exists }}" = "true" ]; then
             # Remote tag exists: verify the exact annotated signed tag, never mutate it.
             git fetch --no-tags origin "+refs/tags/${tag}:refs/tags/${tag}"
             tag_object=$(node scripts/verify-release-tag.mjs --tag "$tag" --target "$target" --message "Release ${tag}")
             echo "Existing remote tag ${tag} verified"
           else
+            test -n "$RELEASE_APP_TOKEN" || {
+              echo "Missing GitHub App installation token for tag push" >&2
+              exit 1
+            }
             git tag -a -s "$tag" -m "Release ${tag}" "$target"
             tag_object=$(node scripts/verify-release-tag.mjs --tag "$tag" --target "$target" --message "Release ${tag}")
-            git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $(printf 'x-access-token:%s' "$RELEASE_PUSH_TOKEN" | base64 -w0)" push origin "refs/tags/${tag}:refs/tags/${tag}"
+            auth=$(printf 'x-access-token:%s' "$RELEASE_APP_TOKEN" | base64 -w0)
+            git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" push origin "refs/tags/${tag}:refs/tags/${tag}"
             remote_object=$(git ls-remote origin "refs/tags/${tag}" | awk 'NR == 1 { print $1 }')
             test -n "$remote_object" || {
               echo "Remote tag ${tag} did not appear after push" >&2

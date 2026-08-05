@@ -144,8 +144,9 @@ closed rather than being treated as an ordinary push.
 Only the protected `release` job references `environment: release` and only its
 steps read the release secrets. The job checks out the exact triggering commit
 with full history, verifies it is reachable from the current `origin/main`,
-creates and pushes the signed tag, verifies GitHub reports the signature, runs
-the full repository verification suite, packs the exact artifact with
+creates and pushes the signed tag (authenticated by a short-lived GitHub App
+installation token), verifies GitHub reports the signature, runs the full
+repository verification suite, packs the exact artifact with
 `npm pack --json --ignore-scripts`, publishes through npm trusted publishing
 with provenance (or verifies an already-published version by exact identity and
 integrity), and creates or updates the GitHub release from the committed
@@ -170,16 +171,17 @@ bumps cannot be reconciled automatically.
 
 The `release` GitHub Environment must provide these secrets:
 
-| Secret                    | Purpose                                                                |
-| ------------------------- | ---------------------------------------------------------------------- |
-| `RELEASE_GPG_PRIVATE_KEY` | ASCII-armored private key of the dedicated release-only GPG key        |
-| `RELEASE_GPG_PASSPHRASE`  | Passphrase for that private key                                        |
-| `RELEASE_PUSH_TOKEN`      | Fine-grained token for pushing the signed tag only; never used for npm |
+| Secret                    | Purpose                                                         |
+| ------------------------- | --------------------------------------------------------------- |
+| `RELEASE_GPG_PRIVATE_KEY` | ASCII-armored private key of the dedicated release-only GPG key |
+| `RELEASE_GPG_PASSPHRASE`  | Passphrase for that private key                                 |
+| `RELEASE_APP_PRIVATE_KEY` | PEM private key of the dedicated Release Automation GitHub App  |
 
 And these variables:
 
 | Variable                  | Purpose                                                                                             |
 | ------------------------- | --------------------------------------------------------------------------------------------------- |
+| `RELEASE_APP_ID`          | GitHub App ID of the Release Automation App                                                         |
 | `RELEASE_GPG_FINGERPRINT` | Exact fingerprint of the imported secret key; the workflow fails if it does not match               |
 | `RELEASE_GIT_NAME`        | Git committer/tagger name for the release tag                                                       |
 | `RELEASE_GIT_EMAIL`       | Email configured for the tag; must be a verified email on the GitHub account holding the public key |
@@ -191,14 +193,28 @@ temporary GPG home, verifies the fingerprint exactly, signs in batch mode with
 loopback pinentry, and removes the key material in an `always()` cleanup step.
 The private key is used for release tags only, never for commits.
 
-`RELEASE_PUSH_TOKEN` must be a fine-grained token scoped to `vipentti/planlet`
-with repository Contents read/write. The repository's `v*` tag ruleset
-restricts tag creation, so the token actor must be allowed to create `v*` tags
-under that ruleset; tag updates, force changes, and deletions remain prohibited
-and the workflow never attempts them. A dedicated GitHub App added to the
-ruleset bypass list is the preferred future replacement for a maintainer PAT and
-is not required for this flow. A tag push rejected by repository rules fails
-the job with git's diagnostic.
+Tag push authentication uses a dedicated **Release Automation GitHub App**; the
+App does not replace the GPG signing key. The repository owner must configure
+externally:
+
+1. Create or reuse a private Release Automation GitHub App.
+2. Grant the App repository Contents read/write.
+3. Install the App only on `vipentti/planlet`.
+4. Add the App as an always-allowed actor on the existing `v*` tag-ruleset
+   bypass list.
+5. Retain rules blocking tag updates, force changes, and deletions.
+6. Store the App ID as the `RELEASE_APP_ID` variable in the `release`
+   environment.
+7. Store the App PEM private key as the `RELEASE_APP_PRIVATE_KEY` secret in the
+   `release` environment.
+
+The workflow generates a short-lived installation token per approved release
+run, scoped to `vipentti/planlet` with Contents read/write only, and uses it
+exclusively for the signed tag push. The token is never used for npm, never
+used for GitHub release operations (those use `GITHUB_TOKEN`), and is never
+written to files, logs, or workflow outputs. A tag push rejected by repository
+rules fails the job with git's diagnostic. A maintainer fine-grained PAT is not
+workflow configuration; it is only a last-resort manual recovery option.
 
 ## Key rotation
 
