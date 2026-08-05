@@ -54,11 +54,12 @@ planlet init
 terminal it asks which harnesses to install for; otherwise it installs all of
 them. Supported harnesses:
 
-| Harness                     | `--tools` ID | Skill destination |
-| --------------------------- | ------------ | ----------------- |
-| Claude Code                 | `claude`     | `.claude/skills`  |
-| Codex                       | `codex`      | `.agents/skills`  |
-| Other `AGENTS.md` harnesses | `agents`     | `.agents/skills`  |
+| Harness                     | `--tools` ID     | Skill destination |
+| --------------------------- | ---------------- | ----------------- |
+| Claude Code                 | `claude`         | `.claude/skills`  |
+| Codex                       | `codex`          | `.agents/skills`  |
+| GitHub Copilot              | `github-copilot` | `.agents/skills`  |
+| Other `AGENTS.md` harnesses | `agents`         | `.agents/skills`  |
 
 Commit the installed copies so everyone cloning the repository gets the same
 workflows. Refresh them after a Planlet upgrade with `planlet update`, and
@@ -129,7 +130,9 @@ and exits.
 Canonical workflows ship under `skills/planlet-*`; installed copies are
 generated from them.
 
-`--tools` accepts comma-separated `agents`, `claude`, and `codex` IDs.
+`--tools` accepts comma-separated `agents`, `claude`, `codex`, and
+`github-copilot` IDs. The `agents`, `codex`, and `github-copilot` IDs share the
+`.agents/skills` destination; `github-copilot` names GitHub Copilot explicitly.
 `planlet init --tools none` creates only `plans/`. Locally modified generated
 files require explicit `--force` before replacement.
 
@@ -138,6 +141,10 @@ run on an interactive terminal, defaulting to those that already contain
 something. Passing `--tools`, or running with stdin or stdout redirected, skips
 the question and installs every destination, so agents and CI are unaffected.
 `planlet update` never asks; it refreshes only destinations that already exist.
+
+Do not add a separate `.github/skills` copy for Copilot. GitHub Copilot reads
+the `.agents/skills` install directly, and a duplicate `planlet-*` name under
+`.github/skills` shadows the `.agents/skills` copy in Copilot's skill listing.
 
 ## Development
 

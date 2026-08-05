@@ -244,5 +244,10 @@ test("provider-neutral scenario suite checks required evidence", () => {
   }
 
   const portable = scenarios.at(-1);
-  assert.deepEqual(portable?.harnesses, ["agents", "claude", "codex"]);
+  assert.deepEqual(portable?.harnesses, [
+    "agents",
+    "claude",
+    "codex",
+    "github-copilot",
+  ]);
 });

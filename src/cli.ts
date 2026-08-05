@@ -41,12 +41,12 @@ const VERSION = (
 const COMMAND_HELP: Readonly<Record<string, string>> = {
   init:
     "Usage: planlet init [--tools <ids>] [--force]\n\n" +
-    "--tools takes all, none, or comma-separated agents, claude, codex.\n" +
+    "--tools takes all, none, or comma-separated agents, claude, codex, github-copilot.\n" +
     "Without it, an interactive terminal is asked which destinations to\n" +
     "install; anything else installs all of them.\n",
   update:
     "Usage: planlet update [--tools <ids>] [--force]\n\n" +
-    "--tools takes all, none, or comma-separated agents, claude, codex.\n",
+    "--tools takes all, none, or comma-separated agents, claude, codex, github-copilot.\n",
   tools: "Usage: planlet tools\n",
   list: "Usage: planlet list [--state <state>] [--completed]\n",
   create: "Usage: planlet create <slug> [--title <title>]\n",

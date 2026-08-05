@@ -84,12 +84,20 @@ test("init parses selectors, preserves unrelated skills, and installs canonical 
     });
     writeFileSync(unrelated, "# Keep\n");
 
-    const result = await invoke(root, ["init", "--tools", "codex,agents"]);
+    const result = await invoke(root, [
+      "init",
+      "--tools",
+      "codex,agents,github-copilot",
+    ]);
     assert.equal(result.exitCode, 0, result.stderr);
     const output = decodedRecord(result.stdout);
     assert.ok(Array.isArray(output.destinations));
     const firstDestination = record(output.destinations[0]);
-    assert.deepEqual(firstDestination.tools, ["agents", "codex"]);
+    assert.deepEqual(firstDestination.tools, [
+      "agents",
+      "codex",
+      "github-copilot",
+    ]);
     assert.equal(firstDestination.changed, true);
     assert.equal(existsSync(join(root, "plans")), true);
     assert.equal(existsSync(join(root, ".claude")), false);
@@ -211,6 +219,7 @@ test("cross-destination conflicts preflight all writes and force restores parity
         { id: "agents", state: "installed" },
         { id: "claude", state: "installed" },
         { id: "codex", state: "installed" },
+        { id: "github-copilot", state: "installed" },
       ],
     );
   });
@@ -237,9 +246,9 @@ test("prompt choices collapse shared destinations and default to populated ones"
       })),
       [
         {
-          selector: "agents,codex",
+          selector: "agents,codex,github-copilot",
           destination: ".agents/skills",
-          names: "Generic Agent Skills, Codex",
+          names: "Generic Agent Skills, Codex, GitHub Copilot",
           preselected: false,
         },
         {
@@ -261,7 +270,10 @@ test("prompt choices preselect everything when no destination exists", async () 
       choices.map((choice) => choice.preselected),
       [true, true],
     );
-    assert.equal(resolveAnswer(choices, ""), "agents,codex,claude");
+    assert.equal(
+      resolveAnswer(choices, ""),
+      "agents,codex,github-copilot,claude",
+    );
   });
 });
 
@@ -276,7 +288,7 @@ test("prompt choices coalesce symlinked destinations and survive a file destinat
     );
     assert.deepEqual(
       buildToolChoices(root).map((choice) => choice.selector),
-      ["agents,claude,codex"],
+      ["agents,claude,codex,github-copilot"],
     );
   });
 
@@ -298,7 +310,10 @@ test("prompt answers map to selectors and reject unrecognized input", async () =
     const choices = buildToolChoices(root);
     assert.equal(resolveAnswer(choices, "none"), "none");
     assert.equal(resolveAnswer(choices, " 2 "), "claude");
-    assert.equal(resolveAnswer(choices, "1,2"), "agents,codex,claude");
+    assert.equal(
+      resolveAnswer(choices, "1,2"),
+      "agents,codex,github-copilot,claude",
+    );
     for (const answer of ["0", "3", "y", "1,x", "1.5"]) {
       assert.equal(resolveAnswer(choices, answer), undefined, answer);
     }

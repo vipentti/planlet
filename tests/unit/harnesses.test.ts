@@ -34,6 +34,7 @@ test("tool selectors trim, deduplicate, and retain registry order", () => {
     "agents",
     "claude",
     "codex",
+    "github-copilot",
   ]);
   assert.deepEqual(normalizeToolSelector("none"), []);
 });
@@ -59,15 +60,15 @@ test("shared harness destinations are coalesced with stable aliases", () => {
   withRoot((root) => {
     const destinations = resolveHarnessDestinations(
       root,
-      normalizeToolSelector("codex,agents"),
+      normalizeToolSelector("codex,agents,github-copilot"),
     );
 
     assert.equal(destinations.length, 1);
     assert.deepEqual(destinations[0], {
       path: join(realpathSync(root), ".agents", "skills"),
       relativePath: ".agents/skills",
-      selectedToolIds: ["agents", "codex"],
-      aliases: ["agents", "codex"],
+      selectedToolIds: ["agents", "codex", "github-copilot"],
+      aliases: ["agents", "codex", "github-copilot"],
     });
   });
 });
@@ -102,7 +103,11 @@ test("unselected escaping destinations do not block selected installs", () => {
       assert.equal(destinations.length, 1);
       assert.equal(destinations[0]!.relativePath, ".agents/skills");
       assert.deepEqual(destinations[0]!.selectedToolIds, ["agents"]);
-      assert.deepEqual(destinations[0]!.aliases, ["agents", "codex"]);
+      assert.deepEqual(destinations[0]!.aliases, [
+        "agents",
+        "codex",
+        "github-copilot",
+      ]);
     });
   } finally {
     rmSync(outside, { recursive: true, force: true });
@@ -123,6 +128,11 @@ test("safe unselected symlink destinations are included as aliases", () => {
     );
     assert.equal(destinations.length, 1);
     assert.deepEqual(destinations[0]!.selectedToolIds, ["claude"]);
-    assert.deepEqual(destinations[0]!.aliases, ["agents", "claude", "codex"]);
+    assert.deepEqual(destinations[0]!.aliases, [
+      "agents",
+      "claude",
+      "codex",
+      "github-copilot",
+    ]);
   });
 });
