@@ -6,6 +6,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and thi
 
 ## [Unreleased]
 
+### Changed
+
+- `show --part plan|tasks` compacts oversized content with a preview and size
+  metadata; `--full` returns the complete content, and non-show output is no
+  longer truncated.
+
 ## [0.1.2] - 2026-08-04
 
 ### Changed

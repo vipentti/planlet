@@ -4,6 +4,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -155,7 +156,44 @@ test("--root selects the repository when invoked from an unrelated directory", (
   });
 });
 
-test("large content truncates by default and --full restores it", () => {
+test("show --part plan|tasks compacts large content with the exact schema", () => {
+  withRepository((root) => {
+    const body = "x".repeat(5_000);
+    const plan = `# Large\n\n## Summary\n${body}\n\n## Scope\nFixture.\n\n## Approach\nFixture.\n\n## Acceptance Criteria\n- Works.\n\n## Verification\nTests.\n`;
+    const tasks = `# Tasks: Large\n\n- [ ] T1 ${body}\n`;
+    writePlanlet(root, "large", tasks, plan);
+
+    const compacted = (content: string) => ({
+      preview: `${Array.from(content).slice(0, 4_096).join("")}…`,
+      truncated: true,
+      originalCharacters: Array.from(content).length,
+      shownCharacters: 4_096,
+      hint: "Re-run with --full for complete content",
+    });
+
+    for (const part of ["plan", "tasks"] as const) {
+      const truncated = runCli(["show", "large", "--part", part], root);
+      assert.equal(truncated.exitCode, EXIT_CODES.success);
+      assert.equal(truncated.stderr, "");
+      assert.deepEqual(decode(truncated.stdout.trimEnd()), {
+        slug: "large",
+        part,
+        content: compacted(part === "plan" ? plan : tasks),
+      });
+    }
+
+    const full = runCli(["--full", "show", "large", "--part", "plan"], root);
+    assert.equal(full.exitCode, EXIT_CODES.success);
+    assert.equal(full.stderr, "");
+    assert.deepEqual(decode(full.stdout.trimEnd()), {
+      slug: "large",
+      part: "plan",
+      content: plan,
+    });
+  });
+});
+
+test("show --part summary is emitted unchanged", () => {
   withRepository((root) => {
     const body = "x".repeat(5_000);
     writePlanlet(
@@ -165,18 +203,39 @@ test("large content truncates by default and --full restores it", () => {
       `# Large\n\n## Summary\n${body}\n\n## Scope\nFixture.\n\n## Approach\nFixture.\n\n## Acceptance Criteria\n- Works.\n\n## Verification\nTests.\n`,
     );
 
-    const truncated = runCli(["show", "large", "--part", "plan"], root);
-    assert.equal(truncated.exitCode, EXIT_CODES.success);
-    assert.equal(truncated.stderr, "");
-    assert.match(truncated.stdout, /truncated: true/);
-    assert.match(truncated.stdout, /Re-run with --full for complete content/);
-    assert.ok(!truncated.stdout.includes(body));
+    const result = runCli(["show", "large", "--part", "summary"], root);
+    assert.equal(result.exitCode, EXIT_CODES.success);
+    assert.equal(result.stderr, "");
+    assert.deepEqual(decode(result.stdout.trimEnd()), {
+      slug: "large",
+      part: "summary",
+      summary: {
+        slug: "large",
+        title: "Large",
+        state: "planned",
+        completedTasks: 0,
+        totalTasks: 1,
+        path: join(realpathSync(root), "plans", "large"),
+        warnings: [],
+      },
+    });
+  });
+});
 
-    const full = runCli(["--full", "show", "large", "--part", "plan"], root);
-    assert.equal(full.exitCode, EXIT_CODES.success);
-    assert.equal(full.stderr, "");
-    assert.ok(!full.stdout.includes("Re-run with --full"));
-    assert.ok(full.stdout.includes(body));
+test("non-show payloads are emitted completely", () => {
+  withRepository((root) => {
+    const body = "y".repeat(5_000);
+    writePlanlet(root, "large", `# Tasks: Large\n\n- [ ] T1 ${body}\n`);
+
+    const result = runCli(["tasks", "large"], root);
+    assert.equal(result.exitCode, EXIT_CODES.success);
+    assert.equal(result.stderr, "");
+    assert.deepEqual(decode(result.stdout.trimEnd()), {
+      slug: "large",
+      tasks: [{ id: "T1", description: body, completed: false }],
+      completedTasks: 0,
+      totalTasks: 1,
+    });
   });
 });
 

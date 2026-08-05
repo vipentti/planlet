@@ -83,10 +83,9 @@ work is included.
   `truncateLargeStrings`, `truncatedString`, the `TruncatedString` shape, and the
   `maxStringCharacters`/`full` handling from `renderToon`. It no longer performs a
   recursive arbitrary-object traversal.
-- Keep a cheaply testable maximum-character seam by exposing the field-compaction
-  helper (e.g. `compactShowContent(content, maxCharacters)` with
-  `DEFAULT_MAX_STRING_CHARACTERS = 4_096`) from the output/handler boundary and
-  testing it directly. Do not add production configuration solely for tests.
+- Keep the field-compaction helper exported from the output/handler boundary
+  (`compactShowContent(content)`), but with no injectable maximum seam; tests
+  exercise the real 4096-character boundary directly.
 
 ## Approach
 

@@ -5,7 +5,11 @@ import { decode, encode } from "@toon-format/toon";
 
 import { ERROR_CODES, ERROR_EXIT_CODES } from "../../src/errors/codes.js";
 import { PlanletError } from "../../src/errors/planlet-error.js";
-import { renderToon, renderToonError } from "../../src/output/toon.js";
+import {
+  compactShowContent,
+  renderToon,
+  renderToonError,
+} from "../../src/output/toon.js";
 
 test("renders successful structured data with the official TOON encoder", () => {
   const data = {
@@ -47,30 +51,31 @@ test("surfaces warnings as diagnostics on stderr without mixing them into data",
   assert.equal(rendered.exitCode, 0);
 });
 
-test("truncates large strings with a size hint unless --full is active", () => {
-  const content = "0123456789🙂abcdef";
+test("renderToon serializes long strings without truncation", () => {
+  const content = "x".repeat(5_000);
   const result = { slug: "cli-core", content };
 
-  const compact = renderToon(result, [], { maxStringCharacters: 10 });
-  assert.deepEqual(decode(compact.stdout.trimEnd()), {
-    slug: "cli-core",
-    content: {
-      preview: "0123456789…",
-      truncated: true,
-      originalCharacters: 17,
-      shownCharacters: 10,
-      hint: "Re-run with --full for complete content",
-    },
-  });
+  const rendered = renderToon(result);
+  assert.deepEqual(decode(rendered.stdout.trimEnd()), result);
+});
 
-  const full = renderToon(result, [], {
-    full: true,
-    maxStringCharacters: 10,
+test("compactShowContent preserves the exact compact schema above the limit", () => {
+  const content = `${"x".repeat(4_096)}🙂`;
+
+  assert.deepEqual(compactShowContent(content), {
+    preview: `${"x".repeat(4_096)}…`,
+    truncated: true,
+    originalCharacters: 4_097,
+    shownCharacters: 4_096,
+    hint: "Re-run with --full for complete content",
   });
-  assert.deepEqual(decode(full.stdout.trimEnd()), {
-    slug: "cli-core",
-    content,
-  });
+});
+
+test("compactShowContent returns the raw string at or below the limit", () => {
+  const atLimit = "x".repeat(4_096);
+
+  assert.equal(compactShowContent(atLimit), atLimit);
+  assert.equal(compactShowContent("small"), "small");
 });
 
 test("renders every stable error on stderr with its mapped exit code", () => {

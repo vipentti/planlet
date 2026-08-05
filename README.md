@@ -120,8 +120,9 @@ Running `planlet` with no command displays the active-plan dashboard.
 | `complete <slug> [--allow-incomplete --reason <text>]` | Archive a planlet under `plans/completed/`            |
 | `help [command]`                                       | Show usage                                            |
 
-Global options: `--root <path>` selects the repository root, `--full` disables
-output truncation, and `--version` prints the version and exits.
+Global options: `--root <path>` selects the repository root, `--full` returns
+complete `show --part plan|tasks` content, and `--version` prints the version
+and exits.
 
 ## Skill installation details
 
