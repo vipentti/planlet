@@ -88,6 +88,35 @@ A typical session: ask for a plan, review the two Markdown files yourself, then
 ask for implementation, then completion. Nothing is hidden from review — the
 plan, the task checkboxes, and the archive are all plain Markdown in git.
 
+## Agent onboarding
+
+`planlet init` writes the pointer below into `AGENTS.md` by default, fenced by
+planlet-owned markers, so agents discover the workflow without any manual
+paste. It also writes the section to `CLAUDE.md` when that file exists as a
+regular file and does not already import `AGENTS.md`. `planlet update`
+refreshes the section where the marker already exists; it never creates it in
+repositories that opted out. Pass `--no-agents` to skip both files, or print
+the snippet for a manual paste into another instructions file:
+
+```markdown
+## Planning with Planlet
+
+This repository uses Planlet for focused implementation plans. A planlet is
+`plans/<slug>/plan.md` + `tasks.md`; Markdown is the source of truth.
+
+- Propose a planlet before multi-step work; skip it for one-file changes.
+- Drive it with the `planlet` CLI, never by hand-editing plan files:
+  `planlet create|show|tasks|status|validate <slug>`,
+  `planlet task check <slug> <task-id>`, `planlet complete <slug>`.
+- Check each task off only after its verification passes. When the last task is
+  checked, run `planlet complete <slug>` to archive it.
+- Run `planlet help [command]` before using a command you have not used here.
+- If no `planlet` executable is available, stop and say so. Do not hand-create
+  or hand-edit planlet files.
+```
+
+`planlet onboard` prints exactly this block.
+
 ## Driving the CLI directly
 
 Everything the skills do is available as commands:
@@ -106,20 +135,21 @@ Running `planlet` with no command displays the active-plan dashboard.
 
 ## Commands
 
-| Command                                                | Purpose                                               |
-| ------------------------------------------------------ | ----------------------------------------------------- |
-| `init [--tools <ids>] [--force]`                       | Create `plans/` and install harness skill copies      |
-| `update [--tools <ids>] [--force]`                     | Refresh installed skill copies from canonical sources |
-| `tools`                                                | Report skill destinations and installation state      |
-| `list [--state <state>] [--completed]`                 | List planlets                                         |
-| `create <slug> [--title <title>]`                      | Scaffold a new planlet                                |
-| `show <slug> [--part plan\|tasks\|summary]`            | Show planlet content                                  |
-| `status <slug>`                                        | Report state and task counts                          |
-| `validate [<slug>\|--all]`                             | Validate planlet structure                            |
-| `tasks <slug> [--remaining\|--completed]`              | List tasks                                            |
-| `task check\|uncheck <slug> <task-id>`                 | Toggle a task checkbox                                |
-| `complete <slug> [--allow-incomplete --reason <text>]` | Archive a planlet under `plans/completed/`            |
-| `help [command]`                                       | Show usage                                            |
+| Command                                                | Purpose                                                                 |
+| ------------------------------------------------------ | ----------------------------------------------------------------------- |
+| `init [--tools <ids>] [--force] [--no-agents]`         | Create `plans/`, install harness skills, write agent onboarding section |
+| `update [--tools <ids>] [--force]`                     | Refresh installed skill copies from canonical sources                   |
+| `tools`                                                | Report skill destinations and installation state                        |
+| `onboard`                                              | Print the agent onboarding snippet                                      |
+| `list [--state <state>] [--completed]`                 | List planlets                                                           |
+| `create <slug> [--title <title>]`                      | Scaffold a new planlet                                                  |
+| `show <slug> [--part plan\|tasks\|summary]`            | Show planlet content                                                    |
+| `status <slug>`                                        | Report state and task counts                                            |
+| `validate [<slug>\|--all]`                             | Validate planlet structure                                              |
+| `tasks <slug> [--remaining\|--completed]`              | List tasks                                                              |
+| `task check\|uncheck <slug> <task-id>`                 | Toggle a task checkbox                                                  |
+| `complete <slug> [--allow-incomplete --reason <text>]` | Archive a planlet under `plans/completed/`                              |
+| `help [command]`                                       | Show usage                                                              |
 
 Global options: `--root <path>` selects the repository root, `--full` returns
 complete `show --part plan|tasks` content, and `--version` prints the version
@@ -133,8 +163,9 @@ generated from them.
 `--tools` accepts comma-separated `agents`, `claude`, `codex`, and
 `github-copilot` IDs. The `agents`, `codex`, and `github-copilot` IDs share the
 `.agents/skills` destination; `github-copilot` names GitHub Copilot explicitly.
-`planlet init --tools none` creates only `plans/`. Locally modified generated
-files require explicit `--force` before replacement.
+`planlet init --tools none` creates only `plans/` and still writes the
+onboarding section to `AGENTS.md`; pass `--no-agents` to skip it. Locally
+modified generated files require explicit `--force` before replacement.
 
 Without `--tools`, `planlet init` asks which destinations to install to when
 run on an interactive terminal, defaulting to those that already contain

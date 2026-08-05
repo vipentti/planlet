@@ -15,6 +15,7 @@ import {
   asWriteConflict,
   isPlanletError,
 } from "../errors/planlet-error.js";
+import { updateAgentFiles, type AgentFileState } from "./agent-snippet.js";
 import {
   HARNESS_ADAPTERS,
   normalizeToolSelector,
@@ -54,6 +55,7 @@ interface InstallationSummary {
   readonly changed: boolean;
   readonly plansInitialized: boolean;
   readonly destinations: readonly HarnessInstallationSummary[];
+  readonly agentFiles: Readonly<Record<string, AgentFileState>>;
 }
 
 /** Summary for stdout plus diagnostics for stderr, never mixed into the data. */
@@ -526,6 +528,7 @@ export function installHarnessSkills(options: {
   readonly operation: "init" | "update";
   readonly tools?: string | undefined;
   readonly force?: boolean | undefined;
+  readonly noAgents?: boolean | undefined;
   readonly source?: CanonicalSkillSource | undefined;
   /** @internal Fault-injection seam for the publish transaction. Tests only. */
   readonly transactionHooks?: InstallTransactionHooks | undefined;
@@ -552,25 +555,30 @@ export function installHarnessSkills(options: {
     );
   }
 
-  if (destinations.length === 0) {
-    const plansInitialized =
-      options.operation === "init" && plansKind === "missing";
-    if (plansInitialized) mkdirSync(plansPath, { recursive: true });
-    return {
-      data: {
-        operation: options.operation,
-        changed: plansInitialized,
-        plansInitialized,
-        destinations: [],
-      },
-      warnings: [],
-    };
-  }
-
   const warnings: string[] = [];
   const { value, releaseWarning } = withHarnessInstallLock(
     options.repositoryRoot,
     () => {
+      const agents = updateAgentFiles({
+        repositoryRoot: options.repositoryRoot,
+        operation: options.operation,
+        skip: options.noAgents,
+      });
+      warnings.push(...agents.warnings);
+
+      if (destinations.length === 0) {
+        const plansInitialized =
+          options.operation === "init" && plansKind === "missing";
+        if (plansInitialized) mkdirSync(plansPath, { recursive: true });
+        return {
+          operation: options.operation,
+          changed: plansInitialized || agents.changed,
+          plansInitialized,
+          destinations: [],
+          agentFiles: agents.files,
+        };
+      }
+
       const source = options.source ?? enumerateCanonicalSkills();
       const inspections = destinations.map((destination) =>
         inspectDestination(destination, source),
@@ -616,9 +624,12 @@ export function installHarnessSkills(options: {
       return {
         operation: options.operation,
         changed:
-          plansInitialized || summaries.some((summary) => summary.changed),
+          plansInitialized ||
+          summaries.some((summary) => summary.changed) ||
+          agents.changed,
         plansInitialized,
         destinations: summaries,
+        agentFiles: agents.files,
       };
     },
     options.lock,

@@ -6,6 +6,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and thi
 
 ## [Unreleased]
 
+### Added
+
+- `planlet onboard` prints a short agent-onboarding snippet for pasting into
+  agent instruction files.
+- `planlet init` writes the onboarding section to `AGENTS.md` by default and
+  to `CLAUDE.md` when that file exists and does not already import
+  `AGENTS.md`, fenced by planlet-owned markers; `--no-agents` skips both
+  files.
+- `planlet update` refreshes present planlet onboarding markers without
+  creating sections in repositories that opted out.
+
 ## [0.2.0] - 2026-08-05
 
 ### Added
