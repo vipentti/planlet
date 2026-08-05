@@ -32,11 +32,10 @@ import {
 } from "./skill-source.js";
 
 export const INSTALLATION_MANIFEST = ".planlet-manifest.json";
-const INSTALLATION_MANIFEST_VERSION = 1;
+const INSTALLATION_MANIFEST_VERSION = 2;
 
 export interface InstallationManifest {
   readonly schemaVersion: typeof INSTALLATION_MANIFEST_VERSION;
-  readonly tools: readonly HarnessToolId[];
   readonly files: Readonly<Record<string, string>>;
 }
 
@@ -96,12 +95,10 @@ function sortedRecord(
 }
 
 export function createInstallationManifest(
-  aliases: readonly HarnessToolId[],
   source: CanonicalSkillSource,
 ): InstallationManifest {
   return {
     schemaVersion: INSTALLATION_MANIFEST_VERSION,
-    tools: [...aliases].sort(),
     files: sortedRecord(
       source.files.map((file) => [file.relativePath, file.digest] as const),
     ),
@@ -151,34 +148,26 @@ export function parseInstallationManifest(
     );
   }
   const candidate = value as Record<string, unknown>;
-  const tools = candidate.tools;
   const files = candidate.files;
-  const validTools =
-    Array.isArray(tools) &&
-    tools.length > 0 &&
-    tools.every(
-      (tool): tool is HarnessToolId =>
-        typeof tool === "string" &&
-        HARNESS_ADAPTERS.some((adapter) => adapter.id === tool),
-    ) &&
-    new Set(tools).size === tools.length;
+  const schemaVersion = candidate.schemaVersion;
+  const isV1 = schemaVersion === 1;
   if (
-    candidate.schemaVersion !== INSTALLATION_MANIFEST_VERSION ||
-    !validTools ||
+    (!isV1 && schemaVersion !== INSTALLATION_MANIFEST_VERSION) ||
+    (schemaVersion === INSTALLATION_MANIFEST_VERSION &&
+      candidate.tools !== undefined) ||
     !isStringRecord(files)
   ) {
     throw new PlanletError(
       "write_conflict",
       `Invalid installation manifest: ${path}`,
       {
-        details: { path, schemaVersion: candidate.schemaVersion },
+        details: { path, schemaVersion },
       },
     );
   }
 
   return {
     schemaVersion: INSTALLATION_MANIFEST_VERSION,
-    tools: [...(tools as HarnessToolId[])],
     files: sortedRecord(Object.entries(files)),
   };
 }
@@ -302,10 +291,7 @@ function inspectDestination(
       ? undefined
       : parseInstallationManifest(manifestText, manifestPath);
   const actualFiles = collectPlanletFiles(destination.path);
-  const desiredManifest = createInstallationManifest(
-    destination.aliases,
-    source,
-  );
+  const desiredManifest = createInstallationManifest(source);
   const desiredManifestText = serializeInstallationManifest(desiredManifest);
   const actualEntries = Object.entries(actualFiles);
   // Without a manifest, an empty destination is a clean install, not a conflict.
@@ -325,11 +311,7 @@ function inspectDestination(
   const hasFiles = actualEntries.length > 0;
   const currentSkillsMatch = sameRecord(actualFiles, desiredManifest.files);
   const manifestMatches =
-    manifest !== undefined &&
-    sameRecord(manifest.files, desiredManifest.files) &&
-    manifest.tools.length === desiredManifest.tools.length &&
-    new Set(manifest.tools).size === new Set(desiredManifest.tools).size &&
-    desiredManifest.tools.every((tool) => manifest.tools.includes(tool));
+    manifest !== undefined && sameRecord(manifest.files, desiredManifest.files);
   const state: HarnessState =
     manifest === undefined
       ? hasFiles
