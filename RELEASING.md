@@ -104,7 +104,10 @@ through the helper's historical mode, creates an annotated signed tag, verifies
 it locally, and only pushes with an explicit `--push`. If the automatic flow
 cannot run (for example, workflow or environment misconfiguration), an operator
 can create and push the tag this way; a later workflow rerun then finds the
-exact tag, verifies it, and continues publication.
+exact tag, verifies it, and continues publication. Break-glass tags must use
+the canonical `Release v<version>` subject and the same dedicated release-only
+signing key identified by `RELEASE_GPG_FINGERPRINT`; the workflow's isolated
+GPG keyring can only verify a tag signed by that exact key.
 
 ### Recovery
 

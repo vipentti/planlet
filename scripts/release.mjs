@@ -567,7 +567,7 @@ function cmdTag() {
         "--target",
         headSha,
         "--message",
-        "v" + version,
+        "Release v" + version,
       ],
       { cwd: root, encoding: "utf8" },
     );
@@ -611,7 +611,7 @@ function cmdTag() {
       "-s",
       "v" + version,
       "-m",
-      "v" + version,
+      "Release v" + version,
       "HEAD",
     );
     if (tag.status !== 0)
@@ -626,7 +626,7 @@ function cmdTag() {
         "--target",
         headSha,
         "--message",
-        "v" + version,
+        "Release v" + version,
       ],
       { cwd: root, encoding: "utf8" },
     );

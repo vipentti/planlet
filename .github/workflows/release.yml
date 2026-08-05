@@ -54,6 +54,8 @@ jobs:
     env:
       VERSION: ${{ needs.detect.outputs.version }}
     steps:
+      # --- Verification first: nothing irreversible happens before the tag. ---
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
@@ -71,6 +73,61 @@ jobs:
             echo "$GITHUB_SHA is not reachable from origin/main" >&2
             exit 1
           }
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+
+      - run: npm ci
+      - run: npm run format:check
+      - run: npm run lint
+      - run: npm run type-check
+      - run: npm run build
+      - run: npm test
+      - run: git diff --check
+
+      - name: Verify generated skills
+        run: |
+          node dist/planlet.mjs update --tools all
+          git diff --exit-code -- .agents .claude
+
+      - name: Verify clean tagged source
+        run: test -z "$(git status --porcelain)"
+
+      - name: Verify committed changelog release state
+        run: node scripts/assert-changelog-release-ready.mjs --verify-release
+
+      - name: Extract release notes
+        run: |
+          echo "PACKAGE_NAME=$(node -p "require('./package.json').name")" >> "$GITHUB_ENV"
+          node scripts/changelog.mjs "$VERSION" > "$RUNNER_TEMP/release-notes.md"
+
+      - name: Ensure npm supports trusted publishing
+        run: npm install --global npm@^11.5.1
+
+      - name: Build reviewed package artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Pack the already-verified build; do not re-run prepack/build.
+          npm pack --json --ignore-scripts --pack-destination "$RUNNER_TEMP" > "$RUNNER_TEMP/pack.json"
+          node --input-type=module <<'NODE'
+          import assert from "node:assert/strict";
+          import { readFileSync, appendFileSync } from "node:fs";
+          const report = JSON.parse(readFileSync(`${process.env.RUNNER_TEMP}/pack.json`));
+          assert.ok(Array.isArray(report) && report[0], "npm pack --json must return a non-empty array");
+          const packed = report[0];
+          assert.equal(typeof packed.filename, "string");
+          assert.equal(typeof packed.integrity, "string");
+          appendFileSync(
+            process.env.GITHUB_ENV,
+            `PACKAGE_TARBALL=${process.env.RUNNER_TEMP}/${packed.filename}\n`,
+          );
+          NODE
+
+      # --- Release mutations: GPG key material, tag, npm, GitHub release. ---
 
       - name: Configure GPG signing for release tags
         env:
@@ -152,73 +209,23 @@ jobs:
           tag="v${VERSION}"
           verified=0
           for attempt in 1 2 3 4 5; do
-            verification=$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${TAG_OBJECT}" --jq .verification)
-            if printf '%s' "$verification" | jq -e '.verified == true' >/dev/null; then
-              verified=1
-              break
+            if verification=$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${TAG_OBJECT}" --jq .verification 2>/dev/null); then
+              if printf '%s' "$verification" | jq -e '.verified == true' >/dev/null; then
+                verified=1
+                break
+              fi
+              echo "GitHub tag signature not verified yet (attempt ${attempt})"
+            else
+              echo "GitHub tag verification API not available yet (attempt ${attempt})"
             fi
             if [ "$attempt" -lt 5 ]; then
-              echo "Waiting for GitHub tag signature verification (attempt ${attempt})..."
               sleep 6
             fi
           done
           test "$verified" = 1 || {
-            echo "GitHub does not report a verified signature on ${tag}" >&2
+            echo "GitHub does not report a verified signature on ${tag} after 5 attempts" >&2
             exit 1
           }
-
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: 22
-          registry-url: https://registry.npmjs.org
-          package-manager-cache: false
-
-      - run: npm ci
-      - run: npm run format:check
-      - run: npm run lint
-      - run: npm run type-check
-      - run: npm run build
-      - run: npm test
-      - run: git diff --check
-
-      - name: Verify generated skills
-        run: |
-          node dist/planlet.mjs update --tools all
-          git diff --exit-code -- .agents .claude
-
-      - name: Verify clean tagged source
-        run: test -z "$(git status --porcelain)"
-
-      - name: Verify committed changelog release state
-        run: node scripts/assert-changelog-release-ready.mjs --verify-release
-
-      - name: Extract release notes
-        run: |
-          echo "PACKAGE_NAME=$(node -p "require('./package.json').name")" >> "$GITHUB_ENV"
-          node scripts/changelog.mjs "$VERSION" > "$RUNNER_TEMP/release-notes.md"
-
-      - name: Ensure npm supports trusted publishing
-        run: npm install --global npm@^11.5.1
-
-      - name: Build reviewed package artifact
-        shell: bash
-        run: |
-          set -euo pipefail
-          # Pack the already-verified build; do not re-run prepack/build.
-          npm pack --json --ignore-scripts --pack-destination "$RUNNER_TEMP" > "$RUNNER_TEMP/pack.json"
-          node --input-type=module <<'NODE'
-          import assert from "node:assert/strict";
-          import { readFileSync, appendFileSync } from "node:fs";
-          const report = JSON.parse(readFileSync(`${process.env.RUNNER_TEMP}/pack.json`));
-          assert.ok(Array.isArray(report) && report[0], "npm pack --json must return a non-empty array");
-          const packed = report[0];
-          assert.equal(typeof packed.filename, "string");
-          assert.equal(typeof packed.integrity, "string");
-          appendFileSync(
-            process.env.GITHUB_ENV,
-            `PACKAGE_TARBALL=${process.env.RUNNER_TEMP}/${packed.filename}\n`,
-          );
-          NODE
 
       - name: Publish or verify existing package
         shell: bash

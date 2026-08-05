@@ -698,6 +698,14 @@ test("tag --execute --push creates, verifies, pushes, and verifies the remote ta
   const out = release(repo, "tag", "--version", GOOD, "--execute", "--push");
   assert.equal(out.status, 0, out.stderr);
   assert.equal(git(repo, "verify-tag", "v" + GOOD).status, 0);
+  const subject = git(
+    repo,
+    "tag",
+    "-l",
+    "--format=%(contents:subject)",
+    "v" + GOOD,
+  );
+  assert.equal(subject.stdout.trim(), "Release v" + GOOD);
   const remote = git(
     repo,
     "ls-remote",
@@ -713,7 +721,7 @@ test("tag --execute --push creates, verifies, pushes, and verifies the remote ta
 
 test("tag two-step workflow validates an existing local tag and pushes later", () => {
   const repo = makeRepo({ released: true });
-  git(repo, "tag", "-a", "-s", "v" + GOOD, "-m", "v" + GOOD, "HEAD");
+  git(repo, "tag", "-a", "-s", "v" + GOOD, "-m", "Release v" + GOOD, "HEAD");
 
   // Step 1: report ready, do not push.
   const step1 = release(repo, "tag", "--version", GOOD, "--execute");
@@ -728,9 +736,43 @@ test("tag two-step workflow validates an existing local tag and pushes later", (
   const step2 = release(repo, "tag", "--version", GOOD, "--execute", "--push");
   assert.equal(step2.status, 0, step2.stderr);
 
-  // Messages that are not exactly v<version> are refused.
+  // Messages that are not the canonical "Release v<version>" subject are refused.
   const bad = makeRepo({ released: true });
   git(bad, "tag", "-a", "-s", "v" + GOOD, "-m", "wrong message", "HEAD");
   const badOut = release(bad, "tag", "--version", GOOD, "--execute", "--push");
   assert.notEqual(badOut.status, 0);
+});
+
+test("tag rejects an existing local tag with a bare v<version> subject", () => {
+  const repo = makeRepo({ released: true });
+  git(repo, "tag", "-a", "-s", "v" + GOOD, "-m", "v" + GOOD, "HEAD");
+  const out = release(repo, "tag", "--version", GOOD, "--execute");
+  assert.notEqual(out.status, 0);
+  assert.match(out.stderr, /message is/);
+  assert.equal(
+    git(repo, "ls-remote", "--exit-code", "origin", "refs/tags/v" + GOOD)
+      .status,
+    2,
+  );
+});
+
+test("break-glass tag satisfies the same verifier arguments as the workflow", () => {
+  const repo = makeRepo({ released: true });
+  const out = release(repo, "tag", "--version", GOOD, "--execute");
+  assert.equal(out.status, 0, out.stderr);
+  const head = git(repo, "rev-parse", "HEAD").stdout.trim();
+  const verify = spawnSync(
+    process.execPath,
+    [
+      join(repo.dir, "scripts", "verify-release-tag.mjs"),
+      "--tag",
+      "v" + GOOD,
+      "--target",
+      head,
+      "--message",
+      "Release v" + GOOD,
+    ],
+    { cwd: repo.dir, encoding: "utf8" },
+  );
+  assert.equal(verify.status, 0, verify.stderr);
 });
