@@ -1,6 +1,9 @@
 ---
 name: planlet-complete
 description: Validate and safely complete or archive exactly one active repository-local Planlet with a UTC audit record. Use when a user asks to finish the Planlet lifecycle, archive completed work, or explicitly override incomplete tasks with a recorded reason.
+allowed-tools: Bash(planlet:*)
+compatibility: Requires planlet CLI.
+license: MIT
 ---
 
 # Planlet Complete
