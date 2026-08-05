@@ -9,7 +9,7 @@
       tests (compact plan, compact tasks, exact schema, `--full` raw, summary
       unchanged, non-show untruncated). Update README/CLI-help/design-doc `--full`
       wording and add the `[Unreleased]` changelog entry.
-- [ ] T2 Record the interactive-init tool-selector decision in AGENTS.md
+- [x] T2 Record the interactive-init tool-selector decision in AGENTS.md
 - [x] T3 Mechanical deletions PR (no behavior change): remove dead
       `scripts/release.mjs` symbols (`execSync`, `parseVersionSuffix`,
       `getChangelogReleaseDate`, `escapeRegex`), the fake `DECISION_RULES`

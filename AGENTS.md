@@ -108,6 +108,7 @@ accepting rather than restating the line count.
 - **Lock dependency injection** (`write`, `rename`, `remove`, `pid`). The seams for the acquire-failure and release-failure tests. Removing them removes those tests.
 - **`transactionHooks`** (`src/core/harness-installer.ts`, marked `@internal`). The rollback, recovery-directory, and cleanup-warning paths are unreachable through the public API. Three steps, one per distinct outcome.
 - **`--release-date`** (`scripts/assert-changelog-release-ready.mjs`). Not dead code because CI does not pass it: the caller is the human doing a release, per `RELEASING.md`. It is what stops a past-dated release. The duplicate-flag pre-scan stays for the same reason — silent last-wins would ship the wrong date.
+- **Interactive `init` tool selector** (`src/cli.ts`). Kept deliberately: the first-run destination prompt was a product decision (2026-08-04, completed plan `plans/completed/2026-07-27-interactive-init-tool-selection/`), not accidental hand-rolled TTY machinery. `--tools` covers every non-interactive path but does not replace the prompt; reviews proposing the cut must say which threat they accept.
 
 ## Architecture and implementation direction
 
