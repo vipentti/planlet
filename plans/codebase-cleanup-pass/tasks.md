@@ -1,6 +1,6 @@
 # Tasks: Codebase Cleanup Pass
 
-- [ ] T1 Narrow TOON output truncation to `show --part plan|tasks` content: make
+- [x] T1 Narrow TOON output truncation to `show --part plan|tasks` content: make
       `renderToon` ordinary serialization, compact only the show `content` field in
       `handleShow` preserving the existing compact schema (`preview`,
       `truncated: true`, `originalCharacters`, `shownCharacters`, `hint`), leave

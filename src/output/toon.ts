@@ -9,20 +9,13 @@ import type { StructuredError } from "../errors/planlet-error.js";
 
 export const DEFAULT_MAX_STRING_CHARACTERS = 4_096;
 
-export interface ToonRenderOptions {
-  /** Disable the normal compact-content limit. */
-  readonly full?: boolean | undefined;
-  /** Primarily injectable so the truncation boundary can be tested cheaply. */
-  readonly maxStringCharacters?: number | undefined;
-}
-
 export interface RenderedOutput {
   readonly stdout: string;
   readonly stderr: string;
   readonly exitCode: ExitCode;
 }
 
-interface TruncatedString {
+interface CompactShowContent {
   readonly preview: string;
   readonly truncated: true;
   readonly originalCharacters: number;
@@ -30,10 +23,11 @@ interface TruncatedString {
   readonly hint: "Re-run with --full for complete content";
 }
 
-function truncatedString(
+/** Compact a show content field, returning the raw string when it fits. */
+export function compactShowContent(
   value: string,
-  maximum: number,
-): TruncatedString | string {
+  maximum: number = DEFAULT_MAX_STRING_CHARACTERS,
+): CompactShowContent | string {
   const characters = Array.from(value);
   if (characters.length <= maximum) {
     return value;
@@ -46,24 +40,6 @@ function truncatedString(
     shownCharacters: maximum,
     hint: "Re-run with --full for complete content",
   };
-}
-
-function truncateLargeStrings(value: unknown, maximum: number): unknown {
-  if (typeof value === "string") {
-    return truncatedString(value, maximum);
-  }
-  if (Array.isArray(value)) {
-    return value.map((entry) => truncateLargeStrings(entry, maximum));
-  }
-  if (value !== null && typeof value === "object") {
-    return Object.fromEntries(
-      Object.entries(value).map(([key, entry]) => [
-        key,
-        truncateLargeStrings(entry, maximum),
-      ]),
-    );
-  }
-  return value;
 }
 
 function withTrailingNewline(value: unknown): string {
@@ -91,17 +67,9 @@ export function renderToonError(error: StructuredError): RenderedOutput {
 export function renderToon(
   data: unknown,
   warnings: readonly string[] = [],
-  options: ToonRenderOptions = {},
 ): RenderedOutput {
-  const maximum = options.maxStringCharacters ?? DEFAULT_MAX_STRING_CHARACTERS;
-  if (!Number.isSafeInteger(maximum) || maximum < 1) {
-    throw new RangeError("maxStringCharacters must be a positive safe integer");
-  }
-
-  const output =
-    options.full === true ? data : truncateLargeStrings(data, maximum);
   return {
-    stdout: withTrailingNewline(output),
+    stdout: withTrailingNewline(data),
     stderr:
       warnings.length === 0
         ? ""

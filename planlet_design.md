@@ -595,7 +595,8 @@ Proposed formats:
 - `--json`: stable JSON for integrations and tests. Deferred beyond Phase 1.
 - `--human`: readable tables and explanatory text. Deferred beyond Phase 1.
 - `--quiet`: identifiers or minimal success output where appropriate. Deferred beyond Phase 1.
-- `--full`: disable normal truncation for large task text or plan previews.
+- `--full`: return the complete `show --part plan|tasks` content instead of the
+  compact preview.
 
 The default should be deterministic rather than changing automatically based on whether stdout is a terminal. Agents and scripts should not receive different schemas in different environments.
 
@@ -607,7 +608,8 @@ Output rules:
 - List records should normally contain only slug, state, completed count, and total count.
 - Completed-plan output should keep the logical slug distinct from the archive name and path, and expose the recorded completion timestamp when the selected format requests completion details.
 - Empty results must be explicit, for example `plans[0]` plus summary counts.
-- Large content should be truncated with a size hint and a `--full` escape hatch.
+- Large `show --part plan|tasks` content should be truncated with a size hint;
+  `--full` returns the complete content.
 - `--json` output should include a `schemaVersion` integer field so downstream integrations can detect breaking output changes independently of the CLI's own version number.
 
 ### 13.5 Structured errors

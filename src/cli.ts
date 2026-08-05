@@ -55,6 +55,7 @@ Commands:
 
 Global options:
   --version   Print the Planlet version and exit.
+  --full      Return complete show --part plan|tasks content.
 
 Running planlet without a command displays the active-plan dashboard.
 `;
