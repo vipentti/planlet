@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -13,6 +13,13 @@ const releaseReady = join(
   "scripts",
   "assert-changelog-release-ready.mjs",
 );
+
+const tempDirs: string[] = [];
+test.after(() => {
+  for (const dir of tempDirs) {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 function extract(version: string, changelogPath: string) {
   return spawnSync(process.execPath, [script, version, changelogPath], {
@@ -29,6 +36,7 @@ function assertReady(args: readonly string[], env: NodeJS.ProcessEnv = {}) {
 
 function fixture(changelog: string, version = "0.1.0") {
   const dir = mkdtempSync(join(tmpdir(), "planlet-changelog-ready-"));
+  tempDirs.push(dir);
   const changelogPath = join(dir, "CHANGELOG.md");
   const packagePath = join(dir, "package.json");
   writeFileSync(changelogPath, changelog);
@@ -51,6 +59,7 @@ const later = utcDay(2);
 
 test("extracts one non-empty version and rejects empty sections from an isolated file", () => {
   const dir = mkdtempSync(join(tmpdir(), "planlet-changelog-"));
+  tempDirs.push(dir);
   const changelogPath = join(dir, "changelog.md");
   writeFileSync(
     changelogPath,

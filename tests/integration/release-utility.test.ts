@@ -7,6 +7,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  rmSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -21,6 +22,13 @@ const sourceHelper = join(
   "scripts",
   "assert-changelog-release-ready.mjs",
 );
+
+const tempDirs: string[] = [];
+test.after(() => {
+  for (const dir of tempDirs) {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 interface Repo {
   readonly dir: string;
@@ -93,6 +101,7 @@ interface MakeOptions {
 function makeRepo(options: MakeOptions = {}): Repo {
   const version = options.version ?? "0.1.0";
   const base = mkdtempSync(join(tmpdir(), "planlet-release-"));
+  tempDirs.push(base);
   const dir = join(base, "work");
   const origin = join(base, "origin.git");
   mkdirSync(dir);

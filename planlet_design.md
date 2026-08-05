@@ -38,7 +38,7 @@ Planlet deliberately provides less documentation ceremony than specification-dri
 
 **Project name:** Planlet  
 **CLI executable:** `planlet`  
-**Tagline:** *Small plans. Clear handoffs.*
+**Tagline:** _Small plans. Clear handoffs._
 
 A **planlet** is a small, executable, reviewable unit of intended work. The name communicates the core distinction from heavier specification systems: Planlet manages focused plans rather than a permanent specification corpus or full project roadmap.
 
@@ -479,14 +479,14 @@ A newly created scaffold has zero recognized tasks and therefore derives the `dr
 
 Avoid mandatory status frontmatter in the MVP. Status can be calculated from file location and task progress:
 
-| Condition | Derived state |
-|---|---|
-| Required files missing or malformed | `invalid` |
-| Valid files but zero recognized tasks | `draft` |
-| Tasks exist and none are checked | `planned` |
-| Some but not all tasks are checked | `in_progress` |
-| All tasks are checked in an active directory | `ready_to_complete` |
-| Planlet is under a valid date-prefixed archive in `plans/completed/` | `completed` |
+| Condition                                                            | Derived state       |
+| -------------------------------------------------------------------- | ------------------- |
+| Required files missing or malformed                                  | `invalid`           |
+| Valid files but zero recognized tasks                                | `draft`             |
+| Tasks exist and none are checked                                     | `planned`           |
+| Some but not all tasks are checked                                   | `in_progress`       |
+| All tasks are checked in an active directory                         | `ready_to_complete` |
+| Planlet is under a valid date-prefixed archive in `plans/completed/` | `completed`         |
 
 Completed planlets should still be structurally inspectable. A completed planlet with unchecked tasks and no override record should produce a hygiene warning.
 
@@ -750,23 +750,23 @@ Do not maintain separate hand-written Claude, Codex, and generic versions of the
 
 Suggested initial tool IDs and project-local skill destinations:
 
-| Tool ID | Harness | Skill path pattern | Command adapter |
-|---|---|---|---|
-| `agents` | Generic Agent Skills | `.agents/skills/planlet-*/SKILL.md` | None |
-| `claude` | Claude Code | `.claude/skills/planlet-*/SKILL.md` | Optional `.claude/commands/planlet/<id>.md` |
-| `codex` | Codex | `.agents/skills/planlet-*/SKILL.md` | None; skills-first |
+| Tool ID  | Harness              | Skill path pattern                  | Command adapter                             |
+| -------- | -------------------- | ----------------------------------- | ------------------------------------------- |
+| `agents` | Generic Agent Skills | `.agents/skills/planlet-*/SKILL.md` | None                                        |
+| `claude` | Claude Code          | `.claude/skills/planlet-*/SKILL.md` | Optional `.claude/commands/planlet/<id>.md` |
+| `codex`  | Codex                | `.agents/skills/planlet-*/SKILL.md` | None; skills-first                          |
 
 Codex discovers repository-local skills from `.agents/skills` between the current working directory and repository root. It does not require a separate `.codex/skills` copy. The `agents` and `codex` tool IDs therefore target the same project-local directory; the installer must coalesce them when both are requested. `.codex/` remains available for Codex-specific configuration, but is not a Planlet skill destination.
 
 Likely later additions, following the same data-driven registry pattern:
 
-| Tool ID | Skill path pattern |
-|---|---|
-| `cursor` | `.cursor/skills/planlet-*/SKILL.md` |
-| `gemini` | `.gemini/skills/planlet-*/SKILL.md` |
-| `github-copilot` | `.github/skills/planlet-*/SKILL.md` |
-| `opencode` | `.opencode/skills/planlet-*/SKILL.md` |
-| `antigravity` | `.agent/skills/planlet-*/SKILL.md` |
+| Tool ID          | Skill path pattern                    |
+| ---------------- | ------------------------------------- |
+| `cursor`         | `.cursor/skills/planlet-*/SKILL.md`   |
+| `gemini`         | `.gemini/skills/planlet-*/SKILL.md`   |
+| `github-copilot` | `.github/skills/planlet-*/SKILL.md`   |
+| `opencode`       | `.opencode/skills/planlet-*/SKILL.md` |
+| `antigravity`    | `.agent/skills/planlet-*/SKILL.md`    |
 
 These paths follow the general convention demonstrated by OpenSpec's multi-tool installer. Exact behavior should be covered by adapter tests because harness conventions can evolve.
 

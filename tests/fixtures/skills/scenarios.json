@@ -15,14 +15,18 @@
     "skill": "planlet-plan",
     "prompt": "Plan adding --csv to report command with unit and integration coverage.",
     "expectedDecision": "propose-without-extra-questions",
-    "evidence": ["If the request is already precise, proceed without ceremonial questions"]
+    "evidence": [
+      "If the request is already precise, proceed without ceremonial questions"
+    ]
   },
   {
     "id": "declined-persistence",
     "skill": "planlet-plan",
     "prompt": "Do not save proposed plan.",
     "expectedDecision": "leave-repository-unchanged",
-    "evidence": ["If confirmation is declined or absent, leave the repository unchanged"]
+    "evidence": [
+      "If confirmation is declined or absent, leave the repository unchanged"
+    ]
   },
   {
     "id": "consistent-revision",
@@ -36,7 +40,9 @@
     "skill": "planlet-implement",
     "prompt": "Implement plan after underlying API changed.",
     "expectedDecision": "pause-on-material-drift",
-    "evidence": ["Treat drift as material when it invalidates the stated approach"]
+    "evidence": [
+      "Treat drift as material when it invalidates the stated approach"
+    ]
   },
   {
     "id": "failed-verification",
@@ -53,14 +59,20 @@
     "skill": "planlet-implement",
     "prompt": "Implement without slug while several active planlets exist.",
     "expectedDecision": "request-explicit-selection",
-    "evidence": ["ask user to choose when several exist", "Never select by recency or output order"]
+    "evidence": [
+      "ask user to choose when several exist",
+      "Never select by recency or output order"
+    ]
   },
   {
     "id": "incomplete-completion",
     "skill": "planlet-complete",
     "prompt": "Archive planlet with unchecked tasks.",
     "expectedDecision": "request-confirmed-override",
-    "evidence": ["obtain explicit confirmation plus a non-empty reason", "Do not reuse general implementation approval"]
+    "evidence": [
+      "obtain explicit confirmation plus a non-empty reason",
+      "Do not reuse general implementation approval"
+    ]
   },
   {
     "id": "portable-canonical-workflow",
