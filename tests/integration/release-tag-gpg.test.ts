@@ -61,16 +61,7 @@ function startGpgAgent(home: string) {
 function gpg(home: string, ...args: string[]) {
   const result = spawnSync(
     "gpg",
-    [
-      "--batch",
-      "--homedir",
-      home,
-      "--pinentry-mode",
-      "loopback",
-      "--passphrase",
-      "",
-      ...args,
-    ],
+    ["--batch", "--pinentry-mode", "loopback", "--passphrase", "", ...args],
     { encoding: "utf8", env: gpgEnv(home) },
   );
   assert.equal(result.status, 0, result.stdout + result.stderr);
@@ -117,7 +108,7 @@ const expectedKey = makeKey(join(fixtureRoot, "expected"), "expected-release");
 const secondKey = makeKey(join(fixtureRoot, "second"), "second-release");
 
 function importMaterial(home: string, material: string) {
-  const result = spawnSync("gpg", ["--batch", "--homedir", home, "--import"], {
+  const result = spawnSync("gpg", ["--batch", "--import"], {
     input: material,
     encoding: "utf8",
     env: gpgEnv(home),

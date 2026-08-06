@@ -45,16 +45,7 @@ function git(repo: string, ...args: string[]) {
 function gpg(home: string, ...args: string[]) {
   const result = spawnSync(
     "gpg",
-    [
-      "--batch",
-      "--homedir",
-      home,
-      "--pinentry-mode",
-      "loopback",
-      "--passphrase",
-      "",
-      ...args,
-    ],
+    ["--batch", "--pinentry-mode", "loopback", "--passphrase", "", ...args],
     { encoding: "utf8", env: gpgEnv(home) },
   );
   assert.equal(result.status, 0, result.stdout + result.stderr);

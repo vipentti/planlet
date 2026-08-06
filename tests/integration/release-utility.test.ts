@@ -161,15 +161,11 @@ function makeRepo(options: MakeOptions = {}): Repo {
   // Only the matching key is trusted; a different imported key fails commit verification.
   if (options.badSigningKey) {
     const other = makeGpgFixture(join(base, "other-gnupg"));
-    const imported = spawnSync(
-      "gpg",
-      ["--batch", "--homedir", gpgFixture.home, "--import"],
-      {
-        input: exportGpgKey(other.home, other.fingerprint, true),
-        encoding: "utf8",
-        env: gpgEnv(gpgFixture.home),
-      },
-    );
+    const imported = spawnSync("gpg", ["--batch", "--import"], {
+      input: exportGpgKey(other.home, other.fingerprint, true),
+      encoding: "utf8",
+      env: gpgEnv(gpgFixture.home),
+    });
     assert.equal(imported.status, 0, imported.stderr);
     runGit(dir, "config", "user.signingkey", other.fingerprint);
   }
@@ -251,16 +247,7 @@ function makeRepo(options: MakeOptions = {}): Repo {
 function runGpg(home: string, ...args: string[]) {
   return spawnSync(
     "gpg",
-    [
-      "--batch",
-      "--homedir",
-      home,
-      "--pinentry-mode",
-      "loopback",
-      "--passphrase",
-      "",
-      ...args,
-    ],
+    ["--batch", "--pinentry-mode", "loopback", "--passphrase", "", ...args],
     { encoding: "utf8", env: gpgEnv(home) },
   );
 }
