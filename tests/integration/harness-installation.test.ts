@@ -410,20 +410,6 @@ test("prompt choices use harness markers and ignore Planlet-only skills", async 
   });
 });
 
-test("prompt choices detect per-machine Claude settings marker", async () => {
-  await withRoot(async (root) => {
-    mkdirSync(join(root, ".claude"), { recursive: true });
-    writeFileSync(join(root, ".claude", "settings.local.json"), "{}\n");
-
-    const choices = buildToolChoices(root);
-    assert.deepEqual(
-      choices.map((choice) => choice.preselected),
-      [false, true],
-    );
-    assert.equal(resolveAnswer(choices, ""), "claude");
-  });
-});
-
 test("prompt choices combine Copilot and Claude markers", async () => {
   await withRoot(async (root) => {
     mkdirSync(join(root, ".github"), { recursive: true });

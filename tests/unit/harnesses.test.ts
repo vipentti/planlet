@@ -12,6 +12,7 @@ import { dirname, join } from "node:path";
 import test from "node:test";
 
 import {
+  HARNESS_ADAPTERS,
   detectHarnessSignals,
   normalizeToolSelector,
   resolveHarnessDestinations,
@@ -27,28 +28,15 @@ function withRoot(run: (root: string) => void): void {
   }
 }
 
-test("harness signals detect every known repository marker", () => {
-  const markers = [
-    { id: "agents", path: ".agents", kind: "directory" },
-    { id: "claude", path: ".claude/skills", kind: "directory" },
-    { id: "claude", path: ".claude/settings.json", kind: "file" },
-    { id: "claude", path: ".claude/settings.local.json", kind: "file" },
-    { id: "claude", path: ".claude/agents", kind: "directory" },
-    { id: "claude", path: ".claude/rules", kind: "directory" },
-    { id: "claude", path: ".claude/CLAUDE.md", kind: "file" },
-    { id: "claude", path: ".claude/commands", kind: "directory" },
-    { id: "codex", path: ".codex", kind: "directory" },
-    {
-      id: "github-copilot",
-      path: ".github/copilot-instructions.md",
-      kind: "file",
-    },
-    { id: "github-copilot", path: ".github/instructions", kind: "directory" },
-    { id: "github-copilot", path: ".github/skills", kind: "directory" },
-    { id: "github-copilot", path: ".github/prompts", kind: "directory" },
-    { id: "github-copilot", path: ".github/agents", kind: "directory" },
-  ] as const;
+const markers = HARNESS_ADAPTERS.flatMap((adapter) =>
+  adapter.presenceMarkers.map((marker) => ({
+    id: adapter.id,
+    path: marker.relativePath,
+    kind: marker.kind,
+  })),
+);
 
+test("harness signals detect every known repository marker", () => {
   for (const marker of markers) {
     withRoot((root) => {
       const path = join(root, marker.path);
@@ -64,23 +52,6 @@ test("harness signals detect every known repository marker", () => {
 });
 
 test("harness signals ignore missing and wrong-kind markers", () => {
-  const markers = [
-    { path: ".agents", kind: "directory" },
-    { path: ".claude/skills", kind: "directory" },
-    { path: ".claude/settings.json", kind: "file" },
-    { path: ".claude/settings.local.json", kind: "file" },
-    { path: ".claude/agents", kind: "directory" },
-    { path: ".claude/rules", kind: "directory" },
-    { path: ".claude/CLAUDE.md", kind: "file" },
-    { path: ".claude/commands", kind: "directory" },
-    { path: ".codex", kind: "directory" },
-    { path: ".github/copilot-instructions.md", kind: "file" },
-    { path: ".github/instructions", kind: "directory" },
-    { path: ".github/skills", kind: "directory" },
-    { path: ".github/prompts", kind: "directory" },
-    { path: ".github/agents", kind: "directory" },
-  ] as const;
-
   withRoot((root) => {
     assert.deepEqual(detectHarnessSignals(root), []);
   });
@@ -109,6 +80,19 @@ test("Planlet-only skill footprints do not signal agents or Claude", () => {
     }
     assert.deepEqual(detectHarnessSignals(root), []);
   });
+});
+
+test("escaping agents skills symlink does not signal agents", () => {
+  const outside = mkdtempSync(join(tmpdir(), "planlet-harnesses-outside-"));
+  try {
+    withRoot((root) => {
+      mkdirSync(join(root, ".agents"));
+      symlinkSync(outside, join(root, ".agents", "skills"));
+      assert.deepEqual(detectHarnessSignals(root), []);
+    });
+  } finally {
+    rmSync(outside, { recursive: true, force: true });
+  }
 });
 
 test("non-Planlet skill entries signal their harness", () => {

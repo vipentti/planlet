@@ -1,5 +1,4 @@
 import { readdirSync, type Dirent } from "node:fs";
-import { join } from "node:path";
 
 import { PlanletError } from "../errors/planlet-error.js";
 import { resolveSafePath, tryLstat } from "./paths.js";
@@ -119,20 +118,42 @@ function hasMarker(repositoryRoot: string, marker: HarnessMarker): boolean {
   if (marker.kind === "file" && !stats.isFile()) return false;
   if (marker.planletOnly === undefined) return true;
 
-  const entries = readdirSync(path, { withFileTypes: true });
   if (marker.planletOnly === "skills-directory") {
     return !isPlanletOnlySkillsDirectory(path);
   }
 
+  const entries = readdirSync(path, { withFileTypes: true });
+  const skillsEntry = entries[0];
   if (
+    skillsEntry === undefined ||
     entries.length !== 1 ||
-    entries[0]!.name !== "skills" ||
-    !entries[0]!.isDirectory()
+    skillsEntry.name !== "skills"
   ) {
     return true;
   }
 
-  return !isPlanletOnlySkillsDirectory(join(path, "skills"));
+  if (!skillsEntry.isSymbolicLink() && !skillsEntry.isDirectory()) {
+    return true;
+  }
+
+  let skillsPath: string;
+  try {
+    skillsPath = resolveSafePath(
+      repositoryRoot,
+      ...marker.relativePath.split("/"),
+      "skills",
+    );
+  } catch (error) {
+    if (error instanceof PlanletError && error.code === "unsafe_path") {
+      return false;
+    }
+    throw error;
+  }
+
+  const skillsStats = tryLstat(skillsPath);
+  return skillsStats === null || !skillsStats.isDirectory()
+    ? true
+    : !isPlanletOnlySkillsDirectory(skillsPath);
 }
 
 export function detectHarnessSignals(
