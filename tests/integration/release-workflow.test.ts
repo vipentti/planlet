@@ -37,6 +37,13 @@ function bashPath(path: string): string {
   return `/${path.slice(0, 1).toLowerCase()}${path.slice(2).replaceAll("\\", "/")}`;
 }
 
+function bashExecutable(): string {
+  if (process.platform !== "win32") return "bash";
+  const result = spawnSync("where", ["bash"], { encoding: "utf8" });
+  assert.equal(result.status, 0, result.stderr);
+  return result.stdout.split(/\r?\n/).find(Boolean)?.trim() ?? "bash";
+}
+
 function jobSection(name: string, next?: string): string {
   const start = indexOfLine((line) => line.trim() === name + ":");
   const end = next
@@ -109,7 +116,7 @@ function runTagProbe(exitCode: number) {
   const script = join(dir, "probe.sh");
   writeFileSync(script, shellBlock("Check remote release tag"));
   return {
-    result: spawnSync("bash", [script], {
+    result: spawnSync(bashExecutable(), [script], {
       cwd: dir,
       encoding: "utf8",
       env: {

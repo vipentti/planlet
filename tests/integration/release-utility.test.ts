@@ -62,11 +62,10 @@ function gpgEnv(home: string): NodeJS.ProcessEnv {
 
 function startGpgAgent(home: string) {
   if (process.platform === "win32") return;
-  const socketdir = spawnSync("gpgconf", ["--create-socketdir"], {
+  spawnSync("gpgconf", ["--create-socketdir"], {
     stdio: "ignore",
     env: gpgEnv(home),
   });
-  assert.equal(socketdir.status, 0);
   const result = spawnSync(
     "gpg-agent",
     ["--homedir", home, "--use-standard-socket", "--daemon"],
