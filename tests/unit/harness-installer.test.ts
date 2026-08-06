@@ -16,13 +16,16 @@ import { dirname, join } from "node:path";
 import test from "node:test";
 
 import {
-  INSTALLATION_MANIFEST,
-  createInstallationManifest,
   detectHarnesses,
   installHarnessSkills,
+} from "../../src/core/harness-installer.js";
+import {
+  INSTALLATION_MANIFEST,
+  createInstallationManifest,
   parseInstallationManifest,
   serializeInstallationManifest,
-} from "../../src/core/harness-installer.js";
+  type InstallationManifest,
+} from "../../src/core/harness-manifest.js";
 import {
   HARNESS_INSTALL_LOCK_NAME,
   planletLockRoot,
@@ -71,7 +74,8 @@ const BASE_SOURCE = source({
 });
 
 test("manifest schema and hashes are deterministic and validated", () => {
-  const manifest = createInstallationManifest(BASE_SOURCE);
+  const manifest: InstallationManifest =
+    createInstallationManifest(BASE_SOURCE);
   const serialized = serializeInstallationManifest(manifest);
 
   assert.deepEqual(manifest, {

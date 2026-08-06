@@ -14,7 +14,7 @@ import {
   showPlanlet,
   validatePlanlets,
   type ShowPart,
-} from "./read-only.js";
+} from "../core/read-only.js";
 import { EXIT_CODES, type ExitCode } from "../errors/codes.js";
 import { isPlanletError } from "../errors/planlet-error.js";
 import {
@@ -95,24 +95,32 @@ function compactSummary(
   };
 }
 
-function emit(
+interface EmitOutcome<T> {
+  readonly exitCode: ExitCode;
+  readonly data: T | undefined;
+}
+
+function emit<T>(
   context: ExecutionContext,
   operation: () => {
-    readonly data: unknown;
+    readonly data: T;
     readonly warnings?: readonly string[];
   },
-): ExitCode {
+): EmitOutcome<T> {
   try {
     const outcome = operation();
     const rendered = renderToon(outcome.data, outcome.warnings);
     context.stdout(rendered.stdout);
     if (rendered.stderr.length > 0) context.stderr(rendered.stderr);
-    return rendered.exitCode;
+    return {
+      exitCode: rendered.exitCode,
+      data: outcome.data,
+    };
   } catch (error) {
     if (!isPlanletError(error)) throw error;
     const rendered = renderToonError(error.toStructuredError());
     if (rendered.stderr.length > 0) context.stderr(rendered.stderr);
-    return rendered.exitCode;
+    return { exitCode: rendered.exitCode, data: undefined };
   }
 }
 
@@ -126,7 +134,7 @@ export function handleHarnessInit(
       operation: "init",
       ...arguments_,
     }),
-  );
+  ).exitCode;
 }
 
 export function handleHarnessUpdate(
@@ -139,13 +147,13 @@ export function handleHarnessUpdate(
       operation: "update",
       ...arguments_,
     }),
-  );
+  ).exitCode;
 }
 
 export function handleTools(context: ExecutionContext): ExitCode {
   return emit(context, () => ({
     data: { tools: detectHarnesses({ repositoryRoot: context.root }) },
-  }));
+  })).exitCode;
 }
 
 export function handleDashboard(context: ExecutionContext): ExitCode {
@@ -165,7 +173,7 @@ export function handleDashboard(context: ExecutionContext): ExitCode {
       },
       warnings: warningsFromSummaries(summaries),
     };
-  });
+  }).exitCode;
 }
 
 export function handleList(
@@ -181,7 +189,7 @@ export function handleList(
       data: { plans: summaries.map(compactSummary) },
       warnings: warningsFromSummaries(summaries),
     };
-  });
+  }).exitCode;
 }
 
 export function handleCreate(
@@ -197,7 +205,7 @@ export function handleCreate(
       data: { plan: compactSummary(summary) },
       warnings: summary.warnings,
     };
-  });
+  }).exitCode;
 }
 
 export function handleShow(
@@ -218,7 +226,7 @@ export function handleShow(
       data,
       warnings,
     };
-  });
+  }).exitCode;
 }
 
 export function handleStatus(
@@ -234,7 +242,7 @@ export function handleStatus(
       data: { plan: compactSummary(summary) },
       warnings: summary.warnings,
     };
-  });
+  }).exitCode;
 }
 
 export function handleTasks(
@@ -247,28 +255,27 @@ export function handleTasks(
       ...arguments_,
     });
     return { data: result, warnings };
-  });
+  }).exitCode;
 }
 
 export function handleValidate(
   arguments_: ValidateCommandArguments,
   context: ExecutionContext,
 ): ExitCode {
-  let valid = true;
-  const exitCode = emit(context, () => {
+  const outcome = emit(context, () => {
     const result = validatePlanlets({
       repositoryRoot: context.root,
       ...arguments_,
     });
-    valid = result.valid;
     return {
       data: result,
       warnings: result.entries.flatMap((entry) => entry.summary.warnings),
     };
   });
-  return exitCode === EXIT_CODES.success && !valid
+  return outcome.exitCode === EXIT_CODES.success &&
+    outcome.data?.valid === false
     ? EXIT_CODES.invalidPlan
-    : exitCode;
+    : outcome.exitCode;
 }
 
 export function handleTaskUpdate(
@@ -281,7 +288,7 @@ export function handleTaskUpdate(
       ...arguments_,
     });
     return { data: result, warnings };
-  });
+  }).exitCode;
 }
 
 export function handleComplete(
@@ -299,5 +306,5 @@ export function handleComplete(
       data: { ...result, summary },
       warnings,
     };
-  });
+  }).exitCode;
 }

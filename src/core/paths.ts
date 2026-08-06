@@ -17,6 +17,14 @@ export function byName(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
 }
 
+export function sortedRecord(
+  entries: readonly (readonly [string, string])[],
+): Readonly<Record<string, string>> {
+  return Object.fromEntries(
+    [...entries].sort(([left], [right]) => byName(left, right)),
+  );
+}
+
 interface AtomicPublishCleanupFailure {
   readonly code: ErrorCode;
   readonly message: string;
@@ -104,6 +112,15 @@ export function tryLstat(path: string): Stats | null {
     }
     throw error;
   }
+}
+
+export function pathKind(
+  path: string,
+): "missing" | "directory" | "file" | "symlink" {
+  const stats = tryLstat(path);
+  if (stats === null) return "missing";
+  if (stats.isSymbolicLink()) return "symlink";
+  return stats.isDirectory() ? "directory" : "file";
 }
 
 export function isPathWithinRoot(root: string, target: string): boolean {

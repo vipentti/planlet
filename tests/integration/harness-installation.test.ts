@@ -25,8 +25,10 @@ import {
 } from "../../src/cli.js";
 import {
   INSTALLATION_MANIFEST,
+  createInstallationManifest,
   parseInstallationManifest,
   serializeInstallationManifest,
+  type InstallationManifest,
 } from "../../src/core/harness-installer.js";
 import {
   enumerateCanonicalSkills,
@@ -274,9 +276,13 @@ test("update adopts legacy files, skips missing destinations, and removes owned 
 
     const stalePath = join(destination, "planlet-plan", "stale.txt");
     writeFileSync(stalePath, "Owned stale\n");
-    const manifest = parseInstallationManifest(
+    const manifest: InstallationManifest = parseInstallationManifest(
       readFileSync(manifestPath, "utf8"),
       manifestPath,
+    );
+    assert.deepEqual(
+      manifest,
+      createInstallationManifest(enumerateCanonicalSkills()),
     );
     const staleManifest = {
       ...manifest,
