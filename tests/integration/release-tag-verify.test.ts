@@ -15,12 +15,29 @@ test.after(() => {
   }
 });
 
+function gpgEnv(home: string): NodeJS.ProcessEnv {
+  return {
+    ...process.env,
+    GNUPGHOME: home,
+    MSYS2_ARG_CONV_EXCL: "*",
+    MSYS_NO_PATHCONV: "1",
+  };
+}
+
+function startGpgAgent(home: string) {
+  const result = spawnSync("gpgconf", ["--launch", "gpg-agent"], {
+    encoding: "utf8",
+    env: gpgEnv(home),
+  });
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+}
+
 function git(repo: string, ...args: string[]) {
   const home = gpgHomes.get(repo);
   return spawnSync("git", args, {
     cwd: repo,
     encoding: "utf8",
-    env: home ? { ...process.env, GNUPGHOME: home } : process.env,
+    env: home ? gpgEnv(home) : process.env,
   });
 }
 
@@ -37,7 +54,7 @@ function gpg(home: string, ...args: string[]) {
       "",
       ...args,
     ],
-    { encoding: "utf8" },
+    { encoding: "utf8", env: gpgEnv(home) },
   );
   assert.equal(result.status, 0, result.stdout + result.stderr);
   return result;
@@ -56,6 +73,7 @@ function makeRepo(): {
   const home = join(base, "gnupg");
   mkdirSync(dir);
   mkdirSync(home, { mode: 0o700 });
+  startGpgAgent(home);
   gpg(
     home,
     "--quick-generate-key",

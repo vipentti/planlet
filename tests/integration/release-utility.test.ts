@@ -46,6 +46,23 @@ interface GpgFixture {
   readonly fingerprint: string;
 }
 
+function gpgEnv(home: string): NodeJS.ProcessEnv {
+  return {
+    ...process.env,
+    GNUPGHOME: home,
+    MSYS2_ARG_CONV_EXCL: "*",
+    MSYS_NO_PATHCONV: "1",
+  };
+}
+
+function startGpgAgent(home: string) {
+  const result = spawnSync("gpgconf", ["--launch", "gpg-agent"], {
+    encoding: "utf8",
+    env: gpgEnv(home),
+  });
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+}
+
 function utcDay(offsetDays: number): string {
   return new Date(Date.now() + offsetDays * 86_400_000)
     .toISOString()
@@ -126,7 +143,7 @@ function makeRepo(options: MakeOptions = {}): Repo {
     spawnSync("git", args, {
       cwd: wd,
       encoding: "utf8",
-      env: { ...process.env, GNUPGHOME: gpgFixture.home },
+      env: gpgEnv(gpgFixture.home),
     });
 
   runGit(base, "init", "--bare", "-q", origin);
@@ -149,6 +166,7 @@ function makeRepo(options: MakeOptions = {}): Repo {
       {
         input: exportGpgKey(other.home, other.fingerprint, true),
         encoding: "utf8",
+        env: gpgEnv(gpgFixture.home),
       },
     );
     assert.equal(imported.status, 0, imported.stderr);
@@ -242,12 +260,13 @@ function runGpg(home: string, ...args: string[]) {
       "",
       ...args,
     ],
-    { encoding: "utf8" },
+    { encoding: "utf8", env: gpgEnv(home) },
   );
 }
 
 function makeGpgFixture(home: string): GpgFixture {
   mkdirSync(home, { mode: 0o700 });
+  startGpgAgent(home);
   const generated = runGpg(
     home,
     "--quick-generate-key",

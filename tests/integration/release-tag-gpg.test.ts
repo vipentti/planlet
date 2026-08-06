@@ -40,6 +40,23 @@ interface RepoFixture {
   readonly target: string;
 }
 
+function gpgEnv(home: string): NodeJS.ProcessEnv {
+  return {
+    ...process.env,
+    GNUPGHOME: home,
+    MSYS2_ARG_CONV_EXCL: "*",
+    MSYS_NO_PATHCONV: "1",
+  };
+}
+
+function startGpgAgent(home: string) {
+  const result = spawnSync("gpgconf", ["--launch", "gpg-agent"], {
+    encoding: "utf8",
+    env: gpgEnv(home),
+  });
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+}
+
 function gpg(home: string, ...args: string[]) {
   const result = spawnSync(
     "gpg",
@@ -53,7 +70,7 @@ function gpg(home: string, ...args: string[]) {
       "",
       ...args,
     ],
-    { encoding: "utf8" },
+    { encoding: "utf8", env: gpgEnv(home) },
   );
   assert.equal(result.status, 0, result.stdout + result.stderr);
   return result;
@@ -69,6 +86,7 @@ function fingerprintAfter(record: string, kind: "sec" | "ssb"): string {
 
 function makeKey(home: string, name: string): KeyFixture {
   mkdirSync(home, { mode: 0o700 });
+  startGpgAgent(home);
   gpg(
     home,
     "--quick-generate-key",
@@ -101,6 +119,7 @@ function importMaterial(home: string, material: string) {
   const result = spawnSync("gpg", ["--batch", "--homedir", home, "--import"], {
     input: material,
     encoding: "utf8",
+    env: gpgEnv(home),
   });
   assert.equal(result.status, 0, result.stdout + result.stderr);
 }
@@ -133,7 +152,7 @@ function makeSignedRepo(
   tempDirs.push(base);
   const dir = join(base, "repo");
   mkdirSync(dir);
-  const env = { ...process.env, GNUPGHOME: home };
+  const env = gpgEnv(home);
   const run = (...args: string[]) =>
     spawnSync("git", args, { cwd: dir, encoding: "utf8", env });
   assert.equal(run("init", "-q").status, 0);
@@ -245,7 +264,7 @@ function emptyRepo(home: string): RepoFixture {
   tempDirs.push(base);
   const dir = join(base, "repo");
   mkdirSync(dir);
-  const env = { ...process.env, GNUPGHOME: home };
+  const env = gpgEnv(home);
   const init = spawnSync("git", ["init", "-q"], { cwd: dir, env });
   assert.equal(init.status, 0, String(init.stderr));
   for (const args of [
