@@ -54,23 +54,6 @@ function gpgEnv(home: string): NodeJS.ProcessEnv {
   };
 }
 
-function startGpgAgent(home: string) {
-  if (process.platform === "win32") return;
-  spawnSync("gpgconf", ["--create-socketdir"], {
-    stdio: "ignore",
-    env: gpgEnv(home),
-  });
-  const result = spawnSync(
-    "gpg-agent",
-    ["--homedir", home, "--use-standard-socket", "--daemon"],
-    {
-      stdio: "ignore",
-      env: gpgEnv(home),
-    },
-  );
-  assert.equal(result.status, 0);
-}
-
 function workflowEnv(home: string): NodeJS.ProcessEnv {
   const env = gpgEnv(home);
   if (process.platform === "win32") {
@@ -100,7 +83,6 @@ function fingerprintAfter(record: string, kind: "sec" | "ssb"): string {
 
 function makeKey(home: string, name: string): KeyFixture {
   mkdirSync(home, { mode: 0o700 });
-  startGpgAgent(home);
   gpg(
     home,
     "--quick-generate-key",

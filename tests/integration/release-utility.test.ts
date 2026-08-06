@@ -60,23 +60,6 @@ function gpgEnv(home: string): NodeJS.ProcessEnv {
   };
 }
 
-function startGpgAgent(home: string) {
-  if (process.platform === "win32") return;
-  spawnSync("gpgconf", ["--create-socketdir"], {
-    stdio: "ignore",
-    env: gpgEnv(home),
-  });
-  const result = spawnSync(
-    "gpg-agent",
-    ["--homedir", home, "--use-standard-socket", "--daemon"],
-    {
-      stdio: "ignore",
-      env: gpgEnv(home),
-    },
-  );
-  assert.equal(result.status, 0);
-}
-
 function utcDay(offsetDays: number): string {
   return new Date(Date.now() + offsetDays * 86_400_000)
     .toISOString()
@@ -262,7 +245,6 @@ function runGpg(home: string, ...args: string[]) {
 
 function makeGpgFixture(home: string): GpgFixture {
   mkdirSync(home, { mode: 0o700 });
-  startGpgAgent(home);
   const generated = runGpg(
     home,
     "--quick-generate-key",

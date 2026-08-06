@@ -29,23 +29,6 @@ function gpgEnv(home: string): NodeJS.ProcessEnv {
   };
 }
 
-function startGpgAgent(home: string) {
-  if (process.platform === "win32") return;
-  spawnSync("gpgconf", ["--create-socketdir"], {
-    stdio: "ignore",
-    env: gpgEnv(home),
-  });
-  const result = spawnSync(
-    "gpg-agent",
-    ["--homedir", home, "--use-standard-socket", "--daemon"],
-    {
-      stdio: "ignore",
-      env: gpgEnv(home),
-    },
-  );
-  assert.equal(result.status, 0);
-}
-
 function git(repo: string, ...args: string[]) {
   const home = gpgHomes.get(repo);
   return spawnSync("git", args, {
@@ -78,7 +61,6 @@ function makeRepo(): {
   const home = join(base, "gnupg");
   mkdirSync(dir);
   mkdirSync(home, { mode: 0o700 });
-  startGpgAgent(home);
   gpg(
     home,
     "--quick-generate-key",
