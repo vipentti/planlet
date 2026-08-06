@@ -183,6 +183,22 @@ function shellBlock(name: string): string {
     .trim();
 }
 
+function tagVerifierBlock(): string {
+  const section = stepSection("Ensure exact signed release tag");
+  const start = section.indexOf("verify_tag() {");
+  const end = section.indexOf("\n          if [", start);
+  assert.ok(
+    start >= 0 && end > start,
+    "workflow tag verifier function missing",
+  );
+  return section
+    .slice(start, end)
+    .split("\n")
+    .map((line) => line.replace(/^ {10}/, ""))
+    .join("\n")
+    .trim();
+}
+
 function runSetup(name: string, env: NodeJS.ProcessEnv, cwd = repoRoot) {
   const base = mkdtempSync(join(tmpdir(), "planlet-release-gpg-step-"));
   tempDirs.push(base);
@@ -193,6 +209,34 @@ function runSetup(name: string, env: NodeJS.ProcessEnv, cwd = repoRoot) {
     cwd,
     encoding: "utf8",
     env,
+  });
+}
+
+function runWorkflowTagVerifier(
+  repo: RepoFixture,
+  expectedFingerprint: string,
+) {
+  const base = mkdtempSync(join(tmpdir(), "planlet-release-gpg-workflow-"));
+  tempDirs.push(base);
+  const script = join(base, "verify-tag.sh");
+  writeFileSync(
+    script,
+    [
+      "#!/usr/bin/env bash",
+      "set -euo pipefail",
+      `RUNNER_TEMP=${base}`,
+      `target=${repo.target}`,
+      `expected=${expectedFingerprint.toUpperCase()}`,
+      tagVerifierBlock(),
+      'verify_tag "v1.2.3"',
+      "",
+    ].join("\n"),
+  );
+  chmodSync(script, 0o700);
+  return spawnSync("bash", [script], {
+    cwd: repo.dir,
+    encoding: "utf8",
+    env: repo.env,
   });
 }
 
@@ -244,6 +288,14 @@ test("GPG signing subkey resolves to expected primary signer", () => {
   const repo = makeSignedRepo(expectedKey.home, expectedKey.signing, "v1.2.3");
   const result = verify(repo, expectedKey.primary);
   assert.equal(result.ok, true, result.ok ? "" : result.error);
+});
+
+test("protected workflow verifier accepts primary and signing-subkey tags", () => {
+  for (const signer of [expectedKey.primary, expectedKey.signing]) {
+    const repo = makeSignedRepo(expectedKey.home, signer, "v1.2.3");
+    const result = runWorkflowTagVerifier(repo, expectedKey.primary);
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+  }
 });
 
 test("valid signature from second imported key is rejected", () => {

@@ -386,7 +386,7 @@ test("tag verification is inline git built-ins with all five assertions", () => 
     release,
     /git rev-parse --verify "refs\/tags\/\$\{t\}\^\{commit\}"/,
   );
-  assert.match(release, /git tag -l --format=%\(contents:subject\)/);
+  assert.match(release, /git tag -l ['"]?--format=%\(contents:subject\)/);
   assert.match(release, /git verify-tag --raw "\$\{t\}"/);
   assert.match(
     release,

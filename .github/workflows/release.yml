@@ -520,7 +520,7 @@ jobs:
               echo "Tag ${t} does not point at the triggering commit ${target}" >&2
               exit 1
             }
-            test "$(git tag -l --format=%(contents:subject) "${t}")" = "Release ${t}" || {
+            test "$(git tag -l '--format=%(contents:subject)' "${t}")" = "Release ${t}" || {
               echo "Tag ${t} message subject is not 'Release ${t}'" >&2
               exit 1
             }
