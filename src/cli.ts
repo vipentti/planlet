@@ -1,5 +1,4 @@
 import { once } from "node:events";
-import { readdirSync } from "node:fs";
 import { createRequire } from "node:module";
 import { resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
@@ -23,11 +22,11 @@ import {
 } from "./commands/handlers.js";
 import { detectHarnesses } from "./core/harness-installer.js";
 import {
+  detectHarnessSignals,
   normalizeToolSelector,
   resolveHarnessDestinations,
 } from "./core/harnesses.js";
 import { PLANLET_STATES, type PlanletState } from "./core/models.js";
-import { errnoIs } from "./core/paths.js";
 import { discoverRepositoryRoot } from "./core/repository.js";
 import { EXIT_CODES, type ExitCode } from "./errors/codes.js";
 import { isPlanletError } from "./errors/planlet-error.js";
@@ -146,19 +145,6 @@ export interface ToolChoice {
   readonly preselected: boolean;
 }
 
-function hasEntries(path: string): boolean {
-  try {
-    return readdirSync(path).length > 0;
-  } catch (error) {
-    // A missing directory has nothing in it, and a non-directory is reported as
-    // a modified destination that the installer rejects with write_conflict.
-    if (errnoIs(error, "ENOENT", "ENOTDIR")) {
-      return false;
-    }
-    throw error;
-  }
-}
-
 /**
  * One choice per resolved destination directory, so the `.agents/skills`
  * directory that the agents and codex adapters share is offered once under both
@@ -167,6 +153,7 @@ function hasEntries(path: string): boolean {
 export function buildToolChoices(
   repositoryRoot: string,
 ): readonly ToolChoice[] {
+  const signals = new Set(detectHarnessSignals(repositoryRoot));
   const detected = new Map(
     detectHarnesses({ repositoryRoot }).map((harness) => [harness.id, harness]),
   );
@@ -178,9 +165,7 @@ export function buildToolChoices(
     destination: destination.relativePath,
     names: destination.aliases.map((id) => detected.get(id)!.name).join(", "),
     state: detected.get(destination.aliases[0]!)!.state,
-    // Any existing content counts, including unrelated skills: the directory
-    // existing at all is the signal that this harness is in use here.
-    preselected: hasEntries(destination.path),
+    preselected: destination.aliases.some((id) => signals.has(id)),
   }));
   return choices.some((choice) => choice.preselected)
     ? choices

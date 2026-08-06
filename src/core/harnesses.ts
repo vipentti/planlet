@@ -1,31 +1,168 @@
+import { readdirSync, type Dirent } from "node:fs";
+
 import { PlanletError } from "../errors/planlet-error.js";
-import { resolveSafePath } from "./paths.js";
+import { resolveSafePath, tryLstat } from "./paths.js";
+
+type HarnessMarker = Readonly<{
+  readonly relativePath: string;
+  readonly kind: "directory" | "file";
+  readonly planletOnly?: "agents-root" | "skills-directory";
+}>;
+
+const PLANLET_MANIFEST = ".planlet-manifest.json";
 
 export const HARNESS_ADAPTERS = Object.freeze([
   Object.freeze({
     id: "agents",
     displayName: "Generic Agent Skills",
     skillDirectory: ".agents/skills",
+    presenceMarkers: Object.freeze([
+      Object.freeze({
+        relativePath: ".agents",
+        kind: "directory",
+        planletOnly: "agents-root",
+      }),
+    ]),
   }),
   Object.freeze({
     id: "claude",
     displayName: "Claude Code",
     skillDirectory: ".claude/skills",
+    presenceMarkers: Object.freeze([
+      Object.freeze({
+        relativePath: ".claude/skills",
+        kind: "directory",
+        planletOnly: "skills-directory",
+      }),
+      Object.freeze({
+        relativePath: ".claude/settings.json",
+        kind: "file",
+      }),
+      Object.freeze({
+        relativePath: ".claude/settings.local.json",
+        kind: "file",
+      }),
+      Object.freeze({ relativePath: ".claude/agents", kind: "directory" }),
+      Object.freeze({ relativePath: ".claude/rules", kind: "directory" }),
+      Object.freeze({ relativePath: ".claude/CLAUDE.md", kind: "file" }),
+      Object.freeze({
+        relativePath: ".claude/commands",
+        kind: "directory",
+      }),
+    ]),
   }),
   Object.freeze({
     id: "codex",
     displayName: "Codex",
     skillDirectory: ".agents/skills",
+    presenceMarkers: Object.freeze([
+      Object.freeze({ relativePath: ".codex", kind: "directory" }),
+    ]),
   }),
   Object.freeze({
     id: "github-copilot",
     displayName: "GitHub Copilot",
     skillDirectory: ".agents/skills",
+    presenceMarkers: Object.freeze([
+      Object.freeze({
+        relativePath: ".github/copilot-instructions.md",
+        kind: "file",
+      }),
+      Object.freeze({
+        relativePath: ".github/instructions",
+        kind: "directory",
+      }),
+      Object.freeze({ relativePath: ".github/skills", kind: "directory" }),
+      Object.freeze({ relativePath: ".github/prompts", kind: "directory" }),
+      Object.freeze({ relativePath: ".github/agents", kind: "directory" }),
+    ]),
   }),
 ] as const);
 
 type HarnessAdapter = (typeof HARNESS_ADAPTERS)[number];
 export type HarnessToolId = HarnessAdapter["id"];
+
+function hasPlanletSkillEntry(entry: Dirent): boolean {
+  return (
+    (entry.isDirectory() && entry.name.startsWith("planlet-")) ||
+    (entry.isFile() && entry.name === PLANLET_MANIFEST)
+  );
+}
+
+function isPlanletOnlySkillsDirectory(path: string): boolean {
+  const entries = readdirSync(path, { withFileTypes: true });
+  return entries.length > 0 && entries.every(hasPlanletSkillEntry);
+}
+
+function markerPath(
+  repositoryRoot: string,
+  marker: HarnessMarker,
+): string | undefined {
+  try {
+    return resolveSafePath(repositoryRoot, ...marker.relativePath.split("/"));
+  } catch (error) {
+    if (error instanceof PlanletError && error.code === "unsafe_path") {
+      return undefined;
+    }
+    throw error;
+  }
+}
+
+function hasMarker(repositoryRoot: string, marker: HarnessMarker): boolean {
+  const path = markerPath(repositoryRoot, marker);
+  if (path === undefined) return false;
+
+  const stats = tryLstat(path);
+  if (stats === null) return false;
+  if (marker.kind === "directory" && !stats.isDirectory()) return false;
+  if (marker.kind === "file" && !stats.isFile()) return false;
+  if (marker.planletOnly === undefined) return true;
+
+  if (marker.planletOnly === "skills-directory") {
+    return !isPlanletOnlySkillsDirectory(path);
+  }
+
+  const entries = readdirSync(path, { withFileTypes: true });
+  const skillsEntry = entries[0];
+  if (
+    skillsEntry === undefined ||
+    entries.length !== 1 ||
+    skillsEntry.name !== "skills"
+  ) {
+    return true;
+  }
+
+  if (!skillsEntry.isSymbolicLink() && !skillsEntry.isDirectory()) {
+    return true;
+  }
+
+  let skillsPath: string;
+  try {
+    skillsPath = resolveSafePath(
+      repositoryRoot,
+      ...marker.relativePath.split("/"),
+      "skills",
+    );
+  } catch (error) {
+    if (error instanceof PlanletError && error.code === "unsafe_path") {
+      return false;
+    }
+    throw error;
+  }
+
+  const skillsStats = tryLstat(skillsPath);
+  return skillsStats === null || !skillsStats.isDirectory()
+    ? true
+    : !isPlanletOnlySkillsDirectory(skillsPath);
+}
+
+export function detectHarnessSignals(
+  repositoryRoot: string,
+): readonly HarnessToolId[] {
+  return HARNESS_ADAPTERS.filter((adapter) =>
+    adapter.presenceMarkers.some((marker) => hasMarker(repositoryRoot, marker)),
+  ).map((adapter) => adapter.id);
+}
 
 export interface HarnessDestination {
   readonly path: string;

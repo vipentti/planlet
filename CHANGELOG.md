@@ -17,6 +17,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and thi
 - `planlet update` refreshes present planlet onboarding markers without
   creating sections in repositories that opted out.
 
+### Changed
+
+- Interactive `planlet init` now preselects harness destinations from
+  repository-local agents, Claude Code, Codex, and GitHub Copilot markers while
+  ignoring Planlet's own installed skill footprint.
+
 ### Fixed
 
 - `release:prepare` now refreshes compare links for new releases and keeps prior links.

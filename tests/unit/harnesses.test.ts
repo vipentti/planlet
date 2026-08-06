@@ -5,12 +5,15 @@ import {
   realpathSync,
   rmSync,
   symlinkSync,
+  writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import test from "node:test";
 
 import {
+  HARNESS_ADAPTERS,
+  detectHarnessSignals,
   normalizeToolSelector,
   resolveHarnessDestinations,
 } from "../../src/core/harnesses.js";
@@ -24,6 +27,82 @@ function withRoot(run: (root: string) => void): void {
     rmSync(root, { recursive: true, force: true });
   }
 }
+
+const markers = HARNESS_ADAPTERS.flatMap((adapter) =>
+  adapter.presenceMarkers.map((marker) => ({
+    id: adapter.id,
+    path: marker.relativePath,
+    kind: marker.kind,
+  })),
+);
+
+test("harness signals detect every known repository marker", () => {
+  for (const marker of markers) {
+    withRoot((root) => {
+      const path = join(root, marker.path);
+      if (marker.kind === "directory") {
+        mkdirSync(path, { recursive: true });
+      } else {
+        mkdirSync(dirname(path), { recursive: true });
+        writeFileSync(path, "");
+      }
+      assert.deepEqual(detectHarnessSignals(root), [marker.id], marker.path);
+    });
+  }
+});
+
+test("harness signals ignore missing and wrong-kind markers", () => {
+  withRoot((root) => {
+    assert.deepEqual(detectHarnessSignals(root), []);
+  });
+
+  for (const marker of markers) {
+    withRoot((root) => {
+      const path = join(root, marker.path);
+      if (marker.kind === "directory") {
+        mkdirSync(dirname(path), { recursive: true });
+        writeFileSync(path, "not a directory\n");
+      } else {
+        mkdirSync(path, { recursive: true });
+      }
+      assert.deepEqual(detectHarnessSignals(root), [], marker.path);
+    });
+  }
+});
+
+test("Planlet-only skill footprints do not signal agents or Claude", () => {
+  withRoot((root) => {
+    for (const destination of [".agents/skills", ".claude/skills"]) {
+      mkdirSync(join(root, destination, "planlet-example"), {
+        recursive: true,
+      });
+      writeFileSync(join(root, destination, ".planlet-manifest.json"), "{}\n");
+    }
+    assert.deepEqual(detectHarnessSignals(root), []);
+  });
+});
+
+test("escaping agents skills symlink does not signal agents", () => {
+  const outside = mkdtempSync(join(tmpdir(), "planlet-harnesses-outside-"));
+  try {
+    withRoot((root) => {
+      mkdirSync(join(root, ".agents"));
+      symlinkSync(outside, join(root, ".agents", "skills"));
+      assert.deepEqual(detectHarnessSignals(root), []);
+    });
+  } finally {
+    rmSync(outside, { recursive: true, force: true });
+  }
+});
+
+test("non-Planlet skill entries signal their harness", () => {
+  withRoot((root) => {
+    for (const destination of [".agents/skills", ".claude/skills"]) {
+      mkdirSync(join(root, destination, "user-skill"), { recursive: true });
+    }
+    assert.deepEqual(detectHarnessSignals(root), ["agents", "claude"]);
+  });
+});
 
 test("tool selectors trim, deduplicate, and retain registry order", () => {
   assert.deepEqual(normalizeToolSelector(" codex,agents,codex "), [
