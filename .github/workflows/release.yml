@@ -370,6 +370,90 @@ jobs:
           appendFileSync(process.env.GITHUB_ENV, `PACKAGE_TARBALL=${tarball}\n`);
           NODE
 
+      - name: Revalidate protected release contract
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Independent recheck protects the privileged handoff from detector
+          # regression or compromise; it is not accidental duplicate validation.
+          node --input-type=module <<'NODE'
+          import assert from "node:assert/strict";
+          import { execFileSync } from "node:child_process";
+          import { readFileSync } from "node:fs";
+
+          const before = process.env.BEFORE_SHA ?? "";
+          const after = process.env.GITHUB_SHA ?? "";
+          const version = process.env.VERSION ?? "";
+          const packageName = "@vipentti/planlet";
+          const expectedFiles = [
+            "CHANGELOG.md",
+            "package-lock.json",
+            "package.json",
+          ];
+          const sha = /^[0-9a-f]{40}$/;
+          const stableVersion =
+            /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/;
+
+          assert.match(before, sha, "BEFORE_SHA must be lowercase 40-hex");
+          assert.notEqual(before, "0".repeat(40), "BEFORE_SHA must not be all zeroes");
+          assert.match(after, sha, "GITHUB_SHA must be lowercase 40-hex");
+
+          const git = (...args) =>
+            execFileSync("git", args, { encoding: "utf8" }).trim();
+          assert.equal(
+            git("rev-parse", "--verify", `${before}^{commit}`),
+            before,
+            "BEFORE_SHA must resolve to a commit",
+          );
+          assert.equal(
+            git("rev-parse", "--verify", `${after}^{commit}`),
+            after,
+            "GITHUB_SHA must resolve to a commit",
+          );
+          assert.equal(
+            git("rev-parse", "--verify", "HEAD"),
+            after,
+            "checked-out HEAD must equal GITHUB_SHA",
+          );
+          assert.match(version, stableVersion, "VERSION must be stable X.Y.Z");
+
+          const packageJson = JSON.parse(readFileSync("package.json", "utf8"));
+          const packageLock = JSON.parse(
+            readFileSync("package-lock.json", "utf8"),
+          );
+          readFileSync("CHANGELOG.md", "utf8");
+          assert.equal(packageJson.name, packageName, "package.json name mismatch");
+          assert.equal(packageLock.name, packageName, "package-lock.json name mismatch");
+          assert.equal(
+            packageLock.packages?.[""]?.name,
+            packageName,
+            "package-lock root name mismatch",
+          );
+          assert.equal(packageJson.version, version, "package.json version mismatch");
+          assert.equal(packageLock.version, version, "package-lock version mismatch");
+          assert.equal(
+            packageLock.packages?.[""]?.version,
+            version,
+            "package-lock root version mismatch",
+          );
+
+          const changed = git("diff", "--name-only", before, after)
+            .split("\n")
+            .filter(Boolean);
+          assert.equal(
+            new Set(changed).size,
+            changed.length,
+            "release diff must not contain duplicate paths",
+          );
+          assert.deepEqual(
+            [...changed].sort(),
+            expectedFiles,
+            "release diff must contain exactly the three release files",
+          );
+          NODE
+
       # --- Release mutations: GPG material and App token only after all
       # pre-mutation validation, then tag, npm, and GitHub release. ---
 
@@ -466,17 +550,6 @@ jobs:
           git config commit.gpgsign false
           git config tag.gpgsign false
 
-      - name: Generate GitHub App installation token
-        if: steps.check-release-tag.outputs.tag-exists == 'false'
-        id: release-app-token
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
-        with:
-          app-id: ${{ vars.RELEASE_APP_ID }}
-          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
-          owner: ${{ github.repository_owner }}
-          repositories: planlet
-          permission-contents: write
-
       - name: Verify release intent is still current
         if: steps.check-release-tag.outputs.tag-exists == 'false'
         env:
@@ -495,6 +568,19 @@ jobs:
             echo "Release intent changed after approval: release-control files differ from the triggering commit" >&2
             exit 1
           }
+
+      # Token creation deliberately follows the final intent check to minimize
+      # credential lifetime.
+      - name: Generate GitHub App installation token
+        if: steps.check-release-tag.outputs.tag-exists == 'false'
+        id: release-app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ vars.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: planlet
+          permission-contents: write
 
       - name: Ensure exact signed release tag
         env:

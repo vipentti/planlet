@@ -6,6 +6,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  unlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -82,6 +83,108 @@ function shellBlock(name: string): string {
     .map((line) => line.replace(/^ {10}/, ""))
     .join("\n")
     .trim();
+}
+
+function runGit(cwd: string, ...args: string[]): string {
+  const result = spawnSync("git", args, {
+    cwd,
+    encoding: "utf8",
+  });
+  assert.equal(result.status, 0, result.stderr);
+  return result.stdout.trim();
+}
+
+interface ProtectedContractOptions {
+  readonly before?: string;
+  readonly envVersion?: string;
+  readonly packageName?: string;
+  readonly lockName?: string;
+  readonly packageVersion?: string;
+  readonly lockVersion?: string;
+  readonly rootVersion?: string;
+  readonly missing?: string;
+  readonly extra?: boolean;
+}
+
+function runProtectedContract(options: ProtectedContractOptions = {}) {
+  const dir = mkdtempSync(join(tmpdir(), "planlet-release-contract-"));
+  tempDirs.push(dir);
+  runGit(dir, "init", "-q");
+  runGit(dir, "config", "user.email", "test@example.test");
+  runGit(dir, "config", "user.name", "test");
+
+  const packageName = "@vipentti/planlet";
+  const baseVersion = "1.1.0";
+  const releaseVersion = "1.2.3";
+  writeFileSync(
+    join(dir, "package.json"),
+    JSON.stringify({ name: packageName, version: baseVersion }, null, 2) + "\n",
+  );
+  writeFileSync(
+    join(dir, "package-lock.json"),
+    JSON.stringify(
+      {
+        name: packageName,
+        version: baseVersion,
+        lockfileVersion: 3,
+        packages: { "": { name: packageName, version: baseVersion } },
+      },
+      null,
+      2,
+    ) + "\n",
+  );
+  writeFileSync(join(dir, "CHANGELOG.md"), "# Changelog\n");
+  runGit(dir, "add", ".");
+  runGit(dir, "commit", "-q", "-m", "base");
+  const before = runGit(dir, "rev-parse", "HEAD");
+
+  const afterPackageName = options.packageName ?? packageName;
+  const afterLockName = options.lockName ?? packageName;
+  const afterPackageVersion = options.packageVersion ?? releaseVersion;
+  const afterLockVersion = options.lockVersion ?? releaseVersion;
+  const afterRootVersion = options.rootVersion ?? releaseVersion;
+  writeFileSync(
+    join(dir, "package.json"),
+    JSON.stringify(
+      { name: afterPackageName, version: afterPackageVersion },
+      null,
+      2,
+    ) + "\n",
+  );
+  writeFileSync(
+    join(dir, "package-lock.json"),
+    JSON.stringify(
+      {
+        name: afterLockName,
+        version: afterLockVersion,
+        lockfileVersion: 3,
+        packages: {
+          "": { name: afterLockName, version: afterRootVersion },
+        },
+      },
+      null,
+      2,
+    ) + "\n",
+  );
+  writeFileSync(join(dir, "CHANGELOG.md"), "# Changelog\n\nrelease\n");
+  if (options.extra) writeFileSync(join(dir, "extra.txt"), "unexpected\n");
+  if (options.missing) unlinkSync(join(dir, options.missing));
+  runGit(dir, "add", "-A");
+  runGit(dir, "commit", "-q", "-m", "release");
+  const after = runGit(dir, "rev-parse", "HEAD");
+
+  const script = join(dir, "revalidate.mjs");
+  writeFileSync(script, nodeBlock("Revalidate protected release contract"));
+  return spawnSync(process.execPath, [script], {
+    cwd: dir,
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      BEFORE_SHA: options.before ?? before,
+      GITHUB_SHA: after,
+      VERSION: options.envVersion ?? releaseVersion,
+    },
+  });
 }
 
 function nodeBlock(name: string): string {
@@ -249,9 +352,51 @@ test("remote tag probe distinguishes existing, absent, and error outcomes", () =
   assert.equal(readFileSync(error.output, "utf8"), "");
 });
 
+test("protected release revalidation accepts exact three-file release diff", () => {
+  const result = runProtectedContract();
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+});
+
+test("protected release revalidation rejects changed-file and missing-file drift", () => {
+  for (const options of [{ extra: true }, { missing: "CHANGELOG.md" }]) {
+    const result = runProtectedContract(options);
+    assert.notEqual(result.status, 0, result.stdout);
+  }
+});
+
+test("protected release revalidation rejects malformed or unresolved BEFORE_SHA", () => {
+  for (const before of ["not-a-sha", "0".repeat(40), "a".repeat(40)]) {
+    const result = runProtectedContract({ before });
+    assert.notEqual(result.status, 0, before);
+  }
+});
+
+test("protected release revalidation rejects unstable or mismatched versions", () => {
+  for (const envVersion of ["1.2.3-beta", "1.02.3", "1.2.3+build", "1.2.4"]) {
+    const result = runProtectedContract({ envVersion });
+    assert.notEqual(result.status, 0, envVersion);
+  }
+});
+
+test("protected release revalidation rejects package and lockfile identity drift", () => {
+  for (const options of [
+    { packageName: "wrong" },
+    { lockName: "wrong" },
+    { packageVersion: "1.2.4" },
+    { lockVersion: "1.2.4" },
+    { rootVersion: "1.2.4" },
+  ]) {
+    const result = runProtectedContract(options);
+    assert.notEqual(result.status, 0);
+  }
+});
+
 test("workflow keeps safe ordering: verification before GPG and tag mutation", () => {
   const packIdx = indexOfLine((line) =>
     line.includes("Validate downloaded package artifact"),
+  );
+  const revalidateIdx = indexOfLine((line) =>
+    line.includes("Revalidate protected release contract"),
   );
   const gpgIdx = indexOfLine((line) =>
     line.includes("Initialize isolated GPG home"),
@@ -270,7 +415,8 @@ test("workflow keeps safe ordering: verification before GPG and tag mutation", (
   );
   assert.ok(
     packIdx >= 0 &&
-      packIdx < gpgIdx &&
+      packIdx < revalidateIdx &&
+      revalidateIdx < gpgIdx &&
       gpgIdx < tokenIdx &&
       tokenIdx < tagIdx &&
       tagIdx < verifyIdx &&
@@ -390,6 +536,36 @@ test("release-intent guards run before tag creation for new-tag runs", () => {
     line.includes("Ensure exact signed release tag"),
   );
   assert.ok(earlyIdx >= 0 && earlyIdx < finalIdx && finalIdx < tagIdx);
+});
+
+test("final intent check precedes App-token generation and tag creation immediately follows", () => {
+  const revalidate = stepSection("Revalidate protected release contract");
+  assert.match(revalidate, /BEFORE_SHA: \$\{\{ github\.event\.before \}\}/);
+  assert.match(revalidate, /BEFORE_SHA must be lowercase 40-hex/);
+  assert.match(revalidate, /BEFORE_SHA must not be all zeroes/);
+  assert.match(revalidate, /checked-out HEAD must equal GITHUB_SHA/);
+  assert.match(revalidate, /stable X\.Y\.Z/);
+  assert.match(revalidate, /package-lock root name mismatch/);
+  assert.match(revalidate, /package-lock root version mismatch/);
+  assert.match(revalidate, /exactly the three release files/);
+  assert.match(revalidate, /duplicate paths/);
+
+  const finalIdx = indexOfLine((line) =>
+    line.includes("Verify release intent is still current"),
+  );
+  const tokenNameIdx = indexOfLine((line) =>
+    line.includes("Generate GitHub App installation token"),
+  );
+  const tokenActionIdx = indexOfLine((line) => line.includes(APP_TOKEN_ACTION));
+  const tagIdx = indexOfLine((line) =>
+    line.includes("Ensure exact signed release tag"),
+  );
+  assert.ok(finalIdx >= 0 && finalIdx < tokenNameIdx);
+  assert.ok(tokenActionIdx > tokenNameIdx && tokenActionIdx < tagIdx);
+  assert.doesNotMatch(
+    lines.slice(tokenActionIdx + 1, tagIdx).join("\n"),
+    /^\s+- name:/m,
+  );
 });
 
 test("protected job executes no repository-owned scripts", () => {
