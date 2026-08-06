@@ -44,6 +44,10 @@ function bashExecutable(): string {
   return result.stdout.split(/\r?\n/).find(Boolean)?.trim() ?? "bash";
 }
 
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", "'\\''")}'`;
+}
+
 function jobSection(name: string, next?: string): string {
   const start = indexOfLine((line) => line.trim() === name + ":");
   const end = next
@@ -114,7 +118,10 @@ function runTagProbe(exitCode: number) {
   const output = join(dir, "output");
   writeFileSync(output, "");
   const script = join(dir, "probe.sh");
-  writeFileSync(script, shellBlock("Check remote release tag"));
+  writeFileSync(
+    script,
+    `git() { sh ${shellQuote(bashPath(fakeGit))} "$@"; }\n${shellBlock("Check remote release tag")}`,
+  );
   return {
     result: spawnSync(bashExecutable(), [script], {
       cwd: dir,
