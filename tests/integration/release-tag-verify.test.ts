@@ -25,6 +25,7 @@ function gpgEnv(home: string): NodeJS.ProcessEnv {
 }
 
 function startGpgAgent(home: string) {
+  if (process.platform === "win32") return;
   const result = spawnSync("gpgconf", ["--launch", "gpg-agent"], {
     encoding: "utf8",
     env: gpgEnv(home),
