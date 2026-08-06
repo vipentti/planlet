@@ -4,6 +4,7 @@
   "ignoreBinaries": [
     "gpg",
     "gpg-agent",
+    "gpgconf",
     "planlet",
     "printf",
     "sha256sum",

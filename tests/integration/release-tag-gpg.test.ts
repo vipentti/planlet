@@ -42,7 +42,7 @@ interface RepoFixture {
 
 function gpgHomePath(home: string): string {
   if (process.platform !== "win32" || home.startsWith("/")) return home;
-  return home.replaceAll("\\", "/");
+  return `/${home.slice(0, 1).toLowerCase()}${home.slice(2).replaceAll("\\", "/")}`;
 }
 
 function gpgEnv(home: string): NodeJS.ProcessEnv {
@@ -56,6 +56,11 @@ function gpgEnv(home: string): NodeJS.ProcessEnv {
 
 function startGpgAgent(home: string) {
   if (process.platform === "win32") return;
+  const socketdir = spawnSync("gpgconf", ["--create-socketdir"], {
+    stdio: "ignore",
+    env: gpgEnv(home),
+  });
+  assert.equal(socketdir.status, 0);
   const result = spawnSync(
     "gpg-agent",
     ["--homedir", home, "--use-standard-socket", "--daemon"],
@@ -65,6 +70,15 @@ function startGpgAgent(home: string) {
     },
   );
   assert.equal(result.status, 0);
+}
+
+function workflowEnv(home: string): NodeJS.ProcessEnv {
+  const env = gpgEnv(home);
+  if (process.platform === "win32") {
+    delete env.MSYS2_ARG_CONV_EXCL;
+    delete env.MSYS_NO_PATHCONV;
+  }
+  return env;
 }
 
 function gpg(home: string, ...args: string[]) {
@@ -365,7 +379,7 @@ test("public-key setup rejects multiple primary public keys", () => {
   const home = mkdtempSync(join(tmpdir(), "planlet-release-gpg-public-two-"));
   tempDirs.push(home);
   const result = runSetup("Configure public-key verification", {
-    ...gpgEnv(home),
+    ...workflowEnv(home),
     RELEASE_GPG_PUBLIC_KEY: expectedKey.publicKey + secondKey.publicKey,
     RELEASE_GPG_FINGERPRINT: expectedKey.primary,
   });
@@ -377,7 +391,7 @@ test("private-key setup rejects multiple primary secret keys", () => {
   const home = mkdtempSync(join(tmpdir(), "planlet-release-gpg-secret-two-"));
   tempDirs.push(home);
   const result = runSetup("Configure private-key signing", {
-    ...gpgEnv(home),
+    ...workflowEnv(home),
     RELEASE_GPG_PRIVATE_KEY: expectedKey.privateKey + secondKey.privateKey,
     RELEASE_GPG_PASSPHRASE: "",
     RELEASE_GPG_FINGERPRINT: expectedKey.primary,
@@ -392,7 +406,7 @@ test("existing-tag rerun imports no private key", () => {
   const home = mkdtempSync(join(tmpdir(), "planlet-release-gpg-public-only-"));
   tempDirs.push(home);
   const result = runSetup("Configure public-key verification", {
-    ...gpgEnv(home),
+    ...workflowEnv(home),
     RELEASE_GPG_PUBLIC_KEY: expectedKey.publicKey,
     RELEASE_GPG_PRIVATE_KEY: "not imported on existing-tag rerun",
     RELEASE_GPG_FINGERPRINT: expectedKey.primary,
@@ -409,7 +423,7 @@ test("newly created tag uses configured dedicated signing key", () => {
   const setup = runSetup(
     "Configure private-key signing",
     {
-      ...gpgEnv(home),
+      ...workflowEnv(home),
       RELEASE_GPG_PRIVATE_KEY: expectedKey.privateKey,
       RELEASE_GPG_PASSPHRASE: "",
       RELEASE_GPG_FINGERPRINT: expectedKey.primary,
