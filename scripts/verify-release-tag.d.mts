@@ -15,12 +15,12 @@ export interface VerifyReleaseTagFailure {
 }
 
 export type VerifyReleaseTagResult =
-  | VerifyReleaseTagSuccess
-  | VerifyReleaseTagFailure;
+  VerifyReleaseTagSuccess | VerifyReleaseTagFailure;
 
 export function verifyReleaseTag(options: {
   tag: string;
   target: string;
   message: string;
+  expectedFingerprint: string;
   cwd?: string;
 }): VerifyReleaseTagResult;

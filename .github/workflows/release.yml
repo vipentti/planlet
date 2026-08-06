@@ -392,13 +392,25 @@ jobs:
           # Existing-tag reruns verify with the public key only; the private
           # key and passphrase are intentionally never loaded on this path.
           printf '%s\n' "$RELEASE_GPG_PUBLIC_KEY" | gpg --batch --homedir "$GNUPGHOME" --import
-          fpr=$(gpg --batch --homedir "$GNUPGHOME" --with-colons --list-keys | awk -F: '$1 == "fpr" { print $10; exit }')
-          test -n "$fpr" || {
-            echo "RELEASE_GPG_PUBLIC_KEY contains no public key" >&2
+          if [[ ! "$RELEASE_GPG_FINGERPRINT" =~ ^[0-9A-Fa-f]{40}$ ]]; then
+            echo "RELEASE_GPG_FINGERPRINT must be exactly one 40-character hexadecimal fingerprint" >&2
+            exit 1
+          fi
+          expected=$(printf '%s' "$RELEASE_GPG_FINGERPRINT" | tr '[:lower:]' '[:upper:]')
+          public_keys=$(gpg --batch --homedir "$GNUPGHOME" --with-colons --list-keys)
+          primary_public_count=$(printf '%s\n' "$public_keys" | awk -F: '$1 == "pub" { count++ } END { print count + 0 }')
+          test "$primary_public_count" -eq 1 || {
+            echo "Expected exactly one primary public key, found $primary_public_count" >&2
             exit 1
           }
-          test "$fpr" = "$RELEASE_GPG_FINGERPRINT" || {
-            echo "Imported public key fingerprint $fpr does not match RELEASE_GPG_FINGERPRINT" >&2
+          fpr=$(printf '%s\n' "$public_keys" | awk -F: '$1 == "pub" { want=1; next } want && $1 == "fpr" { print $10; exit }')
+          if [[ ! "$fpr" =~ ^[0-9A-Fa-f]{40}$ ]]; then
+            echo "Imported public key fingerprint is malformed" >&2
+            exit 1
+          fi
+          actual=$(printf '%s' "$fpr" | tr '[:lower:]' '[:upper:]')
+          test "$actual" = "$expected" || {
+            echo "Imported public key fingerprint $actual does not match RELEASE_GPG_FINGERPRINT $expected" >&2
             exit 1
           }
           test -z "$(gpg --batch --homedir "$GNUPGHOME" --with-colons --list-secret-keys)" || {
@@ -420,13 +432,25 @@ jobs:
           printf '%s' "$RELEASE_GPG_PASSPHRASE" > "$GNUPGHOME/passphrase"
           chmod 600 "$GNUPGHOME/passphrase"
           printf '%s\n' "$RELEASE_GPG_PRIVATE_KEY" | gpg --batch --homedir "$GNUPGHOME" --import
-          fpr=$(gpg --batch --homedir "$GNUPGHOME" --with-colons --list-secret-keys | awk -F: '$1 == "fpr" { print $10; exit }')
-          test -n "$fpr" || {
-            echo "RELEASE_GPG_PRIVATE_KEY contains no secret key" >&2
+          if [[ ! "$RELEASE_GPG_FINGERPRINT" =~ ^[0-9A-Fa-f]{40}$ ]]; then
+            echo "RELEASE_GPG_FINGERPRINT must be exactly one 40-character hexadecimal fingerprint" >&2
+            exit 1
+          fi
+          expected=$(printf '%s' "$RELEASE_GPG_FINGERPRINT" | tr '[:lower:]' '[:upper:]')
+          secret_keys=$(gpg --batch --homedir "$GNUPGHOME" --with-colons --list-secret-keys)
+          primary_secret_count=$(printf '%s\n' "$secret_keys" | awk -F: '$1 == "sec" { count++ } END { print count + 0 }')
+          test "$primary_secret_count" -eq 1 || {
+            echo "Expected exactly one primary secret key, found $primary_secret_count" >&2
             exit 1
           }
-          test "$fpr" = "$RELEASE_GPG_FINGERPRINT" || {
-            echo "Imported secret key fingerprint $fpr does not match RELEASE_GPG_FINGERPRINT" >&2
+          fpr=$(printf '%s\n' "$secret_keys" | awk -F: '$1 == "sec" { want=1; next } want && $1 == "fpr" { print $10; exit }')
+          if [[ ! "$fpr" =~ ^[0-9A-Fa-f]{40}$ ]]; then
+            echo "Imported secret key fingerprint is malformed" >&2
+            exit 1
+          fi
+          actual=$(printf '%s' "$fpr" | tr '[:lower:]' '[:upper:]')
+          test "$actual" = "$expected" || {
+            echo "Imported secret key fingerprint $actual does not match RELEASE_GPG_FINGERPRINT $expected" >&2
             exit 1
           }
           wrapper="$GNUPGHOME/gpg-wrapper.sh"
@@ -475,11 +499,17 @@ jobs:
       - name: Ensure exact signed release tag
         env:
           RELEASE_APP_TOKEN: ${{ steps.release-app-token.outputs.token }}
+          RELEASE_GPG_FINGERPRINT: ${{ vars.RELEASE_GPG_FINGERPRINT }}
         shell: bash
         run: |
           set -euo pipefail
           tag="v${VERSION}"
           target="$GITHUB_SHA"
+          if [[ ! "$RELEASE_GPG_FINGERPRINT" =~ ^[0-9A-Fa-f]{40}$ ]]; then
+            echo "RELEASE_GPG_FINGERPRINT must be exactly one 40-character hexadecimal fingerprint" >&2
+            exit 1
+          fi
+          expected=$(printf '%s' "$RELEASE_GPG_FINGERPRINT" | tr '[:lower:]' '[:upper:]')
           verify_tag() {
             local t="$1"
             test "$(git cat-file -t "refs/tags/${t}")" = "tag" || {
@@ -497,11 +527,36 @@ jobs:
             # This minimal verifier intentionally duplicates release.mjs:
             # protected job cannot execute repository-owned scripts, so this
             # trust-boundary cost stays inline.
-            # git verify-tag proves the cryptographic signature against the
-            # imported key; GitHub's API verification below proves GitHub
-            # recognizes the signature. Both are required before publication.
-            git verify-tag "${t}" || {
+            # git verify-tag proves the cryptographic signature and exact
+            # configured primary fingerprint; GitHub's API verification below
+            # proves GitHub recognizes the signature. Both are required.
+            local status_file
+            status_file=$(mktemp "$RUNNER_TEMP/tag-status.XXXXXX")
+            if ! git verify-tag --raw "${t}" 2>"$status_file"; then
+              cat "$status_file" >&2
+              rm -f "$status_file"
               echo "git verify-tag failed for ${t}" >&2
+              exit 1
+            fi
+            mapfile -t valid_fingerprints < <(
+              awk '$1 == "[GNUPG:]" && $2 == "VALIDSIG" {
+                signing=$3
+                primary=$12
+                if (signing !~ /^[0-9A-Fa-f]{40}$/ || (primary != "" && primary !~ /^[0-9A-Fa-f]{40}$/)) {
+                  print "MALFORMED"
+                } else {
+                  print (primary != "" ? primary : signing)
+                }
+              }' "$status_file"
+            )
+            rm -f "$status_file"
+            test "${#valid_fingerprints[@]}" -eq 1 || {
+              echo "Expected exactly one valid GPG signature" >&2
+              exit 1
+            }
+            actual=$(printf '%s' "${valid_fingerprints[0]}" | tr '[:lower:]' '[:upper:]')
+            test "$actual" = "$expected" || {
+              echo "Tag signature primary fingerprint $actual does not match expected $expected" >&2
               exit 1
             }
             local obj

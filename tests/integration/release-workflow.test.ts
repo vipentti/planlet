@@ -387,7 +387,13 @@ test("tag verification is inline git built-ins with all five assertions", () => 
     /git rev-parse --verify "refs\/tags\/\$\{t\}\^\{commit\}"/,
   );
   assert.match(release, /git tag -l --format=%\(contents:subject\)/);
-  assert.match(release, /git verify-tag "\$\{t\}"/);
+  assert.match(release, /git verify-tag --raw "\$\{t\}"/);
+  assert.match(
+    release,
+    /RELEASE_GPG_FINGERPRINT: \$\{\{ vars\.RELEASE_GPG_FINGERPRINT \}\}/,
+  );
+  assert.match(release, /Expected exactly one valid GPG signature/);
+  assert.match(release, /primary fingerprint/);
   assert.match(release, /tr -cd '0-9a-f'/);
   assert.doesNotMatch(release, /node scripts\/verify-release-tag\.mjs/);
 });
@@ -492,6 +498,29 @@ test("GPG setup is split by execution path", () => {
     stepSection("Clean up release GPG key material"),
     /if: always\(\)/,
   );
+});
+
+test("GPG setup counts primary keys without counting subkeys", () => {
+  const publicStep = stepSection("Configure public-key verification");
+  const privateStep = stepSection("Configure private-key signing");
+  assert.match(publicStep, /primary_public_count/);
+  assert.match(publicStep, /\$1 == "pub"/);
+  assert.match(publicStep, /\$1 == "fpr"/);
+  assert.match(privateStep, /primary_secret_count/);
+  assert.match(privateStep, /\$1 == "sec"/);
+  assert.match(privateStep, /\$1 == "fpr"/);
+  assert.doesNotMatch(privateStep, /\$1 == "ssb"/);
+});
+
+test("exact tag signer validation is fail-closed and case-normalized", () => {
+  const release = jobSection("release");
+  assert.match(release, /\^\[0-9A-Fa-f\]\{40\}\$/);
+  assert.match(release, /mapfile -t valid_fingerprints/);
+  assert.match(release, /\$2 == "VALIDSIG"/);
+  assert.match(release, /primary=\$12/);
+  assert.match(release, /tr '\[:lower:\]' '\[:upper:\]'/);
+  assert.match(release, /test "\$\{#valid_fingerprints\[@\]\}" -eq 1/);
+  assert.match(release, /git verify-tag --raw/);
 });
 
 test("Required reviewer Environment rule is documented as mandatory", () => {

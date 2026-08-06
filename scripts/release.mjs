@@ -29,6 +29,7 @@ const root = fileURLToPath(new URL("..", import.meta.url));
 const changelogPath = resolve(root, "CHANGELOG.md");
 const packageJsonPath = resolve(root, "package.json");
 const packageLockPath = resolve(root, "package-lock.json");
+const fingerprintPattern = /^[0-9a-f]{40}$/i;
 
 function fail(msg) {
   console.error(msg);
@@ -193,6 +194,15 @@ if (releaseDate !== undefined && !isValidCalendarDate(releaseDate))
 function plan(msg) {
   const prefix = isExecute ? "[exec]" : "[dry-run]";
   console.log(prefix + " " + msg);
+}
+
+function configuredReleaseFingerprint() {
+  const fingerprint = process.env.RELEASE_GPG_FINGERPRINT;
+  if (!fingerprintPattern.test(fingerprint ?? ""))
+    fail(
+      "RELEASE_GPG_FINGERPRINT must be exactly one 40-character hexadecimal fingerprint.",
+    );
+  return fingerprint;
 }
 
 // ===================================================================
@@ -563,6 +573,8 @@ function cmdTag() {
   const localTag = git("tag", "-l", "v" + version);
   const tagExistsLocally =
     localTag.status === 0 && localTag.stdout.trim() === "v" + version;
+  const expectedFingerprint =
+    tagExistsLocally || isExecute ? configuredReleaseFingerprint() : undefined;
 
   if (tagExistsLocally) {
     // Break-glass release path validates local tags through this repository
@@ -571,6 +583,7 @@ function cmdTag() {
       tag: "v" + version,
       target: headSha,
       message: "Release v" + version,
+      expectedFingerprint,
       cwd: root,
     });
     if (!localVerify.ok)
@@ -618,6 +631,7 @@ function cmdTag() {
       tag: "v" + version,
       target: headSha,
       message: "Release v" + version,
+      expectedFingerprint,
       cwd: root,
     });
     if (!verify.ok)

@@ -41,6 +41,11 @@ interface Repo {
   readonly ghLog: string;
 }
 
+interface GpgFixture {
+  readonly home: string;
+  readonly fingerprint: string;
+}
+
 function utcDay(offsetDays: number): string {
   return new Date(Date.now() + offsetDays * 86_400_000)
     .toISOString()
@@ -51,7 +56,11 @@ const today = utcDay(0);
 const pastDate = utcDay(-2);
 
 function git(repo: Repo, ...args: string[]) {
-  return spawnSync("git", args, { cwd: repo.dir, encoding: "utf8" });
+  return spawnSync("git", args, {
+    cwd: repo.dir,
+    encoding: "utf8",
+    env: repo.env,
+  });
 }
 
 function ghStub(base: string, initialPrList: string): string {
@@ -111,37 +120,39 @@ function makeRepo(options: MakeOptions = {}): Repo {
   mkdirSync(dir);
   mkdirSync(join(dir, "scripts"));
 
+  const gpgFixture = makeGpgFixture(join(base, "gnupg"));
+
   const runGit = (wd: string, ...args: string[]) =>
-    spawnSync("git", args, { cwd: wd, encoding: "utf8" });
+    spawnSync("git", args, {
+      cwd: wd,
+      encoding: "utf8",
+      env: { ...process.env, GNUPGHOME: gpgFixture.home },
+    });
 
   runGit(base, "init", "--bare", "-q", origin);
   runGit(dir, "init", "-q");
   runGit(dir, "config", "user.email", "t@test");
   runGit(dir, "config", "user.name", "test");
 
-  // SSH signing key + allowed signers.
-  const key = join(base, "key");
-  spawnSync("ssh-keygen", ["-q", "-t", "ed25519", "-N", "", "-f", key], {
-    encoding: "utf8",
-  });
-  const pub = spawnSync("ssh-keygen", ["-y", "-f", key], {
-    encoding: "utf8",
-  }).stdout.trim();
-  const allowed = join(base, "allowed");
-  writeFileSync(allowed, `test namespaces="git" ${pub}\n`);
-  runGit(dir, "config", "user.signingkey", key);
-  runGit(dir, "config", "gpg.format", "ssh");
-  runGit(dir, "config", "gpg.ssh.allowedSignersFile", allowed);
+  runGit(dir, "config", "user.signingkey", gpgFixture.fingerprint);
+  runGit(dir, "config", "gpg.format", "openpgp");
+  runGit(dir, "config", "gpg.minTrustLevel", "ultimate");
   runGit(dir, "config", "commit.gpgsign", "true");
   runGit(dir, "config", "tag.gpgsign", "true");
 
-  // Only the matching key is allowed; a different one fails verification.
+  // Only the matching key is trusted; a different imported key fails commit verification.
   if (options.badSigningKey) {
-    const other = join(base, "other");
-    spawnSync("ssh-keygen", ["-q", "-t", "ed25519", "-N", "", "-f", other], {
-      encoding: "utf8",
-    });
-    runGit(dir, "config", "user.signingkey", other);
+    const other = makeGpgFixture(join(base, "other-gnupg"));
+    const imported = spawnSync(
+      "gpg",
+      ["--batch", "--homedir", gpgFixture.home, "--import"],
+      {
+        input: exportGpgKey(other.home, other.fingerprint, true),
+        encoding: "utf8",
+      },
+    );
+    assert.equal(imported.status, 0, imported.stderr);
+    runGit(dir, "config", "user.signingkey", other.fingerprint);
   }
 
   // Repository content.
@@ -201,6 +212,8 @@ function makeRepo(options: MakeOptions = {}): Repo {
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     PATH: join(base, "bin") + delimiter + process.env.PATH,
+    GNUPGHOME: gpgFixture.home,
+    RELEASE_GPG_FINGERPRINT: gpgFixture.fingerprint,
     PLANLET_TEST_REPO: dir,
     // Stop the git-for-windows MSYS runtime from rewriting the absolute hook
     // and node paths embedded in fixture commit hooks.
@@ -214,6 +227,70 @@ function makeRepo(options: MakeOptions = {}): Repo {
     log: base,
     ghLog,
   };
+}
+
+function runGpg(home: string, ...args: string[]) {
+  return spawnSync(
+    "gpg",
+    [
+      "--batch",
+      "--homedir",
+      home,
+      "--pinentry-mode",
+      "loopback",
+      "--passphrase",
+      "",
+      ...args,
+    ],
+    { encoding: "utf8" },
+  );
+}
+
+function makeGpgFixture(home: string): GpgFixture {
+  mkdirSync(home, { mode: 0o700 });
+  const generated = runGpg(
+    home,
+    "--quick-generate-key",
+    "Planlet Release Test <release@example.test>",
+    "rsa2048",
+    "sign",
+    "1d",
+  );
+  assert.equal(generated.status, 0, generated.stderr);
+  const listed = runGpg(home, "--with-colons", "--list-secret-keys");
+  assert.equal(listed.status, 0, listed.stderr);
+  const fingerprint = listed.stdout
+    .split("\n")
+    .find((line) => line.startsWith("fpr:"))
+    ?.split(":")[9];
+  assert.match(fingerprint ?? "", /^[0-9A-Fa-f]{40}$/);
+  return { home, fingerprint: fingerprint as string };
+}
+
+function exportGpgKey(
+  home: string,
+  fingerprint: string,
+  secret: boolean,
+): string {
+  const result = runGpg(
+    home,
+    "--armor",
+    secret ? "--export-secret-keys" : "--export",
+    fingerprint,
+  );
+  assert.equal(result.status, 0, result.stderr);
+  return result.stdout;
+}
+
+function withGpgHome<T>(home: string, callback: () => T): T {
+  const previous = process.env.GNUPGHOME;
+  process.env.GNUPGHOME = home;
+  try {
+    return callback();
+  } finally {
+    if (previous === undefined) delete process.env.GNUPGHOME;
+    else process.env.GNUPGHOME = previous;
+  }
 }
 
 function release(repo: Repo, ...args: string[]) {
@@ -345,7 +422,12 @@ test("prepare succeeds end to end: branch, three version fields, signed commit, 
   assert.equal(lock.packages[""].version, "1.2.3");
 
   // Commit is signed and has one parent.
-  assert.equal(git(repo, "verify-commit", sha).status, 0);
+  const commitVerify = git(repo, "verify-commit", sha);
+  assert.equal(
+    commitVerify.status,
+    0,
+    commitVerify.stdout + commitVerify.stderr,
+  );
   assert.equal(
     git(repo, "log", "--format=%s", "-1", sha).stdout.trim(),
     "release: 1.2.3",
@@ -701,7 +783,7 @@ test("tag accepts a historical past date and succeeds for a matching expected da
   // The recorded date is two days ago; historical mode has no past-date rule.
   const past = makeRepo({ released: true });
   let out = release(past, "tag", "--version", GOOD, "--execute");
-  assert.equal(out.status, 0, out.stderr);
+  assert.equal(out.status, 0, out.stdout + out.stderr);
   assert.equal(git(past, "verify-tag", "v" + GOOD).status, 0);
   // No push without --push.
   assert.ok(
@@ -720,7 +802,7 @@ test("tag accepts a historical past date and succeeds for a matching expected da
     pastDate,
     "--execute",
   );
-  assert.equal(out.status, 0, out.stderr);
+  assert.equal(out.status, 0, out.stdout + out.stderr);
   assert.equal(git(match, "verify-tag", "v" + GOOD).status, 0);
 });
 
@@ -752,7 +834,7 @@ test("tag refuses when the remote tag already exists", () => {
 test("tag --execute --push creates, verifies, pushes, and verifies the remote tag", () => {
   const repo = makeRepo({ released: true });
   const out = release(repo, "tag", "--version", GOOD, "--execute", "--push");
-  assert.equal(out.status, 0, out.stderr);
+  assert.equal(out.status, 0, out.stdout + out.stderr);
   assert.equal(git(repo, "verify-tag", "v" + GOOD).status, 0);
   const subject = git(
     repo,
@@ -834,12 +916,15 @@ test("break-glass tag satisfies the same verifier arguments as the workflow", ()
   const out = release(repo, "tag", "--version", GOOD, "--execute");
   assert.equal(out.status, 0, out.stderr);
   const head = git(repo, "rev-parse", "HEAD").stdout.trim();
-  const verify = verifyReleaseTag({
-    tag: "v" + GOOD,
-    target: head,
-    message: "Release v" + GOOD,
-    cwd: repo.dir,
-  });
+  const verify = withGpgHome(repo.env.GNUPGHOME as string, () =>
+    verifyReleaseTag({
+      tag: "v" + GOOD,
+      target: head,
+      message: "Release v" + GOOD,
+      expectedFingerprint: repo.env.RELEASE_GPG_FINGERPRINT as string,
+      cwd: repo.dir,
+    }),
+  );
   assert.equal(verify.ok, true, verify.ok ? "" : verify.error);
 });
 

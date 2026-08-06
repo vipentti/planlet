@@ -8,6 +8,7 @@ import test from "node:test";
 import { verifyReleaseTag } from "../../scripts/verify-release-tag.mjs";
 
 const tempDirs: string[] = [];
+const gpgHomes = new Map<string, string>();
 test.after(() => {
   for (const dir of tempDirs) {
     rmSync(dir, { recursive: true, force: true });
@@ -15,31 +16,66 @@ test.after(() => {
 });
 
 function git(repo: string, ...args: string[]) {
-  return spawnSync("git", args, { cwd: repo, encoding: "utf8" });
+  const home = gpgHomes.get(repo);
+  return spawnSync("git", args, {
+    cwd: repo,
+    encoding: "utf8",
+    env: home ? { ...process.env, GNUPGHOME: home } : process.env,
+  });
 }
 
-function makeRepo(): { dir: string; head: string; other: string } {
+function gpg(home: string, ...args: string[]) {
+  const result = spawnSync(
+    "gpg",
+    [
+      "--batch",
+      "--homedir",
+      home,
+      "--pinentry-mode",
+      "loopback",
+      "--passphrase",
+      "",
+      ...args,
+    ],
+    { encoding: "utf8" },
+  );
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  return result;
+}
+
+function makeRepo(): {
+  dir: string;
+  head: string;
+  other: string;
+  home: string;
+  fingerprint: string;
+} {
   const base = mkdtempSync(join(tmpdir(), "planlet-tag-verify-"));
   tempDirs.push(base);
   const dir = join(base, "work");
+  const home = join(base, "gnupg");
   mkdirSync(dir);
+  mkdirSync(home, { mode: 0o700 });
+  gpg(
+    home,
+    "--quick-generate-key",
+    "Planlet Tag Test <tag@example.test>",
+    "rsa2048",
+    "sign",
+    "1d",
+  );
+  const fingerprint = gpg(home, "--with-colons", "--list-secret-keys")
+    .stdout.split("\n")
+    .find((line) => line.startsWith("fpr:"))
+    ?.split(":")[9];
+  assert.match(fingerprint ?? "", /^[0-9A-Fa-f]{40}$/);
+  gpgHomes.set(dir, home);
   git(dir, "init", "-q", "-b", "main");
   git(dir, "config", "user.email", "t@test");
   git(dir, "config", "user.name", "test");
-
-  // SSH signing key + allowed signers, mirroring the release-utility harness.
-  const key = join(base, "key");
-  spawnSync("ssh-keygen", ["-q", "-t", "ed25519", "-N", "", "-f", key], {
-    encoding: "utf8",
-  });
-  const pub = spawnSync("ssh-keygen", ["-y", "-f", key], {
-    encoding: "utf8",
-  }).stdout.trim();
-  const allowed = join(base, "allowed");
-  writeFileSync(allowed, `test namespaces="git" ${pub}\n`);
-  git(dir, "config", "user.signingkey", key);
-  git(dir, "config", "gpg.format", "ssh");
-  git(dir, "config", "gpg.ssh.allowedSignersFile", allowed);
+  git(dir, "config", "user.signingkey", fingerprint as string);
+  git(dir, "config", "gpg.format", "openpgp");
+  git(dir, "config", "gpg.minTrustLevel", "ultimate");
   // Isolate from global signing config: sign only when a test asks for it.
   git(dir, "config", "commit.gpgsign", "false");
   git(dir, "config", "tag.gpgsign", "false");
@@ -52,38 +88,53 @@ function makeRepo(): { dir: string; head: string; other: string } {
   writeFileSync(join(dir, "file.txt"), "other\n");
   git(dir, "commit", "-q", "-am", "other");
   const other = git(dir, "rev-parse", "HEAD").stdout.trim();
-  return { dir, head, other };
+  return { dir, head, other, home, fingerprint: fingerprint as string };
 }
 
 function verify(
-  dir: string,
+  repo: ReturnType<typeof makeRepo>,
   args: { tag: string; target: string; message: string },
 ) {
-  return verifyReleaseTag({ cwd: dir, ...args });
+  const previous = process.env.GNUPGHOME;
+  process.env.GNUPGHOME = repo.home;
+  try {
+    return verifyReleaseTag({
+      cwd: repo.dir,
+      expectedFingerprint: repo.fingerprint,
+      ...args,
+    });
+  } finally {
+    if (previous === undefined) delete process.env.GNUPGHOME;
+    else process.env.GNUPGHOME = previous;
+  }
 }
 
 test("valid signed annotated tag verifies and returns the object SHA", () => {
-  const { dir, head } = makeRepo();
-  git(dir, "tag", "-a", "-s", "v0.3.0", "-m", "v0.3.0", head);
-  const out = verify(dir, {
+  const repo = makeRepo();
+  git(repo.dir, "tag", "-a", "-s", "v0.3.0", "-m", "v0.3.0", repo.head);
+  const out = verify(repo, {
     tag: "v0.3.0",
-    target: head,
+    target: repo.head,
     message: "v0.3.0",
   });
   assert.ok(out.ok, out.ok ? "" : out.error);
   if (out.ok) {
-    const expected = git(dir, "rev-parse", "refs/tags/v0.3.0").stdout.trim();
+    const expected = git(
+      repo.dir,
+      "rev-parse",
+      "refs/tags/v0.3.0",
+    ).stdout.trim();
     assert.equal(out.objectSha, expected);
     assert.match(out.objectSha, /^[0-9a-f]{40}$/);
   }
 });
 
 test("lightweight tag refuses", () => {
-  const { dir, head } = makeRepo();
-  git(dir, "tag", "v0.3.0", head);
-  const out = verify(dir, {
+  const repo = makeRepo();
+  git(repo.dir, "tag", "v0.3.0", repo.head);
+  const out = verify(repo, {
     tag: "v0.3.0",
-    target: head,
+    target: repo.head,
     message: "v0.3.0",
   });
   assert.ok(!out.ok);
@@ -91,11 +142,11 @@ test("lightweight tag refuses", () => {
 });
 
 test("tag pointing at the wrong commit refuses", () => {
-  const { dir, head, other } = makeRepo();
-  git(dir, "tag", "-a", "-s", "v0.3.0", "-m", "v0.3.0", head);
-  const out = verify(dir, {
+  const repo = makeRepo();
+  git(repo.dir, "tag", "-a", "-s", "v0.3.0", "-m", "v0.3.0", repo.head);
+  const out = verify(repo, {
     tag: "v0.3.0",
-    target: other,
+    target: repo.other,
     message: "v0.3.0",
   });
   assert.ok(!out.ok);
@@ -103,11 +154,11 @@ test("tag pointing at the wrong commit refuses", () => {
 });
 
 test("wrong message subject refuses", () => {
-  const { dir, head } = makeRepo();
-  git(dir, "tag", "-a", "-s", "v0.3.0", "-m", "other message", head);
-  const out = verify(dir, {
+  const repo = makeRepo();
+  git(repo.dir, "tag", "-a", "-s", "v0.3.0", "-m", "other message", repo.head);
+  const out = verify(repo, {
     tag: "v0.3.0",
-    target: head,
+    target: repo.head,
     message: "v0.3.0",
   });
   assert.ok(!out.ok);
@@ -115,11 +166,11 @@ test("wrong message subject refuses", () => {
 });
 
 test("unsigned annotated tag refuses", () => {
-  const { dir, head } = makeRepo();
-  git(dir, "tag", "-a", "v0.3.0", "-m", "v0.3.0", head);
-  const out = verify(dir, {
+  const repo = makeRepo();
+  git(repo.dir, "tag", "-a", "v0.3.0", "-m", "v0.3.0", repo.head);
+  const out = verify(repo, {
     tag: "v0.3.0",
-    target: head,
+    target: repo.head,
     message: "v0.3.0",
   });
   assert.ok(!out.ok);
@@ -127,10 +178,10 @@ test("unsigned annotated tag refuses", () => {
 });
 
 test("missing tag refuses with a diagnostic", () => {
-  const { dir, head } = makeRepo();
-  const out = verify(dir, {
+  const repo = makeRepo();
+  const out = verify(repo, {
     tag: "v9.9.9",
-    target: head,
+    target: repo.head,
     message: "v9.9.9",
   });
   assert.ok(!out.ok);

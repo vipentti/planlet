@@ -107,8 +107,12 @@ cannot run (for example, workflow or environment misconfiguration), an operator
 can create and push the tag this way; a later workflow rerun then finds the
 exact tag, verifies it, and continues publication. Break-glass tags must use
 the canonical `Release v<version>` subject and the same dedicated release-only
-signing key identified by `RELEASE_GPG_FINGERPRINT`; the workflow's isolated
-GPG keyring can only verify a tag signed by that exact key.
+signing key identified by `RELEASE_GPG_FINGERPRINT`; set that variable in the
+operator environment before `release:tag`. Missing or malformed configuration
+fails closed. `scripts/verify-release-tag.mjs` requires its
+`expectedFingerprint` input and accepts no implicit local-key fallback. The
+workflow's isolated GPG keyring can only verify a tag signed by that exact
+primary key, including tags made with its signing subkey.
 
 ### Recovery
 
@@ -205,12 +209,12 @@ The `release` GitHub Environment must provide these secrets:
 
 And these variables:
 
-| Variable                  | Purpose                                                                                             |
-| ------------------------- | --------------------------------------------------------------------------------------------------- |
-| `RELEASE_APP_ID`          | GitHub App ID of the Release Automation App                                                         |
-| `RELEASE_GPG_FINGERPRINT` | Exact fingerprint of the imported secret key; the workflow fails if it does not match               |
-| `RELEASE_GIT_NAME`        | Git committer/tagger name for the release tag                                                       |
-| `RELEASE_GIT_EMAIL`       | Email configured for the tag; must be a verified email on the GitHub account holding the public key |
+| Variable                  | Purpose                                                                                                           |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `RELEASE_APP_ID`          | GitHub App ID of the Release Automation App                                                                       |
+| `RELEASE_GPG_FINGERPRINT` | Exact 40-hex primary fingerprint; workflow and break-glass verification fail if missing, malformed, or mismatched |
+| `RELEASE_GIT_NAME`        | Git committer/tagger name for the release tag                                                                     |
+| `RELEASE_GIT_EMAIL`       | Email configured for the tag; must be a verified email on the GitHub account holding the public key               |
 
 The signing key must be a dedicated release-only GPG key. Its email must be
 verified on the GitHub account that holds the public key, so GitHub reports the
