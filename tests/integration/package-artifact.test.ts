@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
   existsSync,
   mkdirSync,
@@ -90,14 +91,24 @@ function makeFixture(withDist: boolean): { dir: string; tarball: string } {
   }
   const packDir = join(dir, "pack");
   mkdirSync(packDir);
-  const pack = spawnSync(
-    "npm",
-    ["pack", "--json", "--ignore-scripts", "--pack-destination", packDir],
-    { cwd: dir, encoding: "utf8" },
-  );
+  const pack = runNpm(dir, [
+    "pack",
+    "--json",
+    "--ignore-scripts",
+    "--pack-destination",
+    packDir,
+  ]);
   assert.equal(pack.status, 0, pack.stderr);
   writeFileSync(join(packDir, "pack.json"), pack.stdout, "utf8");
   return { dir, tarball: join(packDir, EXPECTED) };
+}
+
+function runNpm(dir: string, args: string[]) {
+  return spawnSync("npm", args, {
+    cwd: dir,
+    encoding: "utf8",
+    shell: process.platform === "win32",
+  });
 }
 
 function runValidator(dir: string): {
@@ -187,9 +198,9 @@ test("package packed after build validates and exports digest values", () => {
   assert.match(output, new RegExp(`package-filename=${EXPECTED}`));
   assert.match(output, /package-sha256=[0-9a-f]{64}/);
   assert.match(output, /package-integrity=sha512-/);
-  const sha = spawnSync("sha256sum", [fixture.tarball], {
-    encoding: "utf8",
-  }).stdout.split(/\s+/)[0];
+  const sha = createHash("sha256")
+    .update(readFileSync(fixture.tarball))
+    .digest("hex");
   assert.match(output, new RegExp(`package-sha256=${sha}`));
 });
 
@@ -205,20 +216,13 @@ test("installed binary smoke test rejects a mismatched version", () => {
   // block fails closed before any publication could proceed.
   const cli = join(fixture.dir, "dist", "planlet.mjs");
   writeFileSync(cli, '#!/usr/bin/env node\nconsole.log("9.9.9");\n', "utf8");
-  const repack = spawnSync(
-    "npm",
-    [
-      "pack",
-      "--json",
-      "--ignore-scripts",
-      "--pack-destination",
-      join(fixture.dir, "pack"),
-    ],
-    {
-      cwd: fixture.dir,
-      encoding: "utf8",
-    },
-  );
+  const repack = runNpm(fixture.dir, [
+    "pack",
+    "--json",
+    "--ignore-scripts",
+    "--pack-destination",
+    join(fixture.dir, "pack"),
+  ]);
   assert.equal(repack.status, 0, repack.stderr);
   writeFileSync(join(fixture.dir, "pack", "pack.json"), repack.stdout, "utf8");
   const result = runSmoke(fixture.dir);
