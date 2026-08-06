@@ -5,12 +5,14 @@ import {
   realpathSync,
   rmSync,
   symlinkSync,
+  writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import test from "node:test";
 
 import {
+  detectHarnessSignals,
   normalizeToolSelector,
   resolveHarnessDestinations,
 } from "../../src/core/harnesses.js";
@@ -24,6 +26,93 @@ function withRoot(run: (root: string) => void): void {
     rmSync(root, { recursive: true, force: true });
   }
 }
+
+test("harness signals detect every known repository marker", () => {
+  const markers = [
+    { id: "agents", path: ".agents", kind: "directory" },
+    { id: "claude", path: ".claude/skills", kind: "directory" },
+    { id: "claude", path: ".claude/settings.json", kind: "file" },
+    { id: "claude", path: ".claude/settings.local.json", kind: "file" },
+    { id: "claude", path: ".claude/commands", kind: "directory" },
+    { id: "codex", path: ".codex", kind: "directory" },
+    {
+      id: "github-copilot",
+      path: ".github/copilot-instructions.md",
+      kind: "file",
+    },
+    { id: "github-copilot", path: ".github/instructions", kind: "directory" },
+    { id: "github-copilot", path: ".github/skills", kind: "directory" },
+    { id: "github-copilot", path: ".github/prompts", kind: "directory" },
+    { id: "github-copilot", path: ".github/agents", kind: "directory" },
+  ] as const;
+
+  for (const marker of markers) {
+    withRoot((root) => {
+      const path = join(root, marker.path);
+      if (marker.kind === "directory") {
+        mkdirSync(path, { recursive: true });
+      } else {
+        mkdirSync(dirname(path), { recursive: true });
+        writeFileSync(path, "");
+      }
+      assert.deepEqual(detectHarnessSignals(root), [marker.id], marker.path);
+    });
+  }
+});
+
+test("harness signals ignore missing and wrong-kind markers", () => {
+  const markers = [
+    { path: ".agents", kind: "directory" },
+    { path: ".claude/skills", kind: "directory" },
+    { path: ".claude/settings.json", kind: "file" },
+    { path: ".claude/settings.local.json", kind: "file" },
+    { path: ".claude/commands", kind: "directory" },
+    { path: ".codex", kind: "directory" },
+    { path: ".github/copilot-instructions.md", kind: "file" },
+    { path: ".github/instructions", kind: "directory" },
+    { path: ".github/skills", kind: "directory" },
+    { path: ".github/prompts", kind: "directory" },
+    { path: ".github/agents", kind: "directory" },
+  ] as const;
+
+  withRoot((root) => {
+    assert.deepEqual(detectHarnessSignals(root), []);
+  });
+
+  for (const marker of markers) {
+    withRoot((root) => {
+      const path = join(root, marker.path);
+      if (marker.kind === "directory") {
+        mkdirSync(dirname(path), { recursive: true });
+        writeFileSync(path, "not a directory\n");
+      } else {
+        mkdirSync(path, { recursive: true });
+      }
+      assert.deepEqual(detectHarnessSignals(root), [], marker.path);
+    });
+  }
+});
+
+test("Planlet-only skill footprints do not signal agents or Claude", () => {
+  withRoot((root) => {
+    for (const destination of [".agents/skills", ".claude/skills"]) {
+      mkdirSync(join(root, destination, "planlet-example"), {
+        recursive: true,
+      });
+      writeFileSync(join(root, destination, ".planlet-manifest.json"), "{}\n");
+    }
+    assert.deepEqual(detectHarnessSignals(root), []);
+  });
+});
+
+test("non-Planlet skill entries signal their harness", () => {
+  withRoot((root) => {
+    for (const destination of [".agents/skills", ".claude/skills"]) {
+      mkdirSync(join(root, destination, "user-skill"), { recursive: true });
+    }
+    assert.deepEqual(detectHarnessSignals(root), ["agents", "claude"]);
+  });
+});
 
 test("tool selectors trim, deduplicate, and retain registry order", () => {
   assert.deepEqual(normalizeToolSelector(" codex,agents,codex "), [

@@ -145,6 +145,27 @@ test("init parses selectors, preserves unrelated skills, and installs canonical 
   });
 });
 
+test("explicit Copilot init keeps existing .github skills untouched", async () => {
+  await withRoot(async (root) => {
+    const existing = join(root, ".github", "skills", "user-skill", "SKILL.md");
+    mkdirSync(join(root, ".github", "skills", "user-skill"), {
+      recursive: true,
+    });
+    writeFileSync(existing, "# User skill\n");
+
+    const result = await invoke(root, ["init", "--tools", "github-copilot"]);
+    assert.equal(result.exitCode, 0, result.stderr);
+    const output = decodedRecord(result.stdout);
+    assert.ok(Array.isArray(output.destinations));
+    const destination = record(output.destinations[0]);
+    assert.equal(destination.destination, ".agents/skills");
+    assert.deepEqual(destination.tools, ["github-copilot"]);
+    assert.equal(readFileSync(existing, "utf8"), "# User skill\n");
+    assert.equal(existsSync(join(root, ".agents", "skills")), true);
+    assert.equal(existsSync(join(root, ".claude")), false);
+  });
+});
+
 test("init writes and stages AGENTS.md and a regular CLAUDE.md in git repositories", async () => {
   await withGitRoot(async (root) => {
     writeFileSync(join(root, "CLAUDE.md"), "# Claude\n");
@@ -340,7 +361,6 @@ test("prompt choices collapse shared destinations and default to populated ones"
       join(root, ".claude", "skills", "unrelated", "SKILL.md"),
       "# Unrelated\n",
     );
-    mkdirSync(join(root, ".agents", "skills"), { recursive: true });
 
     const choices = buildToolChoices(root);
     assert.deepEqual(
@@ -364,6 +384,41 @@ test("prompt choices collapse shared destinations and default to populated ones"
           preselected: true,
         },
       ],
+    );
+    assert.equal(resolveAnswer(choices, ""), "claude");
+  });
+});
+
+test("prompt choices use harness markers and ignore Planlet-only skills", async () => {
+  await withRoot(async (root) => {
+    mkdirSync(join(root, ".github", "skills"), { recursive: true });
+    mkdirSync(join(root, ".codex"), { recursive: true });
+    mkdirSync(join(root, ".claude", "skills", "planlet-example"), {
+      recursive: true,
+    });
+    writeFileSync(
+      join(root, ".claude", "skills", INSTALLATION_MANIFEST),
+      "{}\n",
+    );
+
+    const choices = buildToolChoices(root);
+    assert.deepEqual(
+      choices.map((choice) => choice.preselected),
+      [true, false],
+    );
+    assert.equal(resolveAnswer(choices, ""), "agents,codex,github-copilot");
+  });
+});
+
+test("prompt choices detect per-machine Claude settings marker", async () => {
+  await withRoot(async (root) => {
+    mkdirSync(join(root, ".claude"), { recursive: true });
+    writeFileSync(join(root, ".claude", "settings.local.json"), "{}\n");
+
+    const choices = buildToolChoices(root);
+    assert.deepEqual(
+      choices.map((choice) => choice.preselected),
+      [false, true],
     );
     assert.equal(resolveAnswer(choices, ""), "claude");
   });
