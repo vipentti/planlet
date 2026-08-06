@@ -10,16 +10,14 @@ import {
   type HarnessDestination,
   type HarnessToolId,
 } from "./harnesses.js";
-import { byName, resolveSafePath } from "./paths.js";
+import { byName, pathKind, resolveSafePath, sortedRecord } from "./paths.js";
 import {
   INSTALLATION_MANIFEST,
   createInstallationManifest,
   parseInstallationManifest,
   serializeInstallationManifest,
-  sortedRecord,
 } from "./harness-manifest.js";
 import {
-  pathKind,
   publishDestinationTransaction,
   type InstallTransactionHooks,
 } from "./harness-publish.js";
@@ -37,6 +35,7 @@ export {
   parseInstallationManifest,
   serializeInstallationManifest,
 } from "./harness-manifest.js";
+export type { InstallationManifest } from "./harness-manifest.js";
 export type { InstallTransactionHooks } from "./harness-publish.js";
 
 type HarnessState = "missing" | "unmanaged" | "installed" | "modified";

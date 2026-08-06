@@ -22,6 +22,7 @@ import {
   installHarnessSkills,
   parseInstallationManifest,
   serializeInstallationManifest,
+  type InstallationManifest,
 } from "../../src/core/harness-installer.js";
 import {
   HARNESS_INSTALL_LOCK_NAME,
@@ -68,6 +69,12 @@ function withRoot(run: (root: string) => void): void {
 const BASE_SOURCE = source({
   "planlet-example/SKILL.md": "# Example\n",
   "planlet-example/references/guide.md": "Guide\n",
+});
+
+test("InstallationManifest remains exported from harness-installer", () => {
+  const manifest: InstallationManifest =
+    createInstallationManifest(BASE_SOURCE);
+  assert.equal(manifest.schemaVersion, 2);
 });
 
 test("manifest schema and hashes are deterministic and validated", () => {

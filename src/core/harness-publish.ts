@@ -3,18 +3,9 @@ import { mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 import { PlanletError, asWriteConflict } from "../errors/planlet-error.js";
-import { resolveSafePath, tryLstat } from "./paths.js";
+import { pathKind, resolveSafePath } from "./paths.js";
 import { INSTALLATION_MANIFEST } from "./harness-manifest.js";
 import type { CanonicalSkillSource } from "./skill-source.js";
-
-export function pathKind(
-  path: string,
-): "missing" | "directory" | "file" | "symlink" {
-  const stats = tryLstat(path);
-  if (stats === null) return "missing";
-  if (stats.isSymbolicLink()) return "symlink";
-  return stats.isDirectory() ? "directory" : "file";
-}
 
 /**
  * Fault-injection seams for the publish transaction. Production never sets

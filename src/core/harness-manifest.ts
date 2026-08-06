@@ -1,5 +1,5 @@
 import { PlanletError } from "../errors/planlet-error.js";
-import { byName } from "./paths.js";
+import { sortedRecord } from "./paths.js";
 import type { CanonicalSkillSource } from "./skill-source.js";
 
 export const INSTALLATION_MANIFEST = ".planlet-manifest.json";
@@ -8,14 +8,6 @@ const INSTALLATION_MANIFEST_VERSION = 2;
 export interface InstallationManifest {
   readonly schemaVersion: typeof INSTALLATION_MANIFEST_VERSION;
   readonly files: Readonly<Record<string, string>>;
-}
-
-export function sortedRecord(
-  entries: readonly (readonly [string, string])[],
-): Readonly<Record<string, string>> {
-  return Object.fromEntries(
-    [...entries].sort(([left], [right]) => byName(left, right)),
-  );
 }
 
 export function createInstallationManifest(
