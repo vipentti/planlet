@@ -15,6 +15,15 @@ function indexOfLine(predicate: (line: string) => boolean): number {
   return lines.findIndex(predicate);
 }
 
+function jobSection(name: string, next?: string): string {
+  const start = indexOfLine((line) => line.trim() === name + ":");
+  const end = next
+    ? indexOfLine((line) => line.trim() === next + ":")
+    : lines.length;
+  assert.ok(start >= 0, `job ${name} missing`);
+  return lines.slice(start, end).join("\n");
+}
+
 test("workflow uses GitHub App credentials, not a push PAT", () => {
   assert.match(workflow, /RELEASE_APP_ID/);
   assert.match(workflow, /RELEASE_APP_PRIVATE_KEY/);
@@ -155,4 +164,60 @@ test("duplicate protected-job changelog verification is removed", () => {
   assert.doesNotMatch(workflow, /Verify committed changelog release state/);
   // The detector still performs historical changelog validation.
   assert.match(workflow, /scripts\/detect-release-merge\.mjs/);
+});
+
+test("workflow-level permissions do not grant id-token", () => {
+  const top = lines
+    .slice(
+      0,
+      indexOfLine((line) => line.trim() === "detect:"),
+    )
+    .join("\n");
+  assert.match(top, /permissions:/);
+  assert.match(top, /contents: read/);
+  assert.doesNotMatch(top, /id-token/);
+});
+
+test("detect job is unprivileged and holds no release material", () => {
+  const detect = jobSection("detect", "verify");
+  assert.doesNotMatch(detect, /id-token/);
+  assert.doesNotMatch(detect, /environment: release/);
+  assert.doesNotMatch(
+    detect,
+    /RELEASE_APP_ID|RELEASE_APP_PRIVATE_KEY|RELEASE_GPG|PACKAGE_NAME/,
+  );
+});
+
+test("verify job is unprivileged and runs the full verification chain", () => {
+  const verify = jobSection("verify", "release");
+  assert.match(verify, /contents: read/);
+  assert.doesNotMatch(verify, /id-token/);
+  assert.doesNotMatch(verify, /environment: release/);
+  assert.match(verify, /npm ci/);
+  assert.match(verify, /npm run format:check/);
+  assert.match(verify, /npm run lint/);
+  assert.match(verify, /npm run type-check/);
+  assert.match(verify, /npm run build/);
+  assert.match(verify, /npm test/);
+  assert.match(verify, /git diff --check/);
+  assert.match(verify, /Verify generated skills/);
+  assert.match(verify, /Verify clean tagged source/);
+  assert.match(verify, /merge-base --is-ancestor/);
+});
+
+test("only the protected release job has id-token and runs no dependency code", () => {
+  const release = jobSection("release");
+  assert.match(release, /environment: release/);
+  assert.match(release, /contents: write/);
+  assert.match(release, /id-token: write/);
+  assert.match(release, /needs: \[detect, verify\]/);
+  assert.match(release, /merge-base --is-ancestor/);
+  assert.match(release, /npm pack --json --ignore-scripts/);
+  assert.match(release, /scripts\/validate-packed-artifact\.mjs/);
+  assert.doesNotMatch(release, /npm ci/);
+  assert.doesNotMatch(release, /npm install(?! --global npm@11\.5\.1)/);
+  assert.doesNotMatch(release, /npm run build/);
+  assert.doesNotMatch(release, /npm run lint/);
+  assert.doesNotMatch(release, /npm run type-check/);
+  assert.doesNotMatch(release, /npm test/);
 });

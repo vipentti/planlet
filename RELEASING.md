@@ -145,34 +145,22 @@ missing previous SHAs, mismatched files, invalid versions, mismatched names,
 or nonempty unreleased notes fail closed rather than being treated as an
 ordinary push.
 
-Only the protected `release` job references `environment: release` and only its
-steps read the release secrets. After approval the job runs, in order:
-
-1. Check out the exact triggering commit with full history.
-2. Verify the commit is reachable from the current `origin/main`.
-3. Install dependencies from the lockfile (`npm ci`).
-4. Run `format:check`, `lint`, `type-check`, `build`, tests, `git diff --check`,
-   generated-skill parity, and the clean-source check.
-5. Extract release notes from the committed changelog. (The detector already
-   validated the changelog release state against the exact commit before
-   approval.)
-6. Build the reviewed package artifact with `npm pack --json --ignore-scripts`
-   and validate its metadata and exact tarball basename locally before
-   recording the artifact path.
-7. Configure the isolated temporary GPG environment for release-tag signing.
-8. Generate the short-lived GitHub App installation token when the remote tag
-   is absent (existing-tag reruns skip token generation).
-9. Create the exact signed tag at the triggering commit, or verify the existing
-   exact remote tag.
-10. Push only that tag ref when the remote tag is absent.
-11. Confirm GitHub reports the tag signature verified.
-12. Publish the npm artifact with provenance (npm pinned to the exact version
-    `11.5.1`), or verify the already-published version by exact identity and
-    integrity.
-13. Create or update the GitHub release from the changelog notes.
-
-The remote tag is the final irreversible mutation before npm publication.
-Pushing the tag does not start a second workflow run.
+The workflow is split into three jobs. `detect` (unprivileged) classifies the
+push. `verify` (unprivileged, `contents: read` only, no npm OIDC capability)
+checks out the exact triggering SHA, verifies ancestry, and runs `npm ci`,
+`format:check`, `lint`, `type-check`, `build`, tests, `git diff --check`,
+generated-skill parity, and the clean-source check. `release` is the only
+protected job (`environment: release`, `contents: write`, and the only job with
+`id-token: write`); it depends on both prior jobs succeeding and never installs
+dependencies or executes project/dependency code. It performs a fresh
+origin/main ancestry check after approval, extracts release notes, pins npm to
+the exact version `11.5.1`, packages the already-verified committed output with
+`npm pack --json --ignore-scripts`, validates the packed artifact, then runs
+the GPG tag signing, App-authenticated tag push, GitHub signature
+confirmation, npm publish-or-verify, and GitHub release steps. The remote tag
+is the final irreversible mutation before npm publication; pushing it does not
+start a second workflow run. Exact step details live in
+[`.github/workflows/release.yml`](.github/workflows/release.yml).
 
 Rerun behavior:
 
