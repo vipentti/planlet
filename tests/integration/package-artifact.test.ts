@@ -5,6 +5,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   writeFileSync,
@@ -195,9 +196,8 @@ test("package packed after build validates and exports digest values", () => {
   const result = runValidator(fixture.dir);
   assert.equal(result.status, 0, result.stderr);
   const output = readFileSync(result.outputFile, "utf8");
-  assert.match(output, new RegExp(`package-filename=${EXPECTED}`));
   assert.match(output, /package-sha256=[0-9a-f]{64}/);
-  assert.match(output, /package-integrity=sha512-/);
+  assert.doesNotMatch(output, /package-filename=|package-integrity=/);
   const sha = createHash("sha256")
     .update(readFileSync(fixture.tarball))
     .digest("hex");
@@ -208,6 +208,12 @@ test("installed binary smoke test passes for the expected version", () => {
   const fixture = makeFixture(true);
   const result = runSmoke(fixture.dir);
   assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(readdirSync(join(fixture.dir, "pack")).sort(), [
+    "pack.json",
+    EXPECTED,
+  ]);
+  assert.equal(existsSync(join(fixture.dir, "pack", "smoke")), false);
+  assert.equal(existsSync(join(fixture.dir, "package-smoke")), true);
 });
 
 test("installed binary smoke test rejects a mismatched version", () => {

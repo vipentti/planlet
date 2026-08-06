@@ -15,9 +15,10 @@ At release time, move those entries into a dated version section and restore an
 empty `Unreleased` section. Ordinary CI runs
 `node scripts/assert-changelog-release-ready.mjs`, which requires exactly one
 `[Unreleased]` section and at most one structurally valid dated section for the
-current `package.json` version. Malformed headings that mention `Unreleased` or
-that version still count toward those limits. Explicit release verification uses
-the helper's historical mode:
+current `package.json` version; every changelog section must also have a link
+reference. Malformed headings that mention `Unreleased` or that version still
+count toward those limits. Explicit release verification uses the helper's
+historical mode:
 
 ```sh
 node scripts/assert-changelog-release-ready.mjs --verify-release [--date YYYY-MM-DD] [--print-date]
@@ -170,6 +171,11 @@ scripts disabled for packing and publication), and GitHub release steps. The
 remote tag is the final irreversible mutation before npm publication; pushing
 it does not start a second workflow run. Exact step details live in
 [`.github/workflows/release.yml`](.github/workflows/release.yml).
+
+The protected workflow keeps minimal tag verification inline intentionally: it
+cannot execute repository-owned scripts at its trust boundary.
+`scripts/verify-release-tag.mjs` belongs to the break-glass `release.mjs` path;
+it is not shared with the protected workflow.
 
 Rerun behavior:
 

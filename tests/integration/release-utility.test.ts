@@ -99,6 +99,7 @@ interface MakeOptions {
   readonly prList?: string;
   readonly badSigningKey?: boolean;
   readonly skipPush?: boolean;
+  readonly omitLinkReferences?: boolean;
 }
 
 function makeRepo(options: MakeOptions = {}): Repo {
@@ -167,9 +168,14 @@ function makeRepo(options: MakeOptions = {}): Repo {
   const releasedSection = options.released
     ? `## [${version}] - ${pastDate}\n\n### Added\n\n- A released item\n`
     : "";
+  const linkReferences = options.omitLinkReferences
+    ? ""
+    : "[Unreleased]: https://example.test/compare\n[" +
+      version +
+      "]: https://example.test/tag\n";
   writeFileSync(
     join(dir, "CHANGELOG.md"),
-    `# Changelog\n\n## [Unreleased]\n\n${unreleased}${releasedSection}[Unreleased]: https://example.test/compare\n[${version}]: https://example.test/tag\n`,
+    `# Changelog\n\n## [Unreleased]\n\n${unreleased}${releasedSection}${linkReferences}`,
   );
 
   copyFileSync(sourceReleaseScript, join(dir, "scripts", "release.mjs"));
@@ -322,6 +328,15 @@ test("prepare succeeds end to end: branch, three version fields, signed commit, 
       ?.trim() ?? "missing";
   assert.equal(unreleasedBody, "");
   assert.ok(changelog.includes("An unreleased item\n"));
+  assert.match(
+    changelog,
+    /^\[Unreleased\]: https:\/\/github\.com\/vipentti\/planlet\/compare\/v1\.2\.3\.\.\.HEAD$/m,
+  );
+  assert.match(
+    changelog,
+    /^\[1\.2\.3\]: https:\/\/github\.com\/vipentti\/planlet\/compare\/v0\.1\.0\.\.\.v1\.2\.3$/m,
+  );
+  assert.match(changelog, /^\[0\.1\.0\]: https:\/\/example\.test\/tag$/m);
 
   const pkg = JSON.parse(git(repo, "show", `${sha}:package.json`).stdout);
   assert.equal(pkg.version, "1.2.3");
@@ -370,6 +385,31 @@ test("prepare succeeds end to end: branch, three version fields, signed commit, 
   assert.equal(git(repo, "rev-parse", "main").stdout.trim(), mainShaBefore);
   assert.equal(readJson(repo, "package.json").version, "0.1.0");
   assert.match(out.stdout, /Checked out main/);
+});
+
+test("prepare creates link references when changelog has none", () => {
+  const repo = makeRepo({ omitLinkReferences: true });
+  const out = release(
+    repo,
+    "prepare",
+    "--version",
+    "1.2.3",
+    "--release-date",
+    today,
+    "--execute",
+  );
+  assert.equal(out.status, 0, out.stderr + out.stdout);
+
+  const sha = git(repo, "rev-parse", "release/v1.2.3").stdout.trim();
+  const changelog = git(repo, "show", `${sha}:CHANGELOG.md`).stdout;
+  assert.match(
+    changelog,
+    /^\[Unreleased\]: https:\/\/github\.com\/vipentti\/planlet\/compare\/v1\.2\.3\.\.\.HEAD$/m,
+  );
+  assert.match(
+    changelog,
+    /^\[1\.2\.3\]: https:\/\/github\.com\/vipentti\/planlet\/compare\/v0\.1\.0\.\.\.v1\.2\.3$/m,
+  );
 });
 
 test("prepare refuses when the worktree is dirty", () => {

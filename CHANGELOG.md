@@ -17,6 +17,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and thi
 - `planlet update` refreshes present planlet onboarding markers without
   creating sections in repositories that opted out.
 
+### Fixed
+
+- `release:prepare` now refreshes compare links for new releases and keeps prior links.
+
 ## [0.2.0] - 2026-08-05
 
 ### Added

@@ -30,6 +30,8 @@ jobs:
           persist-credentials: false
 
       - id: detect
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
         shell: bash
         run: |
           set -euo pipefail
@@ -39,7 +41,7 @@ jobs:
             echo "HEAD does not match the triggering SHA" >&2
             exit 1
           }
-          result=$(node scripts/detect-release-merge.mjs --before "${{ github.event.before }}")
+          result=$(node scripts/detect-release-merge.mjs --before "$BEFORE_SHA")
           is_release=$(printf '%s' "$result" | jq -r '.isRelease')
           echo "is-release=$is_release" >> "$GITHUB_OUTPUT"
           if [ "$is_release" = "true" ]; then
@@ -56,16 +58,29 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    env:
+      VERSION: ${{ needs.detect.outputs.version }}
     outputs:
-      package-filename: ${{ steps.package.outputs.package-filename }}
       package-sha256: ${{ steps.package.outputs.package-sha256 }}
-      package-integrity: ${{ steps.package.outputs.package-integrity }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
+
+      - name: Verify detected release version
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${VERSION:-}" || {
+            echo "Missing release version from detection" >&2
+            exit 1
+          }
+          if [[ ! "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "Detected release version is not stable X.Y.Z: $VERSION" >&2
+            exit 1
+          fi
 
       - name: Verify triggering commit is reachable from origin/main
         env:
@@ -151,17 +166,17 @@ jobs:
             rmSync(extract, { recursive: true, force: true });
           }
           const sha256 = createHash("sha256").update(readFileSync(tarball)).digest("hex");
-          appendFileSync(process.env.GITHUB_OUTPUT, `package-filename=${packed.filename}\n`);
           appendFileSync(process.env.GITHUB_OUTPUT, `package-sha256=${sha256}\n`);
-          appendFileSync(process.env.GITHUB_OUTPUT, `package-integrity=${packed.integrity}\n`);
           NODE
 
       - name: Smoke-test installed package
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/pack/smoke"
-          cd "$RUNNER_TEMP/pack/smoke"
+          smoke_dir="$RUNNER_TEMP/package-smoke"
+          rm -rf "$smoke_dir"
+          mkdir -p "$smoke_dir"
+          cd "$smoke_dir"
           npm init -y >/dev/null
           npm install "$RUNNER_TEMP/pack/vipentti-planlet-${VERSION}.tgz" --ignore-scripts --no-save --no-audit --no-fund
           test "$(./node_modules/.bin/planlet --version)" = "$VERSION"
@@ -169,9 +184,11 @@ jobs:
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: planlet-release-${{ github.sha }}
-          path: ${{ runner.temp }}/pack
+          path: |
+            ${{ runner.temp }}/pack/vipentti-planlet-${{ needs.detect.outputs.version }}.tgz
+            ${{ runner.temp }}/pack/pack.json
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 30
 
   release:
     # Protected publishing: installs no project dependencies and executes no
@@ -209,10 +226,17 @@ jobs:
             echo "Missing release version from detection" >&2
             exit 1
           }
-          if git ls-remote --exit-code origin "refs/tags/v${VERSION}" >/dev/null 2>&1; then
+          if probe_output=$(git ls-remote --exit-code origin "refs/tags/v${VERSION}" 2>&1); then
             echo "tag-exists=true" >> "$GITHUB_OUTPUT"
           else
-            echo "tag-exists=false" >> "$GITHUB_OUTPUT"
+            probe_status=$?
+            if [ "$probe_status" -eq 2 ]; then
+              echo "tag-exists=false" >> "$GITHUB_OUTPUT"
+            else
+              printf '%s\n' "$probe_output" >&2
+              echo "Remote release tag probe failed with status $probe_status" >&2
+              exit 1
+            fi
           fi
 
       - name: Verify triggering commit is reachable from origin/main
@@ -470,6 +494,9 @@ jobs:
               echo "Tag ${t} message subject is not 'Release ${t}'" >&2
               exit 1
             }
+            # This minimal verifier intentionally duplicates release.mjs:
+            # protected job cannot execute repository-owned scripts, so this
+            # trust-boundary cost stays inline.
             # git verify-tag proves the cryptographic signature against the
             # imported key; GitHub's API verification below proves GitHub
             # recognizes the signature. Both are required before publication.
@@ -498,7 +525,10 @@ jobs:
             git tag -a -s "$tag" -m "Release ${tag}" "$target"
             verify_tag "$tag"
             auth=$(printf 'x-access-token:%s' "$RELEASE_APP_TOKEN" | base64 -w0)
-            git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" push origin "refs/tags/${tag}:refs/tags/${tag}"
+            export GIT_CONFIG_COUNT=1
+            export GIT_CONFIG_KEY_0=http.https://github.com/.extraheader
+            export GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $auth"
+            git push origin "refs/tags/${tag}:refs/tags/${tag}"
             remote_object=$(git ls-remote origin "refs/tags/${tag}" | awk 'NR == 1 { print $1 }')
             test -n "$remote_object" || {
               echo "Remote tag ${tag} did not appear after push" >&2
@@ -508,6 +538,7 @@ jobs:
               echo "Remote tag ${tag} object ${remote_object} does not match local ${TAG_OBJECT}" >&2
               exit 1
             }
+            unset GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0
           fi
           echo "TAG_OBJECT=$TAG_OBJECT" >> "$GITHUB_ENV"
 
@@ -556,7 +587,7 @@ jobs:
           const raw = JSON.parse(readFileSync("registry.json", "utf8"));
           const registry = Array.isArray(raw) ? raw[0] : raw;
           assert.ok(registry && typeof registry === "object", "npm view --json returned no object");
-          const report = JSON.parse(readFileSync("pack.json", "utf8"));
+          const report = JSON.parse(readFileSync(`${process.env.RUNNER_TEMP}/artifact/pack.json`, "utf8"));
           assert.ok(Array.isArray(report) && report[0], "pack.json must contain a non-empty array");
           const packed = report[0];
           const source = JSON.parse(readFileSync(`${process.env.GITHUB_WORKSPACE}/package.json`, "utf8"));

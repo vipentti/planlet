@@ -6,8 +6,9 @@
  * Ordinary CI (no flags):
  *   Requires exactly one [Unreleased] section and at most one [pkg.version]
  *   section. A dated version section must use a real calendar date and
- *   non-empty notes. Malformed headings that mention Unreleased or the package
- *   version still count toward cardinality.
+ *   non-empty notes. Every changelog section must have a link reference.
+ *   Malformed headings that mention Unreleased or the package version still
+ *   count toward cardinality.
  *
  *   The date is deliberately NOT required to be today or later here. Once a
  *   version ships, its section keeps the date it shipped on, and package.json
@@ -92,6 +93,38 @@ export function packageIdentityMismatch(pkg, lock, expectedName) {
       JSON.stringify(expectedName)
     );
   return null;
+}
+
+const changelogLinkPattern = /^\[([^\]]+)\]:[ \t]*\S.*$/;
+const compareUrl = "https://github.com/vipentti/planlet/compare";
+
+export function updateChangelogLinkReferences(
+  changelog,
+  previousVersion,
+  version,
+) {
+  const managed = new Map([
+    ["Unreleased", `[Unreleased]: ${compareUrl}/v${version}...HEAD`],
+    [version, `[${version}]: ${compareUrl}/v${previousVersion}...v${version}`],
+  ]);
+  const body = [];
+  const priorLinks = [];
+
+  for (const line of changelog.replace(/\r\n/g, "\n").split("\n")) {
+    const match = changelogLinkPattern.exec(line);
+    if (match) {
+      if (managed.has(match[1])) continue;
+      priorLinks.push(line);
+      continue;
+    }
+    body.push(line);
+  }
+
+  return (
+    [body.join("\n").trimEnd(), "", ...managed.values(), ...priorLinks].join(
+      "\n",
+    ) + "\n"
+  );
 }
 
 const todayUtc = new Date().toISOString().slice(0, 10);
@@ -200,6 +233,24 @@ function main() {
   const headings = [...changelog.matchAll(/^## \[([^\]]+)\](.*)$/gm)];
   const unreleased = headings.filter((match) => match[1] === "Unreleased");
   const versionSections = headings.filter((match) => match[1] === version);
+  const linkReferences = new Set(
+    [...changelog.matchAll(/^\[([^\]]+)\]:[ \t]*\S.*$/gm)].map(
+      (match) => match[1],
+    ),
+  );
+
+  function assertLinkReferences() {
+    const missing = [...new Set(headings.map((match) => match[1]))].filter(
+      (label) => !linkReferences.has(label),
+    );
+    if (missing.length > 0) {
+      fail(
+        `Changelog is missing link reference(s): ${missing
+          .map((label) => `[${label}]`)
+          .join(", ")}.`,
+      );
+    }
+  }
 
   function sectionBodyAfter(headerMatch) {
     const start = headerMatch.index + headerMatch[0].length;
@@ -220,6 +271,8 @@ function main() {
   }
 
   function assertChangelogShape({ mode, version, releaseDate }) {
+    assertLinkReferences();
+
     if (unreleased.length !== 1) {
       fail(
         `Changelog must contain exactly one [Unreleased] section (found ${unreleased.length}).`,

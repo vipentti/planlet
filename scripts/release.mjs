@@ -21,6 +21,7 @@ import {
   isValidCalendarDate,
   packageIdentityMismatch,
   packageLockMismatch,
+  updateChangelogLinkReferences,
 } from "./assert-changelog-release-ready.mjs";
 import { verifyReleaseTag } from "./verify-release-tag.mjs";
 
@@ -276,6 +277,7 @@ function cmdPrepare() {
 
   // 6. Version not already current
   const pkg = JSON.parse(readFileSync(packageJsonPath, "utf8"));
+  const previousVersion = pkg.version;
   if (pkg.version === version)
     fail(
       "package.json.version is already " +
@@ -329,17 +331,20 @@ function cmdPrepare() {
     fail("[Unreleased] section is empty; nothing to release.");
   const after = boundary === -1 ? "" : rest.slice(boundary).replace(/^\n+/, "");
   const before = changelogContent.slice(0, unreleasedIdx);
-  const newChangelog =
+  const newChangelog = updateChangelogLinkReferences(
     before +
-    "## [Unreleased]\n\n" +
-    "## [" +
-    version +
-    "] - " +
-    date +
-    "\n\n" +
-    unreleasedBody +
-    "\n\n" +
-    after;
+      "## [Unreleased]\n\n" +
+      "## [" +
+      version +
+      "] - " +
+      date +
+      "\n\n" +
+      unreleasedBody +
+      "\n\n" +
+      after,
+    previousVersion,
+    version,
+  );
 
   writeFileSync(changelogPath, newChangelog, "utf8");
 
@@ -560,8 +565,8 @@ function cmdTag() {
     localTag.status === 0 && localTag.stdout.trim() === "v" + version;
 
   if (tagExistsLocally) {
-    // Validate existing local tag through the shared verifier so the workflow
-    // and the maintainer utility agree on what an exact release tag is.
+    // Break-glass release path validates local tags through this repository
+    // verifier; the protected workflow keeps its own inline trust boundary.
     const localVerify = verifyReleaseTag({
       tag: "v" + version,
       target: headSha,

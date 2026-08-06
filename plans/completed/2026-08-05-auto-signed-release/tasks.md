@@ -64,13 +64,14 @@
       `RELEASE_GIT_EMAIL`/fingerprint, no passphrase in logs or argv);
       add exact-tag ensure step (absent remote: `git tag -a -s` at
       `$GITHUB_SHA` with message `Release v<version>`, local verification via
-      the shared verifier, single non-force push of only that ref with a
+      the inline Git verifier, single non-force push of only that ref with a
       short-lived GitHub App installation token (pinned
       `actions/create-github-app-token`, scoped to `planlet` with Contents
       write only, generated only when the remote tag is absent) via
-      basic-auth extraheader, remote ref re-verified; existing remote tag:
+      temporary `GIT_CONFIG_*` basic-auth extraheader, remote ref re-verified;
+      existing remote tag:
       fetch exact ref, verify annotated/exact commit/message/signature via the
-      shared verifier, mismatched state fails without mutation); add GitHub
+      inline Git verifier, mismatched state fails without mutation); add GitHub
       tag-object `.verification.verified == true`
       confirmation with small bounded retry before npm publication; add
       `always()` cleanup removing the passphrase file and GNUPGHOME; keep

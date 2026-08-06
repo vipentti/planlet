@@ -96,6 +96,9 @@ function baseChangelog(): string {
     "",
     "- Base release",
     "",
+    `[Unreleased]: https://example.test/compare/v${BASE_VERSION}...HEAD`,
+    `[${BASE_VERSION}]: https://example.test/releases/tag/v${BASE_VERSION}`,
+    "",
   ].join("\n");
 }
 
@@ -119,6 +122,10 @@ function releaseChangelog(nonEmptyUnreleased = false): string {
     "### Added",
     "",
     "- Base release",
+    "",
+    `[Unreleased]: https://example.test/compare/v${NEW_VERSION}...HEAD`,
+    `[${NEW_VERSION}]: https://example.test/compare/v${BASE_VERSION}...v${NEW_VERSION}`,
+    `[${BASE_VERSION}]: https://example.test/releases/tag/v${BASE_VERSION}`,
     "",
   ].join("\n");
 }

@@ -1,6 +1,15 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { spawnSync } from "node:child_process";
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
@@ -11,6 +20,11 @@ const releasing = readFileSync(join(repoRoot, "RELEASING.md"), "utf8");
 const lines = workflow.split("\n");
 const APP_TOKEN_ACTION =
   "actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1";
+const tempDirs: string[] = [];
+
+test.after(() => {
+  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
+});
 
 function indexOfLine(predicate: (line: string) => boolean): number {
   return lines.findIndex(predicate);
@@ -37,6 +51,69 @@ function stepSection(name: string): string {
     }
   }
   return lines.slice(start, end).join("\n");
+}
+
+function shellBlock(name: string): string {
+  const section = stepSection(name);
+  const marker = "run: |";
+  const markerIndex = section.indexOf(marker);
+  assert.ok(markerIndex >= 0, `run block in ${name} missing`);
+  const body = section.slice(section.indexOf("\n", markerIndex) + 1);
+  return body
+    .split("\n")
+    .map((line) => line.replace(/^ {10}/, ""))
+    .join("\n")
+    .trim();
+}
+
+function nodeBlock(name: string): string {
+  const start = workflow.indexOf(`- name: ${name}`);
+  assert.ok(start >= 0, `step ${name} missing`);
+  const marker = "<<'NODE'";
+  const heredoc = workflow.indexOf(marker, start);
+  const codeStart = heredoc + marker.length;
+  const codeEnd = workflow.indexOf("\n          NODE", codeStart);
+  assert.ok(
+    codeStart > 0 && codeEnd > codeStart,
+    `inline block in ${name} missing`,
+  );
+  const lines = workflow.slice(codeStart, codeEnd).split("\n");
+  const nonEmpty = lines.filter((line) => line.trim() !== "");
+  const indent = nonEmpty.reduce(
+    (min, line) => Math.min(min, /^ */.exec(line)?.[0].length ?? 0),
+    Infinity,
+  );
+  return lines.map((line) => line.slice(indent)).join("\n");
+}
+
+function runTagProbe(exitCode: number) {
+  const dir = mkdtempSync(join(tmpdir(), "planlet-release-tag-probe-"));
+  tempDirs.push(dir);
+  const bin = join(dir, "bin");
+  mkdirSync(bin);
+  const fakeGit = join(bin, "git");
+  writeFileSync(
+    fakeGit,
+    `#!/bin/sh\nprintf 'probe diagnostic\\n' >&2\nexit ${exitCode}\n`,
+  );
+  chmodSync(fakeGit, 0o755);
+  const output = join(dir, "output");
+  writeFileSync(output, "");
+  const script = join(dir, "probe.sh");
+  writeFileSync(script, shellBlock("Check remote release tag"));
+  return {
+    result: spawnSync("bash", [script], {
+      cwd: dir,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        PATH: bin + delimiter + process.env.PATH,
+        VERSION: "1.2.3",
+        GITHUB_OUTPUT: output,
+      },
+    }),
+    output,
+  };
 }
 
 test("workflow uses GitHub App credentials, not a push PAT", () => {
@@ -95,7 +172,17 @@ test("App token is consumed by the tag-push step and never persisted", () => {
     workflow,
     /RELEASE_APP_TOKEN: \$\{\{ steps\.release-app-token\.outputs\.token \}\}/,
   );
-  assert.match(workflow, /x-access-token:%s' "\$RELEASE_APP_TOKEN"/);
+  assert.match(workflow, /export GIT_CONFIG_COUNT=1/);
+  assert.match(
+    workflow,
+    /export GIT_CONFIG_KEY_0=http\.https:\/\/github\.com\/\.extraheader/,
+  );
+  assert.match(workflow, /GIT_CONFIG_VALUE_0="AUTHORIZATION: basic \$auth"/);
+  assert.match(
+    workflow,
+    /git push origin "refs\/tags\/\$\{tag\}:refs\/tags\/\$\{tag\}"/,
+  );
+  assert.doesNotMatch(workflow, /git -c [^\n]*RELEASE_APP_TOKEN/);
 
   for (const line of lines) {
     if (line.includes("RELEASE_APP_TOKEN")) {
@@ -121,6 +208,22 @@ test("App token is consumed by the tag-push step and never persisted", () => {
   for (const line of lines.slice(releaseIdx)) {
     assert.doesNotMatch(line, /RELEASE_APP_TOKEN/);
   }
+});
+
+test("remote tag probe distinguishes existing, absent, and error outcomes", () => {
+  const existing = runTagProbe(0);
+  assert.equal(existing.result.status, 0, existing.result.stderr);
+  assert.equal(readFileSync(existing.output, "utf8").trim(), "tag-exists=true");
+
+  const absent = runTagProbe(2);
+  assert.equal(absent.result.status, 0, absent.result.stderr);
+  assert.equal(readFileSync(absent.output, "utf8").trim(), "tag-exists=false");
+
+  const error = runTagProbe(7);
+  assert.notEqual(error.result.status, 0);
+  assert.match(error.result.stderr, /probe diagnostic/);
+  assert.match(error.result.stderr, /status 7/);
+  assert.equal(readFileSync(error.output, "utf8"), "");
 });
 
 test("workflow keeps safe ordering: verification before GPG and tag mutation", () => {
@@ -179,15 +282,29 @@ test("protected job pins exact Node and bundled npm without installing anything"
 test("verify job packs and uploads the artifact; release downloads instead of packing", () => {
   const verify = jobSection("verify", "release");
   const release = jobSection("release");
+  assert.match(
+    verify,
+    /env:\n\s+VERSION: \$\{\{ needs\.detect\.outputs\.version \}\}/,
+  );
+  assert.match(verify, /Verify detected release version/);
+  assert.match(verify, /stable X\.Y\.Z/);
   assert.match(verify, /npm pack --json --ignore-scripts/);
   assert.match(verify, /node --input-type=module <<'NODE'/);
-  assert.match(verify, /package-filename=\$\{packed\.filename\}/);
+  assert.doesNotMatch(verify, /package-filename=/);
+  assert.doesNotMatch(verify, /package-integrity=/);
   assert.match(
     verify,
     /actions\/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a/,
   );
   assert.match(verify, /planlet-release-\$\{\{ github\.sha \}\}/);
   assert.match(verify, /if-no-files-found: error/);
+  assert.match(verify, /smoke_dir="\$RUNNER_TEMP\/package-smoke"/);
+  assert.doesNotMatch(verify, /RUNNER_TEMP\/pack\/smoke/);
+  assert.match(
+    verify,
+    /path: \|\n\s+\$\{\{ runner\.temp \}\}\/pack\/vipentti-planlet-\$\{\{ needs\.detect\.outputs\.version \}\}\.tgz\n\s+\$\{\{ runner\.temp \}\}\/pack\/pack\.json/,
+  );
+  assert.match(verify, /retention-days: 30/);
   assert.match(
     release,
     /actions\/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c/,
@@ -293,6 +410,41 @@ test("npm publish disables lifecycle scripts and pins the registry", () => {
   assert.match(release, /registry\.dist\?\.integrity, packed\.integrity/);
 });
 
+test("registry verifier reads pack.json from downloaded artifact directory", () => {
+  const dir = mkdtempSync(join(tmpdir(), "planlet-registry-verify-"));
+  tempDirs.push(dir);
+  const artifactDir = join(dir, "artifact");
+  mkdirSync(artifactDir);
+  const integrity = "sha512-test-integrity";
+  writeFileSync(
+    join(artifactDir, "pack.json"),
+    JSON.stringify([{ filename: "vipentti-planlet-0.2.0.tgz", integrity }]),
+  );
+  writeFileSync(
+    join(dir, "registry.json"),
+    JSON.stringify({
+      name: "@vipentti/planlet",
+      version: "0.2.0",
+      repository: { url: "git+https://github.com/vipentti/planlet.git" },
+      dist: { integrity, tarball: "https://registry.test/planlet.tgz" },
+    }),
+  );
+  const script = join(dir, "verify.mjs");
+  writeFileSync(script, nodeBlock("Publish or verify existing package"));
+  const result = spawnSync(process.execPath, [script], {
+    cwd: dir,
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      RUNNER_TEMP: dir,
+      GITHUB_WORKSPACE: repoRoot,
+      GITHUB_SHA: "test-sha",
+    },
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /Verified @vipentti\/planlet@0\.2\.0/);
+});
+
 test("public GPG key is documented and referenced in the protected job", () => {
   assert.match(
     workflow,
@@ -373,6 +525,9 @@ test("detect job is unprivileged and holds no release material", () => {
   assert.doesNotMatch(detect, /environment: release/);
   assert.match(detect, /test "\$\(git rev-parse HEAD\)" = "\$GITHUB_SHA"/);
   assert.doesNotMatch(detect, /--after/);
+  assert.match(detect, /BEFORE_SHA: \$\{\{ github\.event\.before \}\}/);
+  assert.match(detect, /--before "\$BEFORE_SHA"/);
+  assert.doesNotMatch(detect, /--before "\$\{\{ github\.event\.before \}\}"/);
   assert.doesNotMatch(
     detect,
     /RELEASE_APP_ID|RELEASE_APP_PRIVATE_KEY|RELEASE_GPG|PACKAGE_NAME/,
