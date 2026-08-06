@@ -47,9 +47,13 @@ interface GpgFixture {
 }
 
 function gpgEnv(home: string): NodeJS.ProcessEnv {
+  const gpgHome =
+    process.platform === "win32"
+      ? `/${home.slice(0, 1).toLowerCase()}${home.slice(2).replaceAll("\\", "/")}`
+      : home;
   return {
     ...process.env,
-    GNUPGHOME: home,
+    GNUPGHOME: gpgHome,
     MSYS2_ARG_CONV_EXCL: "*",
     MSYS_NO_PATHCONV: "1",
   };
