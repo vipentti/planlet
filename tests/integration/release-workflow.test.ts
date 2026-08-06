@@ -148,16 +148,64 @@ test("package name is a trusted constant, never derived from package.json", () =
   assert.doesNotMatch(workflow, /require\(['"]\.\/package\.json['"]\)\.name/);
 });
 
-test("npm is pinned to an exact version and asserted before publication", () => {
-  assert.match(workflow, /npm install --global npm@11\.5\.1/);
-  assert.match(workflow, /test "\$\(npm --version\)" = "11\.5\.1"/);
-  assert.doesNotMatch(workflow, /npm@\^|npm@~|npm@latest|npm@\*/);
+test("protected job pins exact Node and bundled npm without installing anything", () => {
+  const release = jobSection("release");
+  assert.match(release, /node-version: "24\.11\.1"/);
+  assert.match(release, /package-manager-cache: false/);
+  assert.match(release, /test "\$\(node --version\)" = "v24\.11\.1"/);
+  assert.match(release, /test "\$\(npm --version\)" = "11\.6\.2"/);
+  assert.doesNotMatch(release, /npm install/);
+  assert.doesNotMatch(release, /npx /);
+  assert.doesNotMatch(release, /corepack/i);
 });
 
-test("packed artifact validation runs through the helper before any env write", () => {
-  assert.match(workflow, /npm pack --json --ignore-scripts/);
-  assert.match(workflow, /node scripts\/validate-packed-artifact\.mjs/);
-  assert.doesNotMatch(workflow, /PACKAGE_TARBALL=\$|PACKAGE_TARBALL=\$\{/);
+test("packed artifact validation is inline and writes env only after success", () => {
+  const release = jobSection("release");
+  assert.match(release, /npm pack --json --ignore-scripts/);
+  assert.match(release, /node --input-type=module <<'NODE'/);
+  assert.match(release, /PACKAGE_TARBALL=\$\{tarball\}\\n/);
+  assert.doesNotMatch(release, /validate-packed-artifact\.mjs/);
+});
+
+test("protected job executes no repository-owned scripts", () => {
+  const release = jobSection("release");
+  assert.doesNotMatch(release, /node scripts\//);
+  assert.doesNotMatch(release, /bash scripts\//);
+  assert.doesNotMatch(release, /sh scripts\//);
+  assert.doesNotMatch(release, /\.\/scripts\//);
+  assert.doesNotMatch(release, /npm run/);
+  assert.doesNotMatch(release, /node dist\//);
+});
+
+test("tag verification is inline git built-ins with all five assertions", () => {
+  const release = jobSection("release");
+  assert.match(release, /git cat-file -t "refs\/tags\/\$\{t\}"/);
+  assert.match(
+    release,
+    /git rev-parse --verify "refs\/tags\/\$\{t\}\^\{commit\}"/,
+  );
+  assert.match(release, /git tag -l --format=%\(contents:subject\)/);
+  assert.match(release, /git verify-tag "\$\{t\}"/);
+  assert.match(release, /tr -cd '0-9a-f'/);
+  assert.doesNotMatch(release, /node scripts\/verify-release-tag\.mjs/);
+});
+
+test("npm publish disables lifecycle scripts and pins the registry", () => {
+  const release = jobSection("release");
+  assert.match(
+    release,
+    /npm publish "\$PACKAGE_TARBALL" --ignore-scripts --access public --provenance --registry=https:\/\/registry\.npmjs\.org/,
+  );
+  assert.match(
+    release,
+    /npm view "\$spec" --json --registry=https:\/\/registry\.npmjs\.org/,
+  );
+  assert.match(release, /Waiting for registry visibility/);
+  assert.match(release, /registry\.name, source\.name/);
+  assert.match(release, /registry\.version, source\.version/);
+  assert.match(release, /registry\.repository\?\.url, source\.repository\.url/);
+  assert.match(release, /registry\.gitHead, process\.env\.GITHUB_SHA/);
+  assert.match(release, /registry\.dist\?\.integrity, packed\.integrity/);
 });
 
 test("duplicate protected-job changelog verification is removed", () => {
@@ -203,6 +251,10 @@ test("verify job is unprivileged and runs the full verification chain", () => {
   assert.match(verify, /Verify generated skills/);
   assert.match(verify, /Verify clean tagged source/);
   assert.match(verify, /merge-base --is-ancestor/);
+  assert.doesNotMatch(
+    verify,
+    /RELEASE_APP_ID|RELEASE_APP_PRIVATE_KEY|RELEASE_GPG|RELEASE_PUSH_TOKEN/,
+  );
 });
 
 test("only the protected release job has id-token and runs no dependency code", () => {
@@ -213,7 +265,7 @@ test("only the protected release job has id-token and runs no dependency code", 
   assert.match(release, /needs: \[detect, verify\]/);
   assert.match(release, /merge-base --is-ancestor/);
   assert.match(release, /npm pack --json --ignore-scripts/);
-  assert.match(release, /scripts\/validate-packed-artifact\.mjs/);
+  assert.match(release, /appendFileSync\(process\.env\.GITHUB_ENV/);
   assert.doesNotMatch(release, /npm ci/);
   assert.doesNotMatch(release, /npm install(?! --global npm@11\.5\.1)/);
   assert.doesNotMatch(release, /npm run build/);

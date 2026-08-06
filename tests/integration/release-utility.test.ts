@@ -15,6 +15,8 @@ import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
+import { verifyReleaseTag } from "../../scripts/verify-release-tag.mjs";
+
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const sourceReleaseScript = join(repoRoot, "scripts", "release.mjs");
 const sourceHelper = join(
@@ -792,20 +794,13 @@ test("break-glass tag satisfies the same verifier arguments as the workflow", ()
   const out = release(repo, "tag", "--version", GOOD, "--execute");
   assert.equal(out.status, 0, out.stderr);
   const head = git(repo, "rev-parse", "HEAD").stdout.trim();
-  const verify = spawnSync(
-    process.execPath,
-    [
-      join(repo.dir, "scripts", "verify-release-tag.mjs"),
-      "--tag",
-      "v" + GOOD,
-      "--target",
-      head,
-      "--message",
-      "Release v" + GOOD,
-    ],
-    { cwd: repo.dir, encoding: "utf8" },
-  );
-  assert.equal(verify.status, 0, verify.stderr);
+  const verify = verifyReleaseTag({
+    tag: "v" + GOOD,
+    target: head,
+    message: "Release v" + GOOD,
+    cwd: repo.dir,
+  });
+  assert.equal(verify.ok, true, verify.ok ? "" : verify.error);
 });
 
 test("fresh break-glass tag verifies when release.mjs runs from an unrelated directory", () => {

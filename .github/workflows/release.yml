@@ -87,8 +87,11 @@ jobs:
         run: test -z "$(git status --porcelain)"
 
   release:
-    # Protected publishing: only this job may mint npm OIDC tokens, and it
-    # never installs dependencies or executes project/dependency code.
+    # Protected publishing: installs no project dependencies and executes no
+    # repository-owned scripts or code from node_modules. Uses the pinned
+    # official Node/npm toolchain, inline workflow-owned validation, and system
+    # tools only. Repository files are read and packaged as data, never
+    # executed. id-token: write exists only here.
     needs: [detect, verify]
     if: needs.detect.outputs.is-release == 'true'
     runs-on: ubuntu-latest
@@ -120,20 +123,45 @@ jobs:
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 22
+          node-version: "24.11.1"
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
+
+      - name: Assert pinned Node and npm toolchain
+        run: |
+          test "$(node --version)" = "v24.11.1"
+          test "$(npm --version)" = "11.6.2"
 
       - name: Verify clean tagged source
         run: test -z "$(git status --porcelain)"
 
       - name: Extract release notes
-        run: node scripts/changelog.mjs "$VERSION" > "$RUNNER_TEMP/release-notes.md"
-
-      - name: Pin npm version for trusted publishing
+        shell: bash
         run: |
-          npm install --global npm@11.5.1
-          test "$(npm --version)" = "11.5.1"
+          node --input-type=module <<'NODE'
+          import assert from "node:assert/strict";
+          import { readFileSync, writeFileSync } from "node:fs";
+          const changelog = readFileSync("CHANGELOG.md", "utf8");
+          const version = process.env.VERSION;
+          const section = changelog
+            .split(/\n## /)
+            .find((entry) => entry.startsWith(`[${version}] - `));
+          assert.ok(section, `Missing changelog section [${version}]`);
+          const notes = section
+            .split(/\n\[[^\]]+\]:/)[0]
+            .split("\n")
+            .slice(1)
+            .join("\n")
+            .trim();
+          assert.ok(
+            /^\s*-\s+\S/m.test(notes),
+            `Changelog section [${version}] has no notes`,
+          );
+          writeFileSync(
+            `${process.env.RUNNER_TEMP}/release-notes.md`,
+            notes + "\n",
+          );
+          NODE
 
       - name: Build reviewed package artifact
         shell: bash
@@ -141,7 +169,28 @@ jobs:
           set -euo pipefail
           # Pack the already-verified committed build; do not re-run prepack/build.
           npm pack --json --ignore-scripts --pack-destination "$RUNNER_TEMP" > "$RUNNER_TEMP/pack.json"
-          node scripts/validate-packed-artifact.mjs
+          node --input-type=module <<'NODE'
+          import assert from "node:assert/strict";
+          import { appendFileSync, readFileSync } from "node:fs";
+          import { dirname, join, resolve } from "node:path";
+          const runDir = process.env.RUNNER_TEMP;
+          const version = process.env.VERSION;
+          const report = JSON.parse(readFileSync(join(runDir, "pack.json"), "utf8"));
+          assert.ok(Array.isArray(report), "npm pack --json must return an array");
+          assert.equal(report.length, 1, "npm pack --json must return exactly one package result");
+          const packed = report[0];
+          assert.equal(typeof packed.filename, "string");
+          assert.ok(packed.filename.length > 0, "packed.filename must be a non-empty string");
+          assert.doesNotMatch(packed.filename, /[\r\n]/, "packed.filename must not contain CR or LF");
+          assert.doesNotMatch(packed.filename, /[\\/]/, "packed.filename must not contain path separators");
+          const expected = `vipentti-planlet-${version}.tgz`;
+          assert.equal(packed.filename, expected, "packed.filename must equal the exact expected basename");
+          assert.equal(typeof packed.integrity, "string");
+          assert.ok(packed.integrity.length > 0, "packed.integrity must be a non-empty string");
+          const tarball = join(runDir, packed.filename);
+          assert.equal(dirname(resolve(tarball)), resolve(runDir), "tarball path must resolve directly under RUNNER_TEMP");
+          appendFileSync(process.env.GITHUB_ENV, `PACKAGE_TARBALL=${tarball}\n`);
+          NODE
 
       - name: Check remote release tag
         id: check-release-tag
@@ -158,7 +207,8 @@ jobs:
             echo "tag-exists=false" >> "$GITHUB_OUTPUT"
           fi
 
-      # --- Release mutations: GPG key material, tag, npm, GitHub release. ---
+      # --- Release mutations: GPG material and App token only after all
+      # pre-mutation validation, then tag, npm, and GitHub release. ---
 
       - name: Configure GPG signing for release tags
         env:
@@ -217,10 +267,36 @@ jobs:
           set -euo pipefail
           tag="v${VERSION}"
           target="$GITHUB_SHA"
+          verify_tag() {
+            local t="$1"
+            test "$(git cat-file -t "refs/tags/${t}")" = "tag" || {
+              echo "Release tag ${t} is not an annotated tag" >&2
+              exit 1
+            }
+            test "$(git rev-parse --verify "refs/tags/${t}^{commit}")" = "$target" || {
+              echo "Tag ${t} does not point at the triggering commit ${target}" >&2
+              exit 1
+            }
+            test "$(git tag -l --format=%(contents:subject) "${t}")" = "Release ${t}" || {
+              echo "Tag ${t} message subject is not 'Release ${t}'" >&2
+              exit 1
+            }
+            git verify-tag "${t}" || {
+              echo "git verify-tag failed for ${t}" >&2
+              exit 1
+            }
+            local obj
+            obj=$(git rev-parse "refs/tags/${t}")
+            test "${#obj}" = 40 && test "$obj" = "$(printf '%s' "$obj" | tr -cd '0-9a-f')" || {
+              echo "Tag ${t} object SHA is malformed" >&2
+              exit 1
+            }
+            TAG_OBJECT="$obj"
+          }
           if [ "${{ steps.check-release-tag.outputs.tag-exists }}" = "true" ]; then
             # Remote tag exists: verify the exact annotated signed tag, never mutate it.
             git fetch --no-tags origin "+refs/tags/${tag}:refs/tags/${tag}"
-            tag_object=$(node scripts/verify-release-tag.mjs --tag "$tag" --target "$target" --message "Release ${tag}")
+            verify_tag "$tag"
             echo "Existing remote tag ${tag} verified"
           else
             test -n "$RELEASE_APP_TOKEN" || {
@@ -228,7 +304,7 @@ jobs:
               exit 1
             }
             git tag -a -s "$tag" -m "Release ${tag}" "$target"
-            tag_object=$(node scripts/verify-release-tag.mjs --tag "$tag" --target "$target" --message "Release ${tag}")
+            verify_tag "$tag"
             auth=$(printf 'x-access-token:%s' "$RELEASE_APP_TOKEN" | base64 -w0)
             git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" push origin "refs/tags/${tag}:refs/tags/${tag}"
             remote_object=$(git ls-remote origin "refs/tags/${tag}" | awk 'NR == 1 { print $1 }')
@@ -236,12 +312,12 @@ jobs:
               echo "Remote tag ${tag} did not appear after push" >&2
               exit 1
             }
-            test "$remote_object" = "$tag_object" || {
-              echo "Remote tag ${tag} object ${remote_object} does not match local ${tag_object}" >&2
+            test "$remote_object" = "$TAG_OBJECT" || {
+              echo "Remote tag ${tag} object ${remote_object} does not match local ${TAG_OBJECT}" >&2
               exit 1
             }
           fi
-          echo "TAG_OBJECT=$tag_object" >> "$GITHUB_ENV"
+          echo "TAG_OBJECT=$TAG_OBJECT" >> "$GITHUB_ENV"
 
       - name: Verify GitHub reports the tag signature verified
         env:
@@ -275,27 +351,23 @@ jobs:
         run: |
           set -euo pipefail
           spec="${PACKAGE_NAME}@${VERSION}"
+          cd "$RUNNER_TEMP"
 
-          read_registry_json() {
-            node --input-type=module <<'NODE'
-          import assert from "node:assert/strict";
-          import { readFileSync, writeFileSync } from "node:fs";
-          const raw = JSON.parse(readFileSync(`${process.env.RUNNER_TEMP}/registry.json`));
-          const registry = Array.isArray(raw) ? raw[0] : raw;
-          assert.ok(registry && typeof registry === "object", "npm view --json returned no object");
-          writeFileSync(`${process.env.RUNNER_TEMP}/registry.json`, JSON.stringify(registry));
-          NODE
+          npm_view() {
+            npm view "$spec" --json --registry=https://registry.npmjs.org > registry.json 2> npm-view.err
           }
 
-          verify_registry_matches_pack() {
+          verify_registry() {
             node --input-type=module <<'NODE'
           import assert from "node:assert/strict";
           import { readFileSync } from "node:fs";
-          const registry = JSON.parse(readFileSync(`${process.env.RUNNER_TEMP}/registry.json`));
-          const report = JSON.parse(readFileSync(`${process.env.RUNNER_TEMP}/pack.json`));
+          const raw = JSON.parse(readFileSync("registry.json", "utf8"));
+          const registry = Array.isArray(raw) ? raw[0] : raw;
+          assert.ok(registry && typeof registry === "object", "npm view --json returned no object");
+          const report = JSON.parse(readFileSync("pack.json", "utf8"));
           assert.ok(Array.isArray(report) && report[0], "npm pack --json must return a non-empty array");
           const packed = report[0];
-          const source = JSON.parse(readFileSync("package.json"));
+          const source = JSON.parse(readFileSync(`${process.env.GITHUB_WORKSPACE}/package.json`, "utf8"));
           assert.equal(registry.name, source.name, "registry package name mismatch");
           assert.equal(registry.version, source.version, "registry version mismatch");
           assert.equal(registry.repository?.url, source.repository.url, "registry repository mismatch");
@@ -307,20 +379,19 @@ jobs:
           NODE
           }
 
-          if npm view "$spec" --json > "$RUNNER_TEMP/registry.json" 2> "$RUNNER_TEMP/npm-view.err"; then
-            read_registry_json
-            verify_registry_matches_pack
-          elif grep -q "E404" "$RUNNER_TEMP/npm-view.err"; then
-            npm publish "$PACKAGE_TARBALL" --access public --provenance
+          if npm_view; then
+            verify_registry
+          elif grep -q "E404" npm-view.err; then
+            npm publish "$PACKAGE_TARBALL" --ignore-scripts --access public --provenance --registry=https://registry.npmjs.org
             # Wait for packument visibility, then apply the same identity/integrity checks.
             visible=0
             for attempt in 1 2 3 4 5 6 7 8 9 10; do
-              if npm view "$spec" --json > "$RUNNER_TEMP/registry.json" 2> "$RUNNER_TEMP/npm-view.err"; then
+              if npm_view; then
                 visible=1
                 break
               fi
-              if ! grep -q "E404" "$RUNNER_TEMP/npm-view.err"; then
-                cat "$RUNNER_TEMP/npm-view.err" >&2
+              if ! grep -q "E404" npm-view.err; then
+                cat npm-view.err >&2
                 exit 1
               fi
               echo "Waiting for registry visibility (attempt ${attempt})..."
@@ -328,13 +399,12 @@ jobs:
             done
             if test "$visible" != 1; then
               echo "Published package not visible on the registry after waiting" >&2
-              cat "$RUNNER_TEMP/npm-view.err" >&2 || true
+              cat npm-view.err >&2 || true
               exit 1
             fi
-            read_registry_json
-            verify_registry_matches_pack
+            verify_registry
           else
-            cat "$RUNNER_TEMP/npm-view.err" >&2
+            cat npm-view.err >&2
             exit 1
           fi
 
