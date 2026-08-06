@@ -19,12 +19,17 @@ import { fileURLToPath } from "node:url";
 import {
   countFlags,
   isValidCalendarDate,
+  packageIdentityMismatch,
+  packageLockMismatch,
+  updateChangelogLinkReferences,
 } from "./assert-changelog-release-ready.mjs";
+import { verifyReleaseTag } from "./verify-release-tag.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const changelogPath = resolve(root, "CHANGELOG.md");
 const packageJsonPath = resolve(root, "package.json");
 const packageLockPath = resolve(root, "package-lock.json");
+const fingerprintPattern = /^[0-9a-f]{40}$/i;
 
 function fail(msg) {
   console.error(msg);
@@ -85,20 +90,14 @@ function validateReleaseContents(version, date) {
   if (pkg.version !== version)
     fail("package.json.version is " + pkg.version + ", expected " + version);
   const lock = JSON.parse(readFileSync(packageLockPath, "utf8"));
-  if (lock.version !== version)
-    fail(
-      "package-lock.json.version is " + lock.version + ", expected " + version,
-    );
-  const pkgEntry = lock.packages?.[""];
-  if (!pkgEntry || typeof pkgEntry !== "object")
-    fail('package-lock.json.packages[""] is missing or not an object');
-  if (pkgEntry.version !== version)
-    fail(
-      'package-lock.json.packages[""].version is ' +
-        pkgEntry.version +
-        ", expected " +
-        version,
-    );
+  const identityMismatch = packageIdentityMismatch(
+    pkg,
+    lock,
+    "@vipentti/planlet",
+  );
+  if (identityMismatch) fail(identityMismatch);
+  const lockMismatch = packageLockMismatch(lock, version);
+  if (lockMismatch) fail(lockMismatch);
   // changelog validation via the helper's strict preparation mode
   const r = spawnSync(
     process.execPath,
@@ -197,6 +196,15 @@ function plan(msg) {
   console.log(prefix + " " + msg);
 }
 
+function configuredReleaseFingerprint() {
+  const fingerprint = process.env.RELEASE_GPG_FINGERPRINT;
+  if (!fingerprintPattern.test(fingerprint ?? ""))
+    fail(
+      "RELEASE_GPG_FINGERPRINT must be exactly one 40-character hexadecimal fingerprint.",
+    );
+  return fingerprint;
+}
+
 // ===================================================================
 // prepare
 // ===================================================================
@@ -279,6 +287,7 @@ function cmdPrepare() {
 
   // 6. Version not already current
   const pkg = JSON.parse(readFileSync(packageJsonPath, "utf8"));
+  const previousVersion = pkg.version;
   if (pkg.version === version)
     fail(
       "package.json.version is already " +
@@ -332,17 +341,20 @@ function cmdPrepare() {
     fail("[Unreleased] section is empty; nothing to release.");
   const after = boundary === -1 ? "" : rest.slice(boundary).replace(/^\n+/, "");
   const before = changelogContent.slice(0, unreleasedIdx);
-  const newChangelog =
+  const newChangelog = updateChangelogLinkReferences(
     before +
-    "## [Unreleased]\n\n" +
-    "## [" +
-    version +
-    "] - " +
-    date +
-    "\n\n" +
-    unreleasedBody +
-    "\n\n" +
-    after;
+      "## [Unreleased]\n\n" +
+      "## [" +
+      version +
+      "] - " +
+      date +
+      "\n\n" +
+      unreleasedBody +
+      "\n\n" +
+      after,
+    previousVersion,
+    version,
+  );
 
   writeFileSync(changelogPath, newChangelog, "utf8");
 
@@ -542,6 +554,13 @@ function cmdTag() {
     fail(
       "package.json.version is " + pkg.version + ", expected " + version + ".",
     );
+  const lock = JSON.parse(readFileSync(packageLockPath, "utf8"));
+  const identityMismatch = packageIdentityMismatch(
+    pkg,
+    lock,
+    "@vipentti/planlet",
+  );
+  if (identityMismatch) fail(identityMismatch);
 
   // 4. Remote tag exists?
   const tagRef = "refs/tags/v" + version;
@@ -554,34 +573,21 @@ function cmdTag() {
   const localTag = git("tag", "-l", "v" + version);
   const tagExistsLocally =
     localTag.status === 0 && localTag.stdout.trim() === "v" + version;
+  const expectedFingerprint =
+    tagExistsLocally || isExecute ? configuredReleaseFingerprint() : undefined;
 
   if (tagExistsLocally) {
-    // Validate existing local tag
-    const tagType = git("cat-file", "-t", "v" + version);
-    if (tagType.status !== 0 || tagType.stdout.trim() !== "tag")
-      fail("Local tag v" + version + " is not an annotated tag.");
-
-    const tagMsg = git(
-      "tag",
-      "-l",
-      "--format=%(contents:subject)",
-      "v" + version,
-    );
-    if (tagMsg.status !== 0 || tagMsg.stdout.trim() !== "v" + version)
-      fail("Local tag v" + version + " message mismatch.");
-
-    const tagTarget = git("rev-parse", "v" + version + "^{commit}");
-    if (tagTarget.status !== 0 || tagTarget.stdout.trim() !== headSha)
-      fail("Local tag v" + version + " does not point at current HEAD.");
-
-    const tagVerify = git("verify-tag", "v" + version);
-    if (tagVerify.status !== 0)
-      fail(
-        "git verify-tag failed for v" +
-          version +
-          ":\n" +
-          tagVerify.stderr.trim(),
-      );
+    // Break-glass release path validates local tags through this repository
+    // verifier; the protected workflow keeps its own inline trust boundary.
+    const localVerify = verifyReleaseTag({
+      tag: "v" + version,
+      target: headSha,
+      message: "Release v" + version,
+      expectedFingerprint,
+      cwd: root,
+    });
+    if (!localVerify.ok)
+      fail("Local tag v" + version + " is invalid:\n" + localVerify.error);
 
     if (!isExecute) {
       plan(
@@ -615,15 +621,21 @@ function cmdTag() {
       "-s",
       "v" + version,
       "-m",
-      "v" + version,
+      "Release v" + version,
       "HEAD",
     );
     if (tag.status !== 0)
       fail("git tag creation failed:\n" + tag.stderr.trim());
 
-    const verify = git("verify-tag", "v" + version);
-    if (verify.status !== 0)
-      fail("git verify-tag failed:\n" + verify.stderr.trim());
+    const verify = verifyReleaseTag({
+      tag: "v" + version,
+      target: headSha,
+      message: "Release v" + version,
+      expectedFingerprint,
+      cwd: root,
+    });
+    if (!verify.ok)
+      fail("Tag v" + version + " failed verification:\n" + verify.error);
   }
 
   // Push if --push

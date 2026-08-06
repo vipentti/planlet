@@ -2,77 +2,102 @@ name: Release
 
 on:
   push:
-    tags: ["v*"]
+    branches: [main]
 
 permissions:
-  contents: write
-  id-token: write
+  contents: read
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-main
   cancel-in-progress: false
 
 jobs:
-  release:
-    # New tag only — ignore force-moves, deletes, and non-create updates.
-    if: >-
-      github.event_name == 'push' &&
-      github.event.created &&
-      !github.event.deleted &&
-      !github.event.forced
+  detect:
+    # Unprotected: classifies the push and never touches release secrets.
+    # Probe fails a conflicting existing tag before Environment approval; the
+    # protected job later performs full annotated-tag/target/message/signature
+    # verification — different trust boundaries, not duplication.
     runs-on: ubuntu-latest
-    environment: release
+    permissions:
+      contents: read
+    outputs:
+      is-release: ${{ steps.detect.outputs.is-release }}
+      version: ${{ steps.detect.outputs.version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Verify annotated tag is signed
+      - id: detect
         env:
-          GH_TOKEN: ${{ github.token }}
+          BEFORE_SHA: ${{ github.event.before }}
         shell: bash
         run: |
           set -euo pipefail
-          object_type=$(git cat-file -t "refs/tags/${GITHUB_REF_NAME}")
-          test "$object_type" = "tag" || {
-            echo "Release tags must be annotated and signed: ${GITHUB_REF_NAME} is ${object_type}" >&2
+          # Bind the detector target to the exact triggering SHA (HEAD is
+          # otherwise caller-controlled).
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA" || {
+            echo "HEAD does not match the triggering SHA" >&2
             exit 1
           }
-          tag_sha=$(git rev-parse "refs/tags/${GITHUB_REF_NAME}")
-          verification=$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${tag_sha}" --jq .verification)
-          echo "$verification"
-          echo "$verification" | jq -e '.verified == true' >/dev/null || {
-            echo "GitHub does not report a verified signature on ${GITHUB_REF_NAME}" >&2
-            exit 1
-          }
+          result=$(node scripts/detect-release-merge.mjs --before "$BEFORE_SHA")
+          is_release=$(printf '%s' "$result" | jq -r '.isRelease')
+          echo "is-release=$is_release" >> "$GITHUB_OUTPUT"
+          if [ "$is_release" = "true" ]; then
+            version=$(printf '%s' "$result" | jq -r '.version')
+            echo "version=$version" >> "$GITHUB_OUTPUT"
+          fi
 
-      - name: Verify tag and main ancestry
+  verify:
+    # Unprivileged: runs every dependency install and project/dependency code
+    # path without any npm OIDC capability, then produces and validates the
+    # immutable package artifact handed to the protected job.
+    needs: detect
+    if: needs.detect.outputs.is-release == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      VERSION: ${{ needs.detect.outputs.version }}
+    outputs:
+      package-sha256: ${{ steps.package.outputs.package-sha256 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify detected release version
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${VERSION:-}" || {
+            echo "Missing release version from detection" >&2
+            exit 1
+          }
+          if [[ ! "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "Detected release version is not stable X.Y.Z: $VERSION" >&2
+            exit 1
+          fi
+
+      - name: Verify triggering commit is reachable from origin/main
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          version=$(node -p "require('./package.json').version")
-          name=$(node -p "require('./package.json').name")
-          test "$GITHUB_REF_NAME" = "v$version" || {
-            echo "Tag $GITHUB_REF_NAME does not match package version $version" >&2
-            exit 1
-          }
+          # Early fail-fast before dependency installation or project code runs.
           git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)" fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
           git merge-base --is-ancestor "$GITHUB_SHA" origin/main || {
             echo "$GITHUB_SHA is not reachable from origin/main" >&2
             exit 1
           }
-          {
-            echo "VERSION=$version"
-            echo "PACKAGE_NAME=$name"
-          } >> "$GITHUB_ENV"
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
-          registry-url: https://registry.npmjs.org
           package-manager-cache: false
 
       - run: npm ci
@@ -91,58 +116,625 @@ jobs:
       - name: Verify clean tagged source
         run: test -z "$(git status --porcelain)"
 
-      - name: Extract release notes
-        run: node scripts/changelog.mjs "$VERSION" > "$RUNNER_TEMP/release-notes.md"
-
-      - name: Ensure npm supports trusted publishing
-        run: npm install --global npm@^11.5.1
-
-      - name: Build reviewed package artifact
+      - name: Pack reviewed package
         shell: bash
         run: |
           set -euo pipefail
-          # Pack the already-verified build; do not re-run prepack/build.
-          npm pack --json --ignore-scripts --pack-destination "$RUNNER_TEMP" > "$RUNNER_TEMP/pack.json"
+          mkdir -p "$RUNNER_TEMP/pack"
+          npm pack --json --ignore-scripts --pack-destination "$RUNNER_TEMP/pack" > "$RUNNER_TEMP/pack/pack.json"
+
+      - name: Validate reviewed package artifact
+        id: package
+        shell: bash
+        run: |
+          set -euo pipefail
           node --input-type=module <<'NODE'
           import assert from "node:assert/strict";
-          import { readFileSync, appendFileSync } from "node:fs";
-          const report = JSON.parse(readFileSync(`${process.env.RUNNER_TEMP}/pack.json`));
-          assert.ok(Array.isArray(report) && report[0], "npm pack --json must return a non-empty array");
+          import { createHash } from "node:crypto";
+          import { execFileSync } from "node:child_process";
+          import { appendFileSync, existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+          import { tmpdir } from "node:os";
+          import { dirname, join, resolve } from "node:path";
+          const packDir = `${process.env.RUNNER_TEMP}/pack`;
+          const version = process.env.VERSION;
+          const report = JSON.parse(readFileSync(join(packDir, "pack.json"), "utf8"));
+          assert.ok(Array.isArray(report) && report.length === 1, "npm pack --json must return exactly one package result");
           const packed = report[0];
           assert.equal(typeof packed.filename, "string");
+          assert.ok(packed.filename.length > 0, "packed.filename must be non-empty");
+          assert.doesNotMatch(packed.filename, /[\r\n]/, "packed.filename must not contain CR or LF");
+          assert.doesNotMatch(packed.filename, /[\\/]/, "packed.filename must not contain path separators");
+          const expected = `vipentti-planlet-${version}.tgz`;
+          assert.equal(packed.filename, expected, "packed.filename must equal the exact expected basename");
           assert.equal(typeof packed.integrity, "string");
-          appendFileSync(
-            process.env.GITHUB_ENV,
-            `PACKAGE_TARBALL=${process.env.RUNNER_TEMP}/${packed.filename}\n`,
+          assert.ok(packed.integrity.length > 0, "packed.integrity must be non-empty");
+          assert.doesNotMatch(packed.integrity, /[\r\n]/, "packed.integrity must not contain CR or LF");
+          const tarball = join(packDir, packed.filename);
+          assert.equal(dirname(resolve(tarball)), resolve(packDir), "tarball must resolve directly under the pack directory");
+          const extract = mkdtempSync(join(tmpdir(), "planlet-pack-verify-"));
+          try {
+            execFileSync("tar", ["-xzf", tarball, "-C", extract], { stdio: "inherit" });
+            const cli = join(extract, "package", "dist", "planlet.mjs");
+            assert.ok(existsSync(cli), "tarball must contain a non-empty package/dist/planlet.mjs");
+            const cliStat = statSync(cli);
+            assert.ok(cliStat.isFile() && cliStat.size > 0, "tarball must contain a non-empty package/dist/planlet.mjs");
+            const pkg = JSON.parse(readFileSync(join(extract, "package", "package.json"), "utf8"));
+            assert.equal(pkg.name, "@vipentti/planlet", "packed package name mismatch");
+            assert.equal(pkg.version, version, "packed package version mismatch");
+            assert.equal(pkg.bin?.planlet, "dist/planlet.mjs", "packed package bin.planlet mismatch");
+          } finally {
+            rmSync(extract, { recursive: true, force: true });
+          }
+          const sha256 = createHash("sha256").update(readFileSync(tarball)).digest("hex");
+          appendFileSync(process.env.GITHUB_OUTPUT, `package-sha256=${sha256}\n`);
+          NODE
+
+      - name: Smoke-test installed package
+        shell: bash
+        run: |
+          set -euo pipefail
+          smoke_dir="$RUNNER_TEMP/package-smoke"
+          rm -rf "$smoke_dir"
+          mkdir -p "$smoke_dir"
+          cd "$smoke_dir"
+          npm init -y >/dev/null
+          npm install "$RUNNER_TEMP/pack/vipentti-planlet-${VERSION}.tgz" --ignore-scripts --no-save --no-audit --no-fund
+          test "$(./node_modules/.bin/planlet --version)" = "$VERSION"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: planlet-release-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/pack/vipentti-planlet-${{ needs.detect.outputs.version }}.tgz
+            ${{ runner.temp }}/pack/pack.json
+          if-no-files-found: error
+          retention-days: 30
+
+  release:
+    # Protected publishing: installs no project dependencies and executes no
+    # repository-owned scripts or code from node_modules. Uses the pinned
+    # official Node/npm toolchain, inline workflow-owned validation, and system
+    # tools only. Repository files and the downloaded artifact are inspected as
+    # data, never executed. id-token: write exists only here.
+    #
+    # Referencing environment: release does not itself require approval. The
+    # live Environment must configure a Required reviewer; otherwise this job
+    # starts automatically after verification.
+    needs: [detect, verify]
+    if: needs.detect.outputs.is-release == 'true'
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: write
+      id-token: write
+    env:
+      VERSION: ${{ needs.detect.outputs.version }}
+      PACKAGE_NAME: "@vipentti/planlet"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check remote release tag
+        id: check-release-tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${VERSION:-}" || {
+            echo "Missing release version from detection" >&2
+            exit 1
+          }
+          if probe_output=$(git ls-remote --exit-code origin "refs/tags/v${VERSION}" 2>&1); then
+            echo "tag-exists=true" >> "$GITHUB_OUTPUT"
+          else
+            probe_status=$?
+            if [ "$probe_status" -eq 2 ]; then
+              echo "tag-exists=false" >> "$GITHUB_OUTPUT"
+            else
+              printf '%s\n' "$probe_output" >&2
+              echo "Remote release tag probe failed with status $probe_status" >&2
+              exit 1
+            fi
+          fi
+
+      - name: Verify triggering commit is reachable from origin/main
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Repeated after Environment approval because branch state may change
+          # during the approval lag; the final tag-absent check below closes the
+          # remaining TOCTOU window immediately before mutation.
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)" fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main || {
+            echo "$GITHUB_SHA is not reachable from origin/main" >&2
+            exit 1
+          }
+
+      - name: Verify release intent is unchanged
+        if: steps.check-release-tag.outputs.tag-exists == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Early fail-fast after approval: stale releases fail before key
+          # material or App credentials are loaded.
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)" fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main || {
+            echo "$GITHUB_SHA is no longer reachable from origin/main" >&2
+            exit 1
+          }
+          git diff --quiet "$GITHUB_SHA"..origin/main -- CHANGELOG.md package.json package-lock.json || {
+            echo "Release intent changed after approval: release-control files differ from the triggering commit" >&2
+            exit 1
+          }
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24.11.1"
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+
+      - name: Assert pinned Node and npm toolchain
+        run: |
+          # The setup-node input selects the toolchain; these assertions fail
+          # closed if the runner or action resolves an unexpected version.
+          test "$(node --version)" = "v24.11.1"
+          test "$(npm --version)" = "11.6.2"
+
+      - name: Verify clean tagged source
+        run: test -z "$(git status --porcelain)"
+
+      - name: Extract release notes
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from "node:assert/strict";
+          import { readFileSync, writeFileSync } from "node:fs";
+          const changelog = readFileSync("CHANGELOG.md", "utf8");
+          const version = process.env.VERSION;
+          const section = changelog
+            .split(/\n## /)
+            .find((entry) => entry.startsWith(`[${version}] - `));
+          assert.ok(section, `Missing changelog section [${version}]`);
+          const notes = section
+            .split(/\n\[[^\]]+\]:/)[0]
+            .split("\n")
+            .slice(1)
+            .join("\n")
+            .trim();
+          assert.ok(
+            /^\s*-\s+\S/m.test(notes),
+            `Changelog section [${version}] has no notes`,
+          );
+          writeFileSync(
+            `${process.env.RUNNER_TEMP}/release-notes.md`,
+            notes + "\n",
           );
           NODE
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: planlet-release-${{ github.sha }}
+          path: ${{ runner.temp }}/artifact
+          github-token: ${{ github.token }}
+
+      - name: Validate downloaded package artifact
+        env:
+          PACKAGE_SHA256: ${{ needs.verify.outputs.package-sha256 }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import assert from "node:assert/strict";
+          import { createHash } from "node:crypto";
+          import { execFileSync } from "node:child_process";
+          import { appendFileSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
+          import { tmpdir } from "node:os";
+          import { join } from "node:path";
+          const artifactDir = `${process.env.RUNNER_TEMP}/artifact`;
+          const version = process.env.VERSION;
+          const expected = `vipentti-planlet-${version}.tgz`;
+          const files = readdirSync(artifactDir).sort();
+          assert.deepEqual(files, [expected, "pack.json"], "artifact must contain exactly the expected tarball and pack.json");
+          const tarball = join(artifactDir, expected);
+          const bytes = readFileSync(tarball);
+          const sha256 = createHash("sha256").update(bytes).digest("hex");
+          assert.equal(sha256, process.env.PACKAGE_SHA256, "downloaded tarball SHA-256 does not match verified output");
+          const report = JSON.parse(readFileSync(join(artifactDir, "pack.json"), "utf8"));
+          assert.ok(Array.isArray(report) && report.length === 1, "pack.json must contain exactly one package result");
+          const packed = report[0];
+          assert.equal(packed.filename, expected, "pack.json filename mismatch");
+          assert.equal(typeof packed.integrity, "string");
+          assert.ok(packed.integrity.startsWith("sha512-"), "npm integrity must be sha512");
+          const computedIntegrity = "sha512-" + createHash("sha512").update(bytes).digest("base64");
+          assert.equal(computedIntegrity, packed.integrity, "npm integrity does not match downloaded tarball");
+          const extract = mkdtempSync(join(tmpdir(), "planlet-pack-release-"));
+          try {
+            execFileSync("tar", ["-xzf", tarball, "-C", extract], { stdio: "inherit" });
+            const cli = join(extract, "package", "dist", "planlet.mjs");
+            assert.ok(existsSync(cli), "tarball must contain a non-empty package/dist/planlet.mjs");
+            const cliStat = statSync(cli);
+            assert.ok(cliStat.isFile() && cliStat.size > 0, "tarball must contain a non-empty package/dist/planlet.mjs");
+            const pkg = JSON.parse(readFileSync(join(extract, "package", "package.json"), "utf8"));
+            assert.equal(pkg.name, "@vipentti/planlet", "packed package name mismatch");
+            assert.equal(pkg.version, version, "packed package version mismatch");
+            assert.equal(pkg.bin?.planlet, "dist/planlet.mjs", "packed package bin.planlet mismatch");
+          } finally {
+            rmSync(extract, { recursive: true, force: true });
+          }
+          appendFileSync(process.env.GITHUB_ENV, `PACKAGE_TARBALL=${tarball}\n`);
+          NODE
+
+      - name: Revalidate protected release contract
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Independent recheck protects the privileged handoff from detector
+          # regression or compromise; it is not accidental duplicate validation.
+          node --input-type=module <<'NODE'
+          import assert from "node:assert/strict";
+          import { execFileSync } from "node:child_process";
+          import { readFileSync } from "node:fs";
+
+          const before = process.env.BEFORE_SHA ?? "";
+          const after = process.env.GITHUB_SHA ?? "";
+          const version = process.env.VERSION ?? "";
+          const packageName = "@vipentti/planlet";
+          const expectedFiles = [
+            "CHANGELOG.md",
+            "package-lock.json",
+            "package.json",
+          ];
+          const sha = /^[0-9a-f]{40}$/;
+          const stableVersion =
+            /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/;
+
+          assert.match(before, sha, "BEFORE_SHA must be lowercase 40-hex");
+          assert.notEqual(before, "0".repeat(40), "BEFORE_SHA must not be all zeroes");
+          assert.match(after, sha, "GITHUB_SHA must be lowercase 40-hex");
+
+          const git = (...args) =>
+            execFileSync("git", args, { encoding: "utf8" }).trim();
+          assert.equal(
+            git("rev-parse", "--verify", `${before}^{commit}`),
+            before,
+            "BEFORE_SHA must resolve to a commit",
+          );
+          assert.equal(
+            git("rev-parse", "--verify", `${after}^{commit}`),
+            after,
+            "GITHUB_SHA must resolve to a commit",
+          );
+          assert.equal(
+            git("rev-parse", "--verify", "HEAD"),
+            after,
+            "checked-out HEAD must equal GITHUB_SHA",
+          );
+          assert.match(version, stableVersion, "VERSION must be stable X.Y.Z");
+
+          const packageJson = JSON.parse(readFileSync("package.json", "utf8"));
+          const packageLock = JSON.parse(
+            readFileSync("package-lock.json", "utf8"),
+          );
+          readFileSync("CHANGELOG.md", "utf8");
+          assert.equal(packageJson.name, packageName, "package.json name mismatch");
+          assert.equal(packageLock.name, packageName, "package-lock.json name mismatch");
+          assert.equal(
+            packageLock.packages?.[""]?.name,
+            packageName,
+            "package-lock root name mismatch",
+          );
+          assert.equal(packageJson.version, version, "package.json version mismatch");
+          assert.equal(packageLock.version, version, "package-lock version mismatch");
+          assert.equal(
+            packageLock.packages?.[""]?.version,
+            version,
+            "package-lock root version mismatch",
+          );
+
+          const changed = git("diff", "--name-only", before, after)
+            .split("\n")
+            .filter(Boolean);
+          assert.equal(
+            new Set(changed).size,
+            changed.length,
+            "release diff must not contain duplicate paths",
+          );
+          assert.deepEqual(
+            [...changed].sort(),
+            expectedFiles,
+            "release diff must contain exactly the three release files",
+          );
+          NODE
+
+      # --- Release mutations: GPG material and App token only after all
+      # pre-mutation validation, then tag, npm, and GitHub release. ---
+
+      - name: Initialize isolated GPG home
+        shell: bash
+        run: |
+          set -euo pipefail
+          GNUPGHOME=$(mktemp -d)
+          chmod 700 "$GNUPGHOME"
+          echo "GNUPGHOME=$GNUPGHOME" >> "$GITHUB_ENV"
+
+      - name: Configure public-key verification
+        if: steps.check-release-tag.outputs.tag-exists == 'true'
+        env:
+          RELEASE_GPG_PUBLIC_KEY: ${{ secrets.RELEASE_GPG_PUBLIC_KEY }}
+          RELEASE_GPG_FINGERPRINT: ${{ vars.RELEASE_GPG_FINGERPRINT }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Existing-tag reruns verify with the public key only; the private
+          # key and passphrase are intentionally never loaded on this path.
+          printf '%s\n' "$RELEASE_GPG_PUBLIC_KEY" | gpg --batch --homedir "$GNUPGHOME" --import
+          if [[ ! "$RELEASE_GPG_FINGERPRINT" =~ ^[0-9A-Fa-f]{40}$ ]]; then
+            echo "RELEASE_GPG_FINGERPRINT must be exactly one 40-character hexadecimal fingerprint" >&2
+            exit 1
+          fi
+          expected=$(printf '%s' "$RELEASE_GPG_FINGERPRINT" | tr '[:lower:]' '[:upper:]')
+          public_keys=$(gpg --batch --homedir "$GNUPGHOME" --with-colons --list-keys)
+          primary_public_count=$(printf '%s\n' "$public_keys" | awk -F: '$1 == "pub" { count++ } END { print count + 0 }')
+          test "$primary_public_count" -eq 1 || {
+            echo "Expected exactly one primary public key, found $primary_public_count" >&2
+            exit 1
+          }
+          fpr=$(printf '%s\n' "$public_keys" | awk -F: '$1 == "pub" { want=1; next } want && $1 == "fpr" { print $10; exit }')
+          if [[ ! "$fpr" =~ ^[0-9A-Fa-f]{40}$ ]]; then
+            echo "Imported public key fingerprint is malformed" >&2
+            exit 1
+          fi
+          actual=$(printf '%s' "$fpr" | tr '[:lower:]' '[:upper:]')
+          test "$actual" = "$expected" || {
+            echo "Imported public key fingerprint $actual does not match RELEASE_GPG_FINGERPRINT $expected" >&2
+            exit 1
+          }
+          test -z "$(gpg --batch --homedir "$GNUPGHOME" --with-colons --list-secret-keys)" || {
+            echo "Public-key verification home must not contain a secret key" >&2
+            exit 1
+          }
+
+      - name: Configure private-key signing
+        if: steps.check-release-tag.outputs.tag-exists == 'false'
+        env:
+          RELEASE_GPG_PRIVATE_KEY: ${{ secrets.RELEASE_GPG_PRIVATE_KEY }}
+          RELEASE_GPG_PASSPHRASE: ${{ secrets.RELEASE_GPG_PASSPHRASE }}
+          RELEASE_GPG_FINGERPRINT: ${{ vars.RELEASE_GPG_FINGERPRINT }}
+          RELEASE_GIT_NAME: ${{ vars.RELEASE_GIT_NAME }}
+          RELEASE_GIT_EMAIL: ${{ vars.RELEASE_GIT_EMAIL }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s' "$RELEASE_GPG_PASSPHRASE" > "$GNUPGHOME/passphrase"
+          chmod 600 "$GNUPGHOME/passphrase"
+          printf '%s\n' "$RELEASE_GPG_PRIVATE_KEY" | gpg --batch --homedir "$GNUPGHOME" --import
+          if [[ ! "$RELEASE_GPG_FINGERPRINT" =~ ^[0-9A-Fa-f]{40}$ ]]; then
+            echo "RELEASE_GPG_FINGERPRINT must be exactly one 40-character hexadecimal fingerprint" >&2
+            exit 1
+          fi
+          expected=$(printf '%s' "$RELEASE_GPG_FINGERPRINT" | tr '[:lower:]' '[:upper:]')
+          secret_keys=$(gpg --batch --homedir "$GNUPGHOME" --with-colons --list-secret-keys)
+          primary_secret_count=$(printf '%s\n' "$secret_keys" | awk -F: '$1 == "sec" { count++ } END { print count + 0 }')
+          test "$primary_secret_count" -eq 1 || {
+            echo "Expected exactly one primary secret key, found $primary_secret_count" >&2
+            exit 1
+          }
+          fpr=$(printf '%s\n' "$secret_keys" | awk -F: '$1 == "sec" { want=1; next } want && $1 == "fpr" { print $10; exit }')
+          if [[ ! "$fpr" =~ ^[0-9A-Fa-f]{40}$ ]]; then
+            echo "Imported secret key fingerprint is malformed" >&2
+            exit 1
+          fi
+          actual=$(printf '%s' "$fpr" | tr '[:lower:]' '[:upper:]')
+          test "$actual" = "$expected" || {
+            echo "Imported secret key fingerprint $actual does not match RELEASE_GPG_FINGERPRINT $expected" >&2
+            exit 1
+          }
+          wrapper="$GNUPGHOME/gpg-wrapper.sh"
+          printf '%s\n' \
+            '#!/bin/sh' \
+            "exec gpg --batch --pinentry-mode loopback --passphrase-file '$GNUPGHOME/passphrase' \"\$@\"" \
+            > "$wrapper"
+          chmod 700 "$wrapper"
+          git config gpg.program "$wrapper"
+          git config user.name "$RELEASE_GIT_NAME"
+          git config user.email "$RELEASE_GIT_EMAIL"
+          git config user.signingkey "$RELEASE_GPG_FINGERPRINT"
+          git config commit.gpgsign false
+          git config tag.gpgsign false
+
+      - name: Verify release intent is still current
+        if: steps.check-release-tag.outputs.tag-exists == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Final TOCTOU guard: refresh main and repeat the ancestry +
+          # release-control-file checks immediately before tag creation.
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)" fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main || {
+            echo "$GITHUB_SHA is no longer reachable from origin/main" >&2
+            exit 1
+          }
+          git diff --quiet "$GITHUB_SHA"..origin/main -- CHANGELOG.md package.json package-lock.json || {
+            echo "Release intent changed after approval: release-control files differ from the triggering commit" >&2
+            exit 1
+          }
+
+      # Token creation deliberately follows the final intent check to minimize
+      # credential lifetime.
+      - name: Generate GitHub App installation token
+        if: steps.check-release-tag.outputs.tag-exists == 'false'
+        id: release-app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ vars.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: planlet
+          permission-contents: write
+
+      - name: Ensure exact signed release tag
+        env:
+          RELEASE_APP_TOKEN: ${{ steps.release-app-token.outputs.token }}
+          RELEASE_GPG_FINGERPRINT: ${{ vars.RELEASE_GPG_FINGERPRINT }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="v${VERSION}"
+          target="$GITHUB_SHA"
+          if [[ ! "$RELEASE_GPG_FINGERPRINT" =~ ^[0-9A-Fa-f]{40}$ ]]; then
+            echo "RELEASE_GPG_FINGERPRINT must be exactly one 40-character hexadecimal fingerprint" >&2
+            exit 1
+          fi
+          expected=$(printf '%s' "$RELEASE_GPG_FINGERPRINT" | tr '[:lower:]' '[:upper:]')
+          verify_tag() {
+            local t="$1"
+            test "$(git cat-file -t "refs/tags/${t}")" = "tag" || {
+              echo "Release tag ${t} is not an annotated tag" >&2
+              exit 1
+            }
+            test "$(git rev-parse --verify "refs/tags/${t}^{commit}")" = "$target" || {
+              echo "Tag ${t} does not point at the triggering commit ${target}" >&2
+              exit 1
+            }
+            test "$(git tag -l '--format=%(contents:subject)' "${t}")" = "Release ${t}" || {
+              echo "Tag ${t} message subject is not 'Release ${t}'" >&2
+              exit 1
+            }
+            # This minimal verifier intentionally duplicates release.mjs:
+            # protected job cannot execute repository-owned scripts, so this
+            # trust-boundary cost stays inline.
+            # git verify-tag proves the cryptographic signature and exact
+            # configured primary fingerprint; GitHub's API verification below
+            # proves GitHub recognizes the signature. Both are required.
+            local status_file
+            status_file=$(mktemp "$RUNNER_TEMP/tag-status.XXXXXX")
+            if ! git verify-tag --raw "${t}" 2>"$status_file"; then
+              cat "$status_file" >&2
+              rm -f "$status_file"
+              echo "git verify-tag failed for ${t}" >&2
+              exit 1
+            fi
+            local valid_fingerprints
+            valid_fingerprints=$(
+              awk '$1 == "[GNUPG:]" && $2 == "VALIDSIG" {
+                signing=$3
+                primary=$12
+                if (signing !~ /^[0-9A-Fa-f]{40}$/ || (primary != "" && primary !~ /^[0-9A-Fa-f]{40}$/)) {
+                  print "MALFORMED"
+                } else {
+                  print (primary != "" ? primary : signing)
+                }
+              }' "$status_file"
+            )
+            rm -f "$status_file"
+            local valid_count
+            valid_count=$(printf '%s\n' "$valid_fingerprints" | awk 'NF { count++ } END { print count + 0 }')
+            test "$valid_count" -eq 1 || {
+              echo "Expected exactly one valid GPG signature" >&2
+              exit 1
+            }
+            actual=$(printf '%s\n' "$valid_fingerprints" | sed -n '1p' | tr '[:lower:]' '[:upper:]')
+            test "$actual" = "$expected" || {
+              echo "Tag signature primary fingerprint $actual does not match expected $expected" >&2
+              exit 1
+            }
+            local obj
+            obj=$(git rev-parse "refs/tags/${t}")
+            test "${#obj}" = 40 && test "$obj" = "$(printf '%s' "$obj" | tr -cd '0-9a-f')" || {
+              echo "Tag ${t} object SHA is malformed" >&2
+              exit 1
+            }
+            TAG_OBJECT="$obj"
+          }
+          if [ "${{ steps.check-release-tag.outputs.tag-exists }}" = "true" ]; then
+            # Remote tag exists: verify the exact annotated signed tag, never mutate it.
+            git fetch --no-tags origin "+refs/tags/${tag}:refs/tags/${tag}"
+            verify_tag "$tag"
+            echo "Existing remote tag ${tag} verified"
+          else
+            test -n "$RELEASE_APP_TOKEN" || {
+              echo "Missing GitHub App installation token for tag push" >&2
+              exit 1
+            }
+            git tag -a -s "$tag" -m "Release ${tag}" "$target"
+            verify_tag "$tag"
+            auth=$(printf 'x-access-token:%s' "$RELEASE_APP_TOKEN" | base64 -w0)
+            export GIT_CONFIG_COUNT=1
+            export GIT_CONFIG_KEY_0=http.https://github.com/.extraheader
+            export GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $auth"
+            git push origin "refs/tags/${tag}:refs/tags/${tag}"
+            remote_object=$(git ls-remote origin "refs/tags/${tag}" | awk 'NR == 1 { print $1 }')
+            test -n "$remote_object" || {
+              echo "Remote tag ${tag} did not appear after push" >&2
+              exit 1
+            }
+            test "$remote_object" = "$TAG_OBJECT" || {
+              echo "Remote tag ${tag} object ${remote_object} does not match local ${TAG_OBJECT}" >&2
+              exit 1
+            }
+            unset GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0
+          fi
+          echo "TAG_OBJECT=$TAG_OBJECT" >> "$GITHUB_ENV"
+
+      - name: Verify GitHub reports the tag signature verified
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="v${VERSION}"
+          verified=0
+          for attempt in 1 2 3 4 5; do
+            if verification=$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${TAG_OBJECT}" --jq .verification 2>/dev/null); then
+              if printf '%s' "$verification" | jq -e '.verified == true' >/dev/null; then
+                verified=1
+                break
+              fi
+              echo "GitHub tag signature not verified yet (attempt ${attempt})"
+            else
+              echo "GitHub tag verification API not available yet (attempt ${attempt})"
+            fi
+            if [ "$attempt" -lt 5 ]; then
+              sleep 6
+            fi
+          done
+          test "$verified" = 1 || {
+            echo "GitHub does not report a verified signature on ${tag} after 5 attempts" >&2
+            exit 1
+          }
 
       - name: Publish or verify existing package
         shell: bash
         run: |
           set -euo pipefail
           spec="${PACKAGE_NAME}@${VERSION}"
+          cd "$RUNNER_TEMP"
 
-          read_registry_json() {
-            node --input-type=module <<'NODE'
-          import assert from "node:assert/strict";
-          import { readFileSync, writeFileSync } from "node:fs";
-          const raw = JSON.parse(readFileSync(`${process.env.RUNNER_TEMP}/registry.json`));
-          const registry = Array.isArray(raw) ? raw[0] : raw;
-          assert.ok(registry && typeof registry === "object", "npm view --json returned no object");
-          writeFileSync(`${process.env.RUNNER_TEMP}/registry.json`, JSON.stringify(registry));
-          NODE
+          npm_view() {
+            npm view "$spec" --json --registry=https://registry.npmjs.org > registry.json 2> npm-view.err
           }
 
-          verify_registry_matches_pack() {
+          verify_registry() {
             node --input-type=module <<'NODE'
           import assert from "node:assert/strict";
           import { readFileSync } from "node:fs";
-          const registry = JSON.parse(readFileSync(`${process.env.RUNNER_TEMP}/registry.json`));
-          const report = JSON.parse(readFileSync(`${process.env.RUNNER_TEMP}/pack.json`));
-          assert.ok(Array.isArray(report) && report[0], "npm pack --json must return a non-empty array");
+          const raw = JSON.parse(readFileSync("registry.json", "utf8"));
+          const registry = Array.isArray(raw) ? raw[0] : raw;
+          assert.ok(registry && typeof registry === "object", "npm view --json returned no object");
+          const report = JSON.parse(readFileSync(`${process.env.RUNNER_TEMP}/artifact/pack.json`, "utf8"));
+          assert.ok(Array.isArray(report) && report[0], "pack.json must contain a non-empty array");
           const packed = report[0];
-          const source = JSON.parse(readFileSync("package.json"));
+          const source = JSON.parse(readFileSync(`${process.env.GITHUB_WORKSPACE}/package.json`, "utf8"));
           assert.equal(registry.name, source.name, "registry package name mismatch");
           assert.equal(registry.version, source.version, "registry version mismatch");
           assert.equal(registry.repository?.url, source.repository.url, "registry repository mismatch");
@@ -154,22 +746,19 @@ jobs:
           NODE
           }
 
-          if npm view "$spec" --json > "$RUNNER_TEMP/registry.json" 2> "$RUNNER_TEMP/npm-view.err"; then
-            read_registry_json
-            verify_registry_matches_pack
-          elif grep -q "E404" "$RUNNER_TEMP/npm-view.err"; then
-            # First publication only: empty Unreleased + dated section matching today UTC.
-            node scripts/assert-changelog-release-ready.mjs --release-date "$(date -u +%Y-%m-%d)"
-            npm publish "$PACKAGE_TARBALL" --access public --provenance
+          if npm_view; then
+            verify_registry
+          elif grep -q "E404" npm-view.err; then
+            npm publish "$PACKAGE_TARBALL" --ignore-scripts --access public --provenance --registry=https://registry.npmjs.org
             # Wait for packument visibility, then apply the same identity/integrity checks.
             visible=0
             for attempt in 1 2 3 4 5 6 7 8 9 10; do
-              if npm view "$spec" --json > "$RUNNER_TEMP/registry.json" 2> "$RUNNER_TEMP/npm-view.err"; then
+              if npm_view; then
                 visible=1
                 break
               fi
-              if ! grep -q "E404" "$RUNNER_TEMP/npm-view.err"; then
-                cat "$RUNNER_TEMP/npm-view.err" >&2
+              if ! grep -q "E404" npm-view.err; then
+                cat npm-view.err >&2
                 exit 1
               fi
               echo "Waiting for registry visibility (attempt ${attempt})..."
@@ -177,13 +766,12 @@ jobs:
             done
             if test "$visible" != 1; then
               echo "Published package not visible on the registry after waiting" >&2
-              cat "$RUNNER_TEMP/npm-view.err" >&2 || true
+              cat npm-view.err >&2 || true
               exit 1
             fi
-            read_registry_json
-            verify_registry_matches_pack
+            verify_registry
           else
-            cat "$RUNNER_TEMP/npm-view.err" >&2
+            cat npm-view.err >&2
             exit 1
           fi
 
@@ -192,8 +780,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release edit "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/release-notes.md"
+          if gh release view "v${VERSION}" >/dev/null 2>&1; then
+            gh release edit "v${VERSION}" --title "v${VERSION}" --notes-file "$RUNNER_TEMP/release-notes.md"
           else
-            gh release create "$GITHUB_REF_NAME" --verify-tag --title "$GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/release-notes.md"
+            gh release create "v${VERSION}" --verify-tag --title "v${VERSION}" --notes-file "$RUNNER_TEMP/release-notes.md"
+          fi
+
+      - name: Clean up release GPG key material
+        if: always()
+        shell: bash
+        run: |
+          if [ -n "${GNUPGHOME:-}" ] && [ -d "$GNUPGHOME" ]; then
+            rm -f "$GNUPGHOME/passphrase"
+            rm -rf "$GNUPGHOME"
           fi

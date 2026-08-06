@@ -15,6 +15,8 @@ import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
+import { verifyReleaseTag } from "../../scripts/verify-release-tag.mjs";
+
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const sourceReleaseScript = join(repoRoot, "scripts", "release.mjs");
 const sourceHelper = join(
@@ -22,8 +24,16 @@ const sourceHelper = join(
   "scripts",
   "assert-changelog-release-ready.mjs",
 );
+const sourceTagVerifier = join(repoRoot, "scripts", "verify-release-tag.mjs");
 
 const tempDirs: string[] = [];
+
+function fixtureTemp(prefix: string): string {
+  return mkdtempSync(
+    join(process.platform === "darwin" ? "/tmp" : tmpdir(), prefix),
+  );
+}
+
 test.after(() => {
   for (const dir of tempDirs) {
     rmSync(dir, { recursive: true, force: true });
@@ -38,6 +48,25 @@ interface Repo {
   readonly ghLog: string;
 }
 
+interface GpgFixture {
+  readonly home: string;
+  readonly fingerprint: string;
+}
+
+function gpgHomePath(home: string): string {
+  if (process.platform !== "win32" || home.startsWith("/")) return home;
+  return `/${home.slice(0, 1).toLowerCase()}${home.slice(2).replaceAll("\\", "/")}`;
+}
+
+function gpgEnv(home: string): NodeJS.ProcessEnv {
+  return {
+    ...process.env,
+    GNUPGHOME: gpgHomePath(home),
+    MSYS2_ARG_CONV_EXCL: "*",
+    MSYS_NO_PATHCONV: "1",
+  };
+}
+
 function utcDay(offsetDays: number): string {
   return new Date(Date.now() + offsetDays * 86_400_000)
     .toISOString()
@@ -48,7 +77,11 @@ const today = utcDay(0);
 const pastDate = utcDay(-2);
 
 function git(repo: Repo, ...args: string[]) {
-  return spawnSync("git", args, { cwd: repo.dir, encoding: "utf8" });
+  return spawnSync("git", args, {
+    cwd: repo.dir,
+    encoding: "utf8",
+    env: repo.env,
+  });
 }
 
 function ghStub(base: string, initialPrList: string): string {
@@ -96,59 +129,64 @@ interface MakeOptions {
   readonly prList?: string;
   readonly badSigningKey?: boolean;
   readonly skipPush?: boolean;
+  readonly omitLinkReferences?: boolean;
 }
 
 function makeRepo(options: MakeOptions = {}): Repo {
   const version = options.version ?? "0.1.0";
-  const base = mkdtempSync(join(tmpdir(), "planlet-release-"));
+  const base = fixtureTemp("planlet-release-");
   tempDirs.push(base);
   const dir = join(base, "work");
   const origin = join(base, "origin.git");
   mkdirSync(dir);
   mkdirSync(join(dir, "scripts"));
 
+  const gpgFixture = makeGpgFixture(join(base, "gnupg"));
+
   const runGit = (wd: string, ...args: string[]) =>
-    spawnSync("git", args, { cwd: wd, encoding: "utf8" });
+    spawnSync("git", args, {
+      cwd: wd,
+      encoding: "utf8",
+      env: gpgEnv(gpgFixture.home),
+    });
 
   runGit(base, "init", "--bare", "-q", origin);
   runGit(dir, "init", "-q");
   runGit(dir, "config", "user.email", "t@test");
   runGit(dir, "config", "user.name", "test");
 
-  // SSH signing key + allowed signers.
-  const key = join(base, "key");
-  spawnSync("ssh-keygen", ["-q", "-t", "ed25519", "-N", "", "-f", key], {
-    encoding: "utf8",
-  });
-  const pub = spawnSync("ssh-keygen", ["-y", "-f", key], {
-    encoding: "utf8",
-  }).stdout.trim();
-  const allowed = join(base, "allowed");
-  writeFileSync(allowed, `test namespaces="git" ${pub}\n`);
-  runGit(dir, "config", "user.signingkey", key);
-  runGit(dir, "config", "gpg.format", "ssh");
-  runGit(dir, "config", "gpg.ssh.allowedSignersFile", allowed);
+  runGit(dir, "config", "user.signingkey", gpgFixture.fingerprint);
+  runGit(dir, "config", "gpg.format", "openpgp");
+  runGit(dir, "config", "gpg.minTrustLevel", "ultimate");
   runGit(dir, "config", "commit.gpgsign", "true");
   runGit(dir, "config", "tag.gpgsign", "true");
 
-  // Only the matching key is allowed; a different one fails verification.
+  // Only the matching key is trusted; a different imported key fails commit verification.
   if (options.badSigningKey) {
-    const other = join(base, "other");
-    spawnSync("ssh-keygen", ["-q", "-t", "ed25519", "-N", "", "-f", other], {
+    const other = makeGpgFixture(join(base, "other-gnupg"));
+    const imported = spawnSync("gpg", ["--batch", "--import"], {
+      input: exportGpgKey(other.home, other.fingerprint, true),
       encoding: "utf8",
+      env: gpgEnv(gpgFixture.home),
     });
-    runGit(dir, "config", "user.signingkey", other);
+    assert.equal(imported.status, 0, imported.stderr);
+    runGit(dir, "config", "user.signingkey", other.fingerprint);
   }
 
   // Repository content.
   writeFileSync(
     join(dir, "package.json"),
-    JSON.stringify({ name: "x", version }, null, 2) + "\n",
+    JSON.stringify({ name: FIXED_NAME, version }, null, 2) + "\n",
   );
   writeFileSync(
     join(dir, "package-lock.json"),
     JSON.stringify(
-      { name: "x", version, lockfileVersion: 3, packages: { "": { version } } },
+      {
+        name: FIXED_NAME,
+        version,
+        lockfileVersion: 3,
+        packages: { "": { name: FIXED_NAME, version } },
+      },
       null,
       2,
     ) + "\n",
@@ -159,15 +197,24 @@ function makeRepo(options: MakeOptions = {}): Repo {
   const releasedSection = options.released
     ? `## [${version}] - ${pastDate}\n\n### Added\n\n- A released item\n`
     : "";
+  const linkReferences = options.omitLinkReferences
+    ? ""
+    : "[Unreleased]: https://example.test/compare\n[" +
+      version +
+      "]: https://example.test/tag\n";
   writeFileSync(
     join(dir, "CHANGELOG.md"),
-    `# Changelog\n\n## [Unreleased]\n\n${unreleased}${releasedSection}[Unreleased]: https://example.test/compare\n[${version}]: https://example.test/tag\n`,
+    `# Changelog\n\n## [Unreleased]\n\n${unreleased}${releasedSection}${linkReferences}`,
   );
 
   copyFileSync(sourceReleaseScript, join(dir, "scripts", "release.mjs"));
   copyFileSync(
     sourceHelper,
     join(dir, "scripts", "assert-changelog-release-ready.mjs"),
+  );
+  copyFileSync(
+    sourceTagVerifier,
+    join(dir, "scripts", "verify-release-tag.mjs"),
   );
   chmodSync(join(dir, "scripts", "release.mjs"), 0o755);
 
@@ -181,13 +228,10 @@ function makeRepo(options: MakeOptions = {}): Repo {
 
   const ghLog = ghStub(base, options.prList ?? "[]");
   const env: NodeJS.ProcessEnv = {
-    ...process.env,
+    ...gpgEnv(gpgFixture.home),
     PATH: join(base, "bin") + delimiter + process.env.PATH,
+    RELEASE_GPG_FINGERPRINT: gpgFixture.fingerprint,
     PLANLET_TEST_REPO: dir,
-    // Stop the git-for-windows MSYS runtime from rewriting the absolute hook
-    // and node paths embedded in fixture commit hooks.
-    MSYS2_ARG_CONV_EXCL: "*",
-    MSYS_NO_PATHCONV: "1",
   };
   return {
     dir,
@@ -198,9 +242,72 @@ function makeRepo(options: MakeOptions = {}): Repo {
   };
 }
 
+function runGpg(home: string, ...args: string[]) {
+  return spawnSync(
+    "gpg",
+    ["--batch", "--pinentry-mode", "loopback", "--passphrase", "", ...args],
+    { encoding: "utf8", env: gpgEnv(home) },
+  );
+}
+
+function makeGpgFixture(home: string): GpgFixture {
+  mkdirSync(home, { mode: 0o700 });
+  const generated = runGpg(
+    home,
+    "--quick-generate-key",
+    "Planlet Release Test <release@example.test>",
+    "rsa2048",
+    "sign",
+    "1d",
+  );
+  assert.equal(generated.status, 0, generated.stderr);
+  const listed = runGpg(home, "--with-colons", "--list-secret-keys");
+  assert.equal(listed.status, 0, listed.stderr);
+  const fingerprint = listed.stdout
+    .split("\n")
+    .find((line) => line.startsWith("fpr:"))
+    ?.split(":")[9];
+  assert.match(fingerprint ?? "", /^[0-9A-Fa-f]{40}$/);
+  return { home, fingerprint: fingerprint as string };
+}
+
+function exportGpgKey(
+  home: string,
+  fingerprint: string,
+  secret: boolean,
+): string {
+  const result = runGpg(
+    home,
+    "--armor",
+    secret ? "--export-secret-keys" : "--export",
+    fingerprint,
+  );
+  assert.equal(result.status, 0, result.stderr);
+  return result.stdout;
+}
+
+function withGpgHome<T>(home: string, callback: () => T): T {
+  const previous = process.env.GNUPGHOME;
+  process.env.GNUPGHOME = gpgHomePath(home);
+  try {
+    return callback();
+  } finally {
+    if (previous === undefined) delete process.env.GNUPGHOME;
+    else process.env.GNUPGHOME = previous;
+  }
+}
+
 function release(repo: Repo, ...args: string[]) {
   return spawnSync(process.execPath, [repo.script, ...args], {
     cwd: repo.dir,
+    encoding: "utf8",
+    env: repo.env,
+  });
+}
+
+function releaseFrom(repo: Repo, cwd: string, ...args: string[]) {
+  return spawnSync(process.execPath, [repo.script, ...args], {
+    cwd,
     encoding: "utf8",
     env: repo.env,
   });
@@ -215,6 +322,7 @@ function ghCalls(repo: Repo): string[] {
 }
 
 const GOOD = "0.1.0";
+const FIXED_NAME = "@vipentti/planlet";
 
 // ---------------------------------------------------------------------------
 // T1: CLI parsing
@@ -301,6 +409,15 @@ test("prepare succeeds end to end: branch, three version fields, signed commit, 
       ?.trim() ?? "missing";
   assert.equal(unreleasedBody, "");
   assert.ok(changelog.includes("An unreleased item\n"));
+  assert.match(
+    changelog,
+    /^\[Unreleased\]: https:\/\/github\.com\/vipentti\/planlet\/compare\/v1\.2\.3\.\.\.HEAD$/m,
+  );
+  assert.match(
+    changelog,
+    /^\[1\.2\.3\]: https:\/\/github\.com\/vipentti\/planlet\/compare\/v0\.1\.0\.\.\.v1\.2\.3$/m,
+  );
+  assert.match(changelog, /^\[0\.1\.0\]: https:\/\/example\.test\/tag$/m);
 
   const pkg = JSON.parse(git(repo, "show", `${sha}:package.json`).stdout);
   assert.equal(pkg.version, "1.2.3");
@@ -309,7 +426,12 @@ test("prepare succeeds end to end: branch, three version fields, signed commit, 
   assert.equal(lock.packages[""].version, "1.2.3");
 
   // Commit is signed and has one parent.
-  assert.equal(git(repo, "verify-commit", sha).status, 0);
+  const commitVerify = git(repo, "verify-commit", sha);
+  assert.equal(
+    commitVerify.status,
+    0,
+    commitVerify.stdout + commitVerify.stderr,
+  );
   assert.equal(
     git(repo, "log", "--format=%s", "-1", sha).stdout.trim(),
     "release: 1.2.3",
@@ -349,6 +471,31 @@ test("prepare succeeds end to end: branch, three version fields, signed commit, 
   assert.equal(git(repo, "rev-parse", "main").stdout.trim(), mainShaBefore);
   assert.equal(readJson(repo, "package.json").version, "0.1.0");
   assert.match(out.stdout, /Checked out main/);
+});
+
+test("prepare creates link references when changelog has none", () => {
+  const repo = makeRepo({ omitLinkReferences: true });
+  const out = release(
+    repo,
+    "prepare",
+    "--version",
+    "1.2.3",
+    "--release-date",
+    today,
+    "--execute",
+  );
+  assert.equal(out.status, 0, out.stderr + out.stdout);
+
+  const sha = git(repo, "rev-parse", "release/v1.2.3").stdout.trim();
+  const changelog = git(repo, "show", `${sha}:CHANGELOG.md`).stdout;
+  assert.match(
+    changelog,
+    /^\[Unreleased\]: https:\/\/github\.com\/vipentti\/planlet\/compare\/v1\.2\.3\.\.\.HEAD$/m,
+  );
+  assert.match(
+    changelog,
+    /^\[1\.2\.3\]: https:\/\/github\.com\/vipentti\/planlet\/compare\/v0\.1\.0\.\.\.v1\.2\.3$/m,
+  );
 });
 
 test("prepare refuses when the worktree is dirty", () => {
@@ -640,7 +787,7 @@ test("tag accepts a historical past date and succeeds for a matching expected da
   // The recorded date is two days ago; historical mode has no past-date rule.
   const past = makeRepo({ released: true });
   let out = release(past, "tag", "--version", GOOD, "--execute");
-  assert.equal(out.status, 0, out.stderr);
+  assert.equal(out.status, 0, out.stdout + out.stderr);
   assert.equal(git(past, "verify-tag", "v" + GOOD).status, 0);
   // No push without --push.
   assert.ok(
@@ -659,7 +806,7 @@ test("tag accepts a historical past date and succeeds for a matching expected da
     pastDate,
     "--execute",
   );
-  assert.equal(out.status, 0, out.stderr);
+  assert.equal(out.status, 0, out.stdout + out.stderr);
   assert.equal(git(match, "verify-tag", "v" + GOOD).status, 0);
 });
 
@@ -691,8 +838,16 @@ test("tag refuses when the remote tag already exists", () => {
 test("tag --execute --push creates, verifies, pushes, and verifies the remote tag", () => {
   const repo = makeRepo({ released: true });
   const out = release(repo, "tag", "--version", GOOD, "--execute", "--push");
-  assert.equal(out.status, 0, out.stderr);
+  assert.equal(out.status, 0, out.stdout + out.stderr);
   assert.equal(git(repo, "verify-tag", "v" + GOOD).status, 0);
+  const subject = git(
+    repo,
+    "tag",
+    "-l",
+    "--format=%(contents:subject)",
+    "v" + GOOD,
+  );
+  assert.equal(subject.stdout.trim(), "Release v" + GOOD);
   const remote = git(
     repo,
     "ls-remote",
@@ -708,7 +863,7 @@ test("tag --execute --push creates, verifies, pushes, and verifies the remote ta
 
 test("tag two-step workflow validates an existing local tag and pushes later", () => {
   const repo = makeRepo({ released: true });
-  git(repo, "tag", "-a", "-s", "v" + GOOD, "-m", "v" + GOOD, "HEAD");
+  git(repo, "tag", "-a", "-s", "v" + GOOD, "-m", "Release v" + GOOD, "HEAD");
 
   // Step 1: report ready, do not push.
   const step1 = release(repo, "tag", "--version", GOOD, "--execute");
@@ -723,9 +878,90 @@ test("tag two-step workflow validates an existing local tag and pushes later", (
   const step2 = release(repo, "tag", "--version", GOOD, "--execute", "--push");
   assert.equal(step2.status, 0, step2.stderr);
 
-  // Messages that are not exactly v<version> are refused.
+  // Messages that are not the canonical "Release v<version>" subject are refused.
   const bad = makeRepo({ released: true });
   git(bad, "tag", "-a", "-s", "v" + GOOD, "-m", "wrong message", "HEAD");
   const badOut = release(bad, "tag", "--version", GOOD, "--execute", "--push");
   assert.notEqual(badOut.status, 0);
+});
+
+test("tag rejects an existing local tag with a bare v<version> subject", () => {
+  const repo = makeRepo({ released: true });
+  git(repo, "tag", "-a", "-s", "v" + GOOD, "-m", "v" + GOOD, "HEAD");
+  const out = release(repo, "tag", "--version", GOOD, "--execute");
+  assert.notEqual(out.status, 0);
+  assert.match(out.stderr, /message is/);
+  assert.equal(
+    git(repo, "ls-remote", "--exit-code", "origin", "refs/tags/v" + GOOD)
+      .status,
+    2,
+  );
+});
+
+test("tag refuses a mismatched package identity", () => {
+  const repo = makeRepo({ released: true });
+  const pkg = readJson(repo, "package.json");
+  pkg.name = "other";
+  writeFileSync(
+    join(repo.dir, "package.json"),
+    JSON.stringify(pkg, null, 2) + "\n",
+  );
+  git(repo, "add", "package.json");
+  git(repo, "commit", "-q", "-m", "rename");
+  git(repo, "push", "-q", "origin", "main");
+
+  const out = release(repo, "tag", "--version", GOOD, "--execute");
+  assert.notEqual(out.status, 0);
+  assert.match(out.stdout + out.stderr, /package\.json\.name is/);
+});
+
+test("break-glass tag satisfies the same verifier arguments as the workflow", () => {
+  const repo = makeRepo({ released: true });
+  const out = release(repo, "tag", "--version", GOOD, "--execute");
+  assert.equal(out.status, 0, out.stderr);
+  const head = git(repo, "rev-parse", "HEAD").stdout.trim();
+  const verify = withGpgHome(repo.env.GNUPGHOME as string, () =>
+    verifyReleaseTag({
+      tag: "v" + GOOD,
+      target: head,
+      message: "Release v" + GOOD,
+      expectedFingerprint: repo.env.RELEASE_GPG_FINGERPRINT as string,
+      cwd: repo.dir,
+    }),
+  );
+  assert.equal(verify.ok, true, verify.ok ? "" : verify.error);
+});
+
+test("fresh break-glass tag verifies when release.mjs runs from an unrelated directory", () => {
+  const repo = makeRepo({ released: true });
+  const outside = join(repo.log, "outside");
+  mkdirSync(outside);
+
+  const out = releaseFrom(repo, outside, "tag", "--version", GOOD, "--execute");
+  assert.equal(out.status, 0, out.stderr + out.stdout);
+  assert.equal(git(repo, "verify-tag", "v" + GOOD).status, 0);
+  const subject = git(
+    repo,
+    "tag",
+    "-l",
+    "--format=%(contents:subject)",
+    "v" + GOOD,
+  );
+  assert.equal(subject.stdout.trim(), "Release v" + GOOD);
+});
+
+test("existing local tag validates when release.mjs runs from an unrelated directory", () => {
+  const repo = makeRepo({ released: true });
+  git(repo, "tag", "-a", "-s", "v" + GOOD, "-m", "Release v" + GOOD, "HEAD");
+  const outside = join(repo.log, "outside");
+  mkdirSync(outside);
+
+  const out = releaseFrom(repo, outside, "tag", "--version", GOOD, "--execute");
+  assert.equal(out.status, 0, out.stderr + out.stdout);
+  assert.match(out.stdout, /exists locally and is valid/);
+  assert.equal(
+    git(repo, "ls-remote", "--exit-code", "origin", "refs/tags/v" + GOOD)
+      .status,
+    2,
+  );
 });

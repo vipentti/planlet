@@ -34,12 +34,22 @@ function assertReady(args: readonly string[], env: NodeJS.ProcessEnv = {}) {
   });
 }
 
-function fixture(changelog: string, version = "0.1.0") {
+function fixture(changelog: string, version = "0.1.0", withLinks = true) {
   const dir = mkdtempSync(join(tmpdir(), "planlet-changelog-ready-"));
   tempDirs.push(dir);
   const changelogPath = join(dir, "CHANGELOG.md");
   const packagePath = join(dir, "package.json");
-  writeFileSync(changelogPath, changelog);
+  const labels = [
+    ...new Set(
+      [...changelog.matchAll(/^## \[([^\]]+)\]/gm)].map((match) => match[1]),
+    ),
+  ];
+  const content = withLinks
+    ? `${changelog.trimEnd()}\n\n${labels
+        .map((label) => `[${label}]: https://example.test/${label}`)
+        .join("\n")}\n`
+    : changelog;
+  writeFileSync(changelogPath, content);
   writeFileSync(packagePath, JSON.stringify({ version }));
   return { changelogPath, packagePath };
 }
@@ -168,6 +178,17 @@ test("ordinary CI allows Unreleased-only and structurally valid dated 0.1.0", ()
     assertReady([undated.changelogPath, undated.packagePath]).status,
     0,
   );
+});
+
+test("changelog validation requires link references for every section", () => {
+  const missing = fixture(
+    `# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - ${future}\n\n### Added\n\n- Item\n`,
+    "0.1.0",
+    false,
+  );
+  const out = assertReady([missing.changelogPath, missing.packagePath]);
+  assert.notEqual(out.status, 0);
+  assert.match(out.stderr, /missing link reference/i);
 });
 
 test("explicit release mode enforces dated non-empty matching 0.1.0 notes", () => {
