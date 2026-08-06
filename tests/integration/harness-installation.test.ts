@@ -424,6 +424,31 @@ test("prompt choices detect per-machine Claude settings marker", async () => {
   });
 });
 
+test("prompt choices combine Copilot and Claude markers", async () => {
+  await withRoot(async (root) => {
+    mkdirSync(join(root, ".github"), { recursive: true });
+    writeFileSync(
+      join(root, ".github", "copilot-instructions.md"),
+      "Use Copilot\n",
+    );
+    mkdirSync(join(root, ".claude", "agents"), { recursive: true });
+    writeFileSync(
+      join(root, ".claude", "agents", "reviewer.md"),
+      "Review changes\n",
+    );
+
+    const choices = buildToolChoices(root);
+    assert.deepEqual(
+      choices.map((choice) => choice.preselected),
+      [true, true],
+    );
+    assert.equal(
+      resolveAnswer(choices, ""),
+      "agents,codex,github-copilot,claude",
+    );
+  });
+});
+
 test("prompt choices preselect everything when no destination exists", async () => {
   await withRoot(async (root) => {
     const choices = buildToolChoices(root);

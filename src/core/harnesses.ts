@@ -43,6 +43,9 @@ export const HARNESS_ADAPTERS = Object.freeze([
         relativePath: ".claude/settings.local.json",
         kind: "file",
       }),
+      Object.freeze({ relativePath: ".claude/agents", kind: "directory" }),
+      Object.freeze({ relativePath: ".claude/rules", kind: "directory" }),
+      Object.freeze({ relativePath: ".claude/CLAUDE.md", kind: "file" }),
       Object.freeze({
         relativePath: ".claude/commands",
         kind: "directory",
