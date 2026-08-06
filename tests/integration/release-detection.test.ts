@@ -181,10 +181,6 @@ function detect(
   return { status: r.status ?? -1, stdout: r.stdout, stderr: r.stderr };
 }
 
-function headSha(repo: string): string {
-  return git(repo, "rev-parse", "HEAD").stdout.trim();
-}
-
 function assertRefused(result: { status: number; stderr: string }) {
   assert.notEqual(result.status, 0);
   assert.notEqual(result.stderr.trim(), "");
@@ -198,12 +194,7 @@ test("ordinary push with unchanged version is not a release", () => {
   const repo = makeRepo();
   writeFileSync(join(repo.dir, "notes.txt"), "ordinary\n");
   commitAll(repo.dir, "ordinary change");
-  const out = detect(repo.dir, [
-    "--before",
-    repo.baseSha,
-    "--after",
-    headSha(repo.dir),
-  ]);
+  const out = detect(repo.dir, ["--before", repo.baseSha]);
   assert.equal(out.status, 0, out.stderr);
   assert.deepEqual(JSON.parse(out.stdout), { isRelease: false });
   assert.equal(out.stdout.trim().split("\n").length, 1);
@@ -216,8 +207,8 @@ test("ordinary push with unchanged version is not a release", () => {
 test("release-file-only version bump is a release", () => {
   const repo = makeRepo();
   writeReleaseState(repo.dir);
-  const after = commitAll(repo.dir, "release: 0.3.0");
-  const out = detect(repo.dir, ["--before", repo.baseSha, "--after", after]);
+  commitAll(repo.dir, "release: 0.3.0");
+  const out = detect(repo.dir, ["--before", repo.baseSha]);
   assert.equal(out.status, 0, out.stderr);
   assert.deepEqual(JSON.parse(out.stdout), {
     isRelease: true,
@@ -233,15 +224,15 @@ test("release-file-only version bump is a release", () => {
 test("package and lockfile version mismatch refuses", () => {
   const repo = makeRepo();
   writeReleaseState(repo.dir, { lockVersion: BASE_VERSION });
-  const after = commitAll(repo.dir, "mismatch");
-  assertRefused(detect(repo.dir, ["--before", repo.baseSha, "--after", after]));
+  commitAll(repo.dir, "mismatch");
+  assertRefused(detect(repo.dir, ["--before", repo.baseSha]));
 });
 
 test("lockfile root package version mismatch refuses", () => {
   const repo = makeRepo();
   writeReleaseState(repo.dir, { lockRootVersion: BASE_VERSION });
-  const after = commitAll(repo.dir, "root mismatch");
-  assertRefused(detect(repo.dir, ["--before", repo.baseSha, "--after", after]));
+  commitAll(repo.dir, "root mismatch");
+  assertRefused(detect(repo.dir, ["--before", repo.baseSha]));
 });
 
 test("package identity mismatches refuse before release", () => {
@@ -270,8 +261,8 @@ test("package identity mismatches refuse before release", () => {
       lockName: c.lockName,
       lockRootName: c.lockRootName,
     });
-    const after = commitAll(repo.dir, "identity mismatch");
-    const out = detect(repo.dir, ["--before", repo.baseSha, "--after", after]);
+    commitAll(repo.dir, "identity mismatch");
+    const out = detect(repo.dir, ["--before", repo.baseSha]);
     assert.notEqual(out.status, 0, c.label);
     assert.match(out.stderr, /name is/i, c.label);
   }
@@ -376,8 +367,8 @@ test("release package metadata may change only the version fields", () => {
   for (const c of cases) {
     const repo = makeRepo();
     writeReleaseState(repo.dir);
-    const after = overlay(repo.dir, c.file, c.mutate);
-    const out = detect(repo.dir, ["--before", repo.baseSha, "--after", after]);
+    overlay(repo.dir, c.file, c.mutate);
+    const out = detect(repo.dir, ["--before", repo.baseSha]);
     assert.notEqual(out.status, 0, c.label);
     assert.match(out.stderr, /beyond the permitted version/, c.label);
   }
@@ -387,8 +378,8 @@ test("malformed semver refuses", () => {
   for (const version of ["1.2", "1.2.3-beta", "1.2.3+build", "01.2.3"]) {
     const repo = makeRepo();
     writeReleaseState(repo.dir, { version });
-    const after = commitAll(repo.dir, "bad semver");
-    const out = detect(repo.dir, ["--before", repo.baseSha, "--after", after]);
+    commitAll(repo.dir, "bad semver");
+    const out = detect(repo.dir, ["--before", repo.baseSha]);
     assert.notEqual(out.status, 0, version);
     assert.match(out.stderr, /not valid stable X\.Y\.Z semver/i);
   }
@@ -397,15 +388,15 @@ test("malformed semver refuses", () => {
 test("downgrade refuses", () => {
   const repo = makeRepo();
   writeReleaseState(repo.dir, { version: "0.1.0", lockVersion: "0.1.0" });
-  const after = commitAll(repo.dir, "downgrade");
-  assertRefused(detect(repo.dir, ["--before", repo.baseSha, "--after", after]));
+  commitAll(repo.dir, "downgrade");
+  assertRefused(detect(repo.dir, ["--before", repo.baseSha]));
 });
 
 test("unchanged version never enters release classification", () => {
   const repo = makeRepo();
   writeReleaseState(repo.dir, { version: BASE_VERSION });
-  const after = commitAll(repo.dir, "same version");
-  const out = detect(repo.dir, ["--before", repo.baseSha, "--after", after]);
+  commitAll(repo.dir, "same version");
+  const out = detect(repo.dir, ["--before", repo.baseSha]);
   assert.equal(out.status, 0, out.stderr);
   assert.deepEqual(JSON.parse(out.stdout), { isRelease: false });
 });
@@ -414,27 +405,24 @@ test("non-release file included in version-changing merge refuses", () => {
   const repo = makeRepo();
   writeReleaseState(repo.dir);
   writeFileSync(join(repo.dir, "notes.txt"), "unexpected\n");
-  const after = commitAll(repo.dir, "release plus extra");
-  assertRefused(detect(repo.dir, ["--before", repo.baseSha, "--after", after]));
+  commitAll(repo.dir, "release plus extra");
+  assertRefused(detect(repo.dir, ["--before", repo.baseSha]));
 });
 
 test("missing, malformed, and unresolvable previous SHAs refuse", () => {
   const repo = makeRepo();
-  const head = headSha(repo.dir);
 
-  const missing = detect(repo.dir, ["--after", head]);
+  const missing = detect(repo.dir, []);
   assert.notEqual(missing.status, 0);
   assert.match(missing.stderr, /Missing --before/);
 
-  const nonHex = detect(repo.dir, ["--before", "nope", "--after", head]);
+  const nonHex = detect(repo.dir, ["--before", "nope"]);
   assert.notEqual(nonHex.status, 0);
   assert.match(nonHex.stderr, /Ambiguous previous SHA/);
 
   const zero = detect(repo.dir, [
     "--before",
     "0000000000000000000000000000000000000000",
-    "--after",
-    head,
   ]);
   assert.notEqual(zero.status, 0);
   assert.match(zero.stderr, /Ambiguous previous SHA/);
@@ -442,33 +430,23 @@ test("missing, malformed, and unresolvable previous SHAs refuse", () => {
   const unresolvable = detect(repo.dir, [
     "--before",
     "0123456789abcdef0123456789abcdef01234567",
-    "--after",
-    head,
   ]);
   assert.notEqual(unresolvable.status, 0);
   assert.match(unresolvable.stderr, /does not resolve to a commit/);
 });
 
-test("after SHA not equal to HEAD refuses", () => {
-  const repo = makeRepo();
-  const other = "0123456789abcdef0123456789abcdef01234567";
-  const out = detect(repo.dir, ["--before", repo.baseSha, "--after", other]);
-  assert.notEqual(out.status, 0);
-  assert.match(out.stderr, /does not equal the checked-out HEAD/);
-});
-
 test("changelog without a section for the new version refuses", () => {
   const repo = makeRepo();
   writeReleaseState(repo.dir, { changelog: baseChangelog() });
-  const after = commitAll(repo.dir, "missing changelog section");
-  assertRefused(detect(repo.dir, ["--before", repo.baseSha, "--after", after]));
+  commitAll(repo.dir, "missing changelog section");
+  assertRefused(detect(repo.dir, ["--before", repo.baseSha]));
 });
 
 test("nonempty Unreleased changelog refuses", () => {
   const repo = makeRepo();
   writeReleaseState(repo.dir, { changelog: releaseChangelog(true) });
-  const after = commitAll(repo.dir, "nonempty unreleased");
-  assertRefused(detect(repo.dir, ["--before", repo.baseSha, "--after", after]));
+  commitAll(repo.dir, "nonempty unreleased");
+  assertRefused(detect(repo.dir, ["--before", repo.baseSha]));
 });
 
 test("existing expected tag at the triggering commit succeeds", () => {
@@ -476,7 +454,7 @@ test("existing expected tag at the triggering commit succeeds", () => {
   writeReleaseState(repo.dir);
   const after = commitAll(repo.dir, "release: 0.3.0");
   git(repo.dir, "tag", "-a", "v0.3.0", "-m", "tag", after);
-  const out = detect(repo.dir, ["--before", repo.baseSha, "--after", after]);
+  const out = detect(repo.dir, ["--before", repo.baseSha]);
   assert.equal(out.status, 0, out.stderr);
   assert.deepEqual(JSON.parse(out.stdout), {
     isRelease: true,
@@ -487,9 +465,9 @@ test("existing expected tag at the triggering commit succeeds", () => {
 test("existing tag pointing to another commit refuses", () => {
   const repo = makeRepo();
   writeReleaseState(repo.dir);
-  const after = commitAll(repo.dir, "release: 0.3.0");
+  commitAll(repo.dir, "release: 0.3.0");
   git(repo.dir, "tag", "-a", "v0.3.0", "-m", "tag", repo.baseSha);
-  const out = detect(repo.dir, ["--before", repo.baseSha, "--after", after]);
+  const out = detect(repo.dir, ["--before", repo.baseSha]);
   assert.notEqual(out.status, 0);
   assert.match(out.stderr, /points to/);
 });

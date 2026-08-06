@@ -156,16 +156,19 @@ project dependencies and executes no repository-owned scripts or code from
 `node_modules`. It uses a pinned official Node/npm toolchain (Node `24.11.1`
 with bundled npm `11.6.2`), inline workflow-owned validation, and system tools
 only; repository files are read and packaged as data, never executed. It
-performs a fresh origin/main ancestry check after approval, extracts release
-notes inline, packages the already-verified committed output with
-`npm pack --json --ignore-scripts`, validates the packed artifact inline, then
-runs GPG verification/signing (public-key-only when an exact remote tag
-already exists; private-key signing only when a new tag must be created),
-App-authenticated tag push, GitHub signature confirmation, npm
-publish-or-verify (lifecycle scripts disabled for packing and publication),
-and GitHub release steps. The remote tag is the final irreversible mutation
-before npm publication; pushing it does not start a second workflow run. Exact
-step details live in
+performs a fresh origin/main ancestry check after approval and repeats the
+release-intent check (ancestry + unchanged release-control files) immediately
+before creating a new tag. It extracts release notes inline, downloads the
+immutable artifact produced by `verify` (packed with `npm pack --json
+--ignore-scripts`, validated, and smoke-tested there), and revalidates its
+SHA-256, npm integrity, CLI presence, and package contract before any
+mutation — it never runs `npm pack` itself. It then runs GPG
+verification/signing (public-key-only when an exact remote tag already exists;
+private-key signing only when a new tag must be created), App-authenticated
+tag push, GitHub signature confirmation, npm publish-or-verify (lifecycle
+scripts disabled for packing and publication), and GitHub release steps. The
+remote tag is the final irreversible mutation before npm publication; pushing
+it does not start a second workflow run. Exact step details live in
 [`.github/workflows/release.yml`](.github/workflows/release.yml).
 
 Rerun behavior:
@@ -260,7 +263,11 @@ GitHub Environment settings, set **Deployment branches and tags** to
 own `push: main` trigger is **not sufficient** — another workflow file on
 another branch could reference `environment: release` and start a protected
 release run. The Environment-level branch restriction is the authorization
-boundary.
+boundary. **Referencing `environment: release` does not itself require
+approval.** The live Environment must also configure **Deployment protection:
+at least one Required reviewer**, with one reviewer approval before the
+protected job begins; otherwise the protected job starts automatically after
+verification.
 
 Optional policy choices, applied by the repository owner as appropriate:
 
@@ -279,9 +286,16 @@ To rotate the signing key:
 
 1. Generate a new dedicated GPG key pair whose email is verified on the GitHub
    account holding the public key, and add the public key to that account.
-2. Update `RELEASE_GPG_PRIVATE_KEY` and `RELEASE_GPG_PASSPHRASE` secrets and
-   `RELEASE_GPG_FINGERPRINT` in the `release` environment.
+2. Change all four values **together** in the `release` environment:
+   `RELEASE_GPG_PUBLIC_KEY`, `RELEASE_GPG_PRIVATE_KEY`,
+   `RELEASE_GPG_PASSPHRASE`, and `RELEASE_GPG_FINGERPRINT`. The public and
+   private values must belong to the same dedicated release key, and the
+   configured fingerprint must match that key.
 3. Confirm the fingerprint variable exactly matches the imported key; the
    workflow fails the release if it does not.
-4. After a successful release with the new key, remove the old private key from
+4. Do not start a release while the four values are inconsistent. Existing-tag
+   reruns verify with `RELEASE_GPG_PUBLIC_KEY`; new-tag runs use the private
+   key and passphrase. Rotating only the private key and fingerprint breaks
+   existing-tag verification.
+5. After a successful release with the new key, remove the old private key from
    the environment and the old public key from the GitHub account.

@@ -1,5 +1,5 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "ignore": ["scripts/changelog.mjs", "scripts/verify-release-tag.d.mts"],
-  "ignoreBinaries": ["gpg", "printf", "ssh-keygen"]
+  "ignoreBinaries": ["gpg", "planlet", "printf", "sha256sum", "ssh-keygen"]
 }

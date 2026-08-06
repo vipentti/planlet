@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -24,17 +25,14 @@ test.after(() => {
   }
 });
 
-function extractInlineBlock(stepName: string): string {
-  const start = workflow.indexOf(`- name: ${stepName}`);
-  assert.ok(start >= 0, `step ${stepName} missing`);
+function extractValidatorBlock(): string {
+  const start = workflow.indexOf("- name: Validate reviewed package artifact");
+  assert.ok(start >= 0, "validator step missing");
   const marker = "<<'NODE'";
   const heredoc = workflow.indexOf(marker, start);
   const codeStart = heredoc + marker.length;
   const codeEnd = workflow.indexOf("\n          NODE", codeStart);
-  assert.ok(
-    codeStart > 0 && codeEnd > codeStart,
-    `inline block in ${stepName} missing`,
-  );
+  assert.ok(codeStart > 0 && codeEnd > codeStart, "validator block missing");
   const lines = workflow.slice(codeStart, codeEnd).split("\n");
   const nonEmpty = lines.filter((line) => line.trim() !== "");
   const indent = nonEmpty.reduce(
@@ -44,107 +42,95 @@ function extractInlineBlock(stepName: string): string {
   return lines.map((line) => line.slice(indent)).join("\n");
 }
 
-function runInlineBlock(
-  report: unknown,
-  options: { version?: string } = {},
-): { status: number; stdout: string; stderr: string; envFile: string } {
-  const dir = mkdtempSync(join(tmpdir(), "planlet-pack-inline-"));
+function runValidator(report: unknown): {
+  status: number;
+  stderr: string;
+  outputFile: string;
+} {
+  const dir = mkdtempSync(join(tmpdir(), "planlet-pack-reject-"));
   tempDirs.push(dir);
-  const envFile = join(dir, "github-env.txt");
-  writeFileSync(join(dir, "pack.json"), JSON.stringify(report) + "\n", "utf8");
-  writeFileSync(
-    join(dir, "block.mjs"),
-    extractInlineBlock("Build reviewed package artifact"),
-    "utf8",
-  );
+  const packDir = join(dir, "pack");
+  mkdirSync(packDir);
+  const outputFile = join(dir, "output.txt");
+  writeFileSync(join(packDir, "pack.json"), JSON.stringify(report) + "\n");
+  writeFileSync(join(dir, "block.mjs"), extractValidatorBlock(), "utf8");
   const r = spawnSync(process.execPath, [join(dir, "block.mjs")], {
     cwd: dir,
     encoding: "utf8",
     env: {
       ...process.env,
       RUNNER_TEMP: dir,
-      VERSION: options.version ?? VERSION,
-      GITHUB_ENV: envFile,
+      VERSION,
+      GITHUB_OUTPUT: outputFile,
     },
   });
-  return {
-    status: r.status ?? -1,
-    stdout: r.stdout,
-    stderr: r.stderr,
-    envFile,
-  };
+  return { status: r.status ?? -1, stderr: r.stderr, outputFile };
 }
 
-function validReport(
-  filename = `vipentti-planlet-${VERSION}.tgz`,
+function report(
+  filename: string,
+  integrity = "sha512-abc123",
 ): Array<{ filename: string; integrity: string }> {
-  return [{ filename, integrity: "sha512-abc123" }];
+  return [{ filename, integrity }];
 }
 
-function assertRefused(result: {
+function assertRejected(result: {
   status: number;
   stderr: string;
-  envFile: string;
+  outputFile: string;
 }) {
   assert.notEqual(result.status, 0);
   assert.notEqual(result.stderr.trim(), "");
   assert.equal(
-    existsSync(result.envFile) ? readFileSync(result.envFile, "utf8") : "",
+    existsSync(result.outputFile)
+      ? readFileSync(result.outputFile, "utf8")
+      : "",
     "",
   );
 }
 
-test("valid packed artifact records PACKAGE_TARBALL", () => {
-  const result = runInlineBlock(validReport());
-  assert.equal(result.status, 0, result.stderr);
-  const runDir = dirname(result.envFile);
-  assert.equal(
-    readFileSync(result.envFile, "utf8"),
-    `PACKAGE_TARBALL=${join(runDir, `vipentti-planlet-${VERSION}.tgz`)}\n`,
-  );
-});
-
 test("filename containing newline is rejected", () => {
-  assertRefused(
-    runInlineBlock(validReport(`vipentti-planlet-${VERSION}.tgz\nEVIL=1`)),
+  assertRejected(
+    runValidator(report(`vipentti-planlet-${VERSION}.tgz\nEVIL=1`)),
   );
 });
 
 test("filename containing carriage return is rejected", () => {
-  assertRefused(
-    runInlineBlock(validReport(`vipentti-planlet-${VERSION}.tgz\rEVIL=1`)),
+  assertRejected(
+    runValidator(report(`vipentti-planlet-${VERSION}.tgz\rEVIL=1`)),
   );
 });
 
 test("filename containing path separators is rejected", () => {
-  assertRefused(runInlineBlock(validReport(`sub/${VERSION}.tgz`)));
-  assertRefused(runInlineBlock(validReport(`sub\\${VERSION}.tgz`)));
+  assertRejected(runValidator(report(`sub/${VERSION}.tgz`)));
+  assertRejected(runValidator(report(`sub\\${VERSION}.tgz`)));
 });
 
 test("unexpected package basename is rejected", () => {
-  assertRefused(runInlineBlock(validReport("evil-planlet-1.2.3.tgz")));
+  assertRejected(runValidator(report("evil-planlet-1.2.3.tgz")));
 });
 
 test("unexpected version is rejected", () => {
-  assertRefused(runInlineBlock(validReport(), { version: "9.9.9" }));
+  assertRejected(runValidator(report("vipentti-planlet-9.9.9.tgz")));
 });
 
 test("multiple pack results are rejected", () => {
-  assertRefused(runInlineBlock([validReport()[0], validReport()[0]]));
+  assertRejected(
+    runValidator([
+      report(`vipentti-planlet-${VERSION}.tgz`)[0],
+      report(`vipentti-planlet-${VERSION}.tgz`)[0],
+    ]),
+  );
 });
 
 test("empty or missing integrity is rejected", () => {
-  assertRefused(
-    runInlineBlock([
-      { filename: `vipentti-planlet-${VERSION}.tgz`, integrity: "" },
-    ]),
-  );
-  assertRefused(
-    runInlineBlock([{ filename: `vipentti-planlet-${VERSION}.tgz` }]),
+  assertRejected(runValidator(report(`vipentti-planlet-${VERSION}.tgz`, "")));
+  assertRejected(
+    runValidator([{ filename: `vipentti-planlet-${VERSION}.tgz` }]),
   );
 });
 
 test("path escaping RUNNER_TEMP is rejected", () => {
-  assertRefused(runInlineBlock(validReport("..")));
-  assertRefused(runInlineBlock(validReport("...")));
+  assertRejected(runValidator(report("..")));
+  assertRejected(runValidator(report("...")));
 });

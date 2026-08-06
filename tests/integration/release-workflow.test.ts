@@ -125,7 +125,7 @@ test("App token is consumed by the tag-push step and never persisted", () => {
 
 test("workflow keeps safe ordering: verification before GPG and tag mutation", () => {
   const packIdx = indexOfLine((line) =>
-    line.includes("Build reviewed package artifact"),
+    line.includes("Validate downloaded package artifact"),
   );
   const gpgIdx = indexOfLine((line) =>
     line.includes("Initialize isolated GPG home"),
@@ -176,12 +176,80 @@ test("protected job pins exact Node and bundled npm without installing anything"
   assert.doesNotMatch(release, /corepack/i);
 });
 
-test("packed artifact validation is inline and writes env only after success", () => {
+test("verify job packs and uploads the artifact; release downloads instead of packing", () => {
+  const verify = jobSection("verify", "release");
   const release = jobSection("release");
-  assert.match(release, /npm pack --json --ignore-scripts/);
-  assert.match(release, /node --input-type=module <<'NODE'/);
+  assert.match(verify, /npm pack --json --ignore-scripts/);
+  assert.match(verify, /node --input-type=module <<'NODE'/);
+  assert.match(verify, /package-filename=\$\{packed\.filename\}/);
+  assert.match(
+    verify,
+    /actions\/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a/,
+  );
+  assert.match(verify, /planlet-release-\$\{\{ github\.sha \}\}/);
+  assert.match(verify, /if-no-files-found: error/);
+  assert.match(
+    release,
+    /actions\/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c/,
+  );
+  assert.match(release, /planlet-release-\$\{\{ github\.sha \}\}/);
+  assert.match(release, /PACKAGE_SHA256/);
   assert.match(release, /PACKAGE_TARBALL=\$\{tarball\}\\n/);
+  assert.doesNotMatch(release, /npm pack/);
   assert.doesNotMatch(release, /validate-packed-artifact\.mjs/);
+});
+
+test("release validates the downloaded artifact before any mutation", () => {
+  const release = jobSection("release");
+  assert.match(
+    release,
+    /downloaded tarball SHA-256 does not match verified output/,
+  );
+  assert.match(release, /npm integrity does not match downloaded tarball/);
+  assert.match(release, /must contain a non-empty package\/dist\/planlet\.mjs/);
+  const downloadIdx = indexOfLine((line) =>
+    line.includes("Validate downloaded package artifact"),
+  );
+  const tagCheckIdx = indexOfLine((line) =>
+    line.includes("Check remote release tag"),
+  );
+  const gpgIdx = indexOfLine((line) =>
+    line.includes("Initialize isolated GPG home"),
+  );
+  const tokenIdx = indexOfLine((line) =>
+    line.includes("Generate GitHub App installation token"),
+  );
+  const tagIdx = indexOfLine((line) =>
+    line.includes("Ensure exact signed release tag"),
+  );
+  assert.ok(
+    downloadIdx >= 0 &&
+      tagCheckIdx >= 0 &&
+      tagCheckIdx < downloadIdx &&
+      downloadIdx < gpgIdx &&
+      gpgIdx < tokenIdx &&
+      tokenIdx < tagIdx,
+  );
+});
+
+test("release-intent guards run before tag creation for new-tag runs", () => {
+  const release = jobSection("release");
+  assert.match(release, /Verify release intent is unchanged/);
+  assert.match(release, /Verify release intent is still current/);
+  assert.match(
+    release,
+    /git diff --quiet "\$GITHUB_SHA"\.\.origin\/main -- CHANGELOG\.md package\.json package-lock\.json/,
+  );
+  const earlyIdx = indexOfLine((line) =>
+    line.includes("Verify release intent is unchanged"),
+  );
+  const finalIdx = indexOfLine((line) =>
+    line.includes("Verify release intent is still current"),
+  );
+  const tagIdx = indexOfLine((line) =>
+    line.includes("Ensure exact signed release tag"),
+  );
+  assert.ok(earlyIdx >= 0 && earlyIdx < finalIdx && finalIdx < tagIdx);
 });
 
 test("protected job executes no repository-owned scripts", () => {
@@ -250,7 +318,7 @@ test("GPG setup is split by execution path", () => {
   // Existing-tag path: public key only, no secret material or signing wrapper.
   assert.doesNotMatch(
     publicStep,
-    /RELEASE_GPG_PRIVATE_KEY|RELEASE_GPG_PASSPHRASE|passphrase|gpg-wrapper/,
+    /RELEASE_GPG_PRIVATE_KEY|RELEASE_GPG_PASSPHRASE|gpg-wrapper|passphrase file/,
   );
   assert.match(publicStep, /--list-secret-keys/);
 
@@ -272,6 +340,13 @@ test("GPG setup is split by execution path", () => {
     stepSection("Clean up release GPG key material"),
     /if: always\(\)/,
   );
+});
+
+test("Required reviewer Environment rule is documented as mandatory", () => {
+  assert.match(workflow, /does not itself require approval/);
+  assert.match(workflow, /Required reviewer/);
+  assert.match(releasing, /does not itself require\s+approval/);
+  assert.match(releasing, /Required reviewer/);
 });
 
 test("duplicate protected-job changelog verification is removed", () => {
@@ -296,6 +371,8 @@ test("detect job is unprivileged and holds no release material", () => {
   const detect = jobSection("detect", "verify");
   assert.doesNotMatch(detect, /id-token/);
   assert.doesNotMatch(detect, /environment: release/);
+  assert.match(detect, /test "\$\(git rev-parse HEAD\)" = "\$GITHUB_SHA"/);
+  assert.doesNotMatch(detect, /--after/);
   assert.doesNotMatch(
     detect,
     /RELEASE_APP_ID|RELEASE_APP_PRIVATE_KEY|RELEASE_GPG|PACKAGE_NAME/,
@@ -330,7 +407,11 @@ test("only the protected release job has id-token and runs no dependency code", 
   assert.match(release, /id-token: write/);
   assert.match(release, /needs: \[detect, verify\]/);
   assert.match(release, /merge-base --is-ancestor/);
-  assert.match(release, /npm pack --json --ignore-scripts/);
+  assert.match(
+    release,
+    /actions\/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c/,
+  );
+  assert.doesNotMatch(release, /npm pack/);
   assert.match(release, /appendFileSync\(process\.env\.GITHUB_ENV/);
   assert.doesNotMatch(release, /npm ci/);
   assert.doesNotMatch(release, /npm install(?! --global npm@11\.5\.1)/);

@@ -4,10 +4,11 @@
  * Detect whether a push to main is a prepared release merge.
  *
  * Usage:
- *   node scripts/detect-release-merge.mjs --before <sha> [--after <sha>]
+ *   node scripts/detect-release-merge.mjs --before <sha>
  *
- * Runs in a checkout of the triggering commit (--after defaults to HEAD and
- * must equal HEAD when passed). Prints exactly one JSON line on success:
+ * Runs in a checkout of the triggering commit; the target is derived from
+ * HEAD, which the caller must bind to the exact triggering SHA. Prints exactly
+ * one JSON line on success:
  *   {"isRelease":false}
  *   {"isRelease":true,"version":"X.Y.Z"}
  * Any refusal writes a diagnostic to stderr and exits nonzero. Missing,
@@ -113,7 +114,6 @@ try {
     args: process.argv.slice(2),
     options: {
       before: { type: "string" },
-      after: { type: "string" },
       help: { type: "boolean", short: "h" },
     },
     strict: true,
@@ -123,9 +123,7 @@ try {
 }
 
 if (values.help) {
-  console.log(
-    "Usage: node scripts/detect-release-merge.mjs --before <sha> [--after <sha>]",
-  );
+  console.log("Usage: node scripts/detect-release-merge.mjs --before <sha>");
   process.exit(0);
 }
 
@@ -147,13 +145,7 @@ if (!resolveCommit(before)) {
 const headSha = resolveCommit("HEAD");
 if (!headSha) fail("Could not resolve HEAD to a commit.");
 
-const after = values.after ?? headSha;
-if (!/^[0-9a-f]{40}$/.test(after)) {
-  fail(`Ambiguous target SHA: ${after} is not a 40-character hex SHA.`);
-}
-if (after !== headSha) {
-  fail(`Target SHA ${after} does not equal the checked-out HEAD ${headSha}.`);
-}
+const after = headSha;
 
 // --- Read release state ---
 
