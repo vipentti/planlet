@@ -7,6 +7,7 @@ import test from "node:test";
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const workflowPath = join(repoRoot, ".github", "workflows", "release.yml");
 const workflow = readFileSync(workflowPath, "utf8");
+const releasing = readFileSync(join(repoRoot, "RELEASING.md"), "utf8");
 const lines = workflow.split("\n");
 const APP_TOKEN_ACTION =
   "actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1";
@@ -21,6 +22,20 @@ function jobSection(name: string, next?: string): string {
     ? indexOfLine((line) => line.trim() === next + ":")
     : lines.length;
   assert.ok(start >= 0, `job ${name} missing`);
+  return lines.slice(start, end).join("\n");
+}
+
+function stepSection(name: string): string {
+  const start = indexOfLine((line) => line.includes(`- name: ${name}`));
+  assert.ok(start >= 0, `step ${name} missing`);
+  let end = lines.length;
+  for (let i = start + 1; i < lines.length; i++) {
+    const line = lines[i];
+    if (line !== undefined && /^\s+- name: /.test(line)) {
+      end = i;
+      break;
+    }
+  }
   return lines.slice(start, end).join("\n");
 }
 
@@ -112,7 +127,9 @@ test("workflow keeps safe ordering: verification before GPG and tag mutation", (
   const packIdx = indexOfLine((line) =>
     line.includes("Build reviewed package artifact"),
   );
-  const gpgIdx = indexOfLine((line) => line.includes("Configure GPG signing"));
+  const gpgIdx = indexOfLine((line) =>
+    line.includes("Initialize isolated GPG home"),
+  );
   const tokenIdx = indexOfLine((line) =>
     line.includes("Generate GitHub App installation token"),
   );
@@ -206,6 +223,55 @@ test("npm publish disables lifecycle scripts and pins the registry", () => {
   assert.match(release, /registry\.repository\?\.url, source\.repository\.url/);
   assert.match(release, /registry\.gitHead, process\.env\.GITHUB_SHA/);
   assert.match(release, /registry\.dist\?\.integrity, packed\.integrity/);
+});
+
+test("public GPG key is documented and referenced in the protected job", () => {
+  assert.match(
+    workflow,
+    /RELEASE_GPG_PUBLIC_KEY: \$\{\{ secrets\.RELEASE_GPG_PUBLIC_KEY \}\}/,
+  );
+  assert.match(releasing, /RELEASE_GPG_PUBLIC_KEY/);
+});
+
+test("GPG setup is split by execution path", () => {
+  const publicStep = stepSection("Configure public-key verification");
+  const privateStep = stepSection("Configure private-key signing");
+  const initStep = stepSection("Initialize isolated GPG home");
+
+  assert.match(
+    publicStep,
+    /if: steps\.check-release-tag\.outputs\.tag-exists == 'true'/,
+  );
+  assert.match(
+    privateStep,
+    /if: steps\.check-release-tag\.outputs\.tag-exists == 'false'/,
+  );
+
+  // Existing-tag path: public key only, no secret material or signing wrapper.
+  assert.doesNotMatch(
+    publicStep,
+    /RELEASE_GPG_PRIVATE_KEY|RELEASE_GPG_PASSPHRASE|passphrase|gpg-wrapper/,
+  );
+  assert.match(publicStep, /--list-secret-keys/);
+
+  // New-tag path retains the hardened signing setup.
+  assert.match(privateStep, /RELEASE_GPG_PRIVATE_KEY/);
+  assert.match(privateStep, /RELEASE_GPG_PASSPHRASE/);
+  assert.match(privateStep, /passphrase/);
+  assert.match(privateStep, /gpg-wrapper\.sh/);
+  assert.match(privateStep, /RELEASE_GPG_FINGERPRINT/);
+  assert.match(publicStep, /RELEASE_GPG_FINGERPRINT/);
+
+  assert.match(initStep, /mktemp -d/);
+  assert.match(initStep, /chmod 700/);
+  assert.doesNotMatch(
+    initStep,
+    /RELEASE_GPG_PRIVATE_KEY|RELEASE_GPG_PUBLIC_KEY|PASSPHRASE/,
+  );
+  assert.match(
+    stepSection("Clean up release GPG key material"),
+    /if: always\(\)/,
+  );
 });
 
 test("duplicate protected-job changelog verification is removed", () => {

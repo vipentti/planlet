@@ -58,12 +58,19 @@ function makeRepo(): Repo {
     readFileSync(sourceHelper),
   );
 
-  writeJson(dir, "package.json", { name: FIXED_NAME, version: BASE_VERSION });
+  writeJson(dir, "package.json", {
+    name: FIXED_NAME,
+    version: BASE_VERSION,
+    description: "test package",
+  });
   writeJson(dir, "package-lock.json", {
     name: FIXED_NAME,
     version: BASE_VERSION,
     lockfileVersion: 3,
-    packages: { "": { name: FIXED_NAME, version: BASE_VERSION } },
+    packages: {
+      "": { name: FIXED_NAME, version: BASE_VERSION },
+      "node_modules/x": { version: "1.0.0" },
+    },
   });
   writeFileSync(join(dir, "CHANGELOG.md"), baseChangelog(), "utf8");
 
@@ -132,7 +139,11 @@ function writeReleaseState(
   const name = options.name ?? FIXED_NAME;
   const lockName = options.lockName ?? name;
   const lockRootName = options.lockRootName ?? lockName;
-  writeJson(repo, "package.json", { name, version });
+  writeJson(repo, "package.json", {
+    name,
+    version,
+    description: "test package",
+  });
   writeJson(repo, "package-lock.json", {
     name: lockName,
     version: options.lockVersion ?? version,
@@ -142,6 +153,7 @@ function writeReleaseState(
         name: lockRootName,
         version: options.lockRootVersion ?? options.lockVersion ?? version,
       },
+      "node_modules/x": { version: "1.0.0" },
     },
   });
   writeFileSync(
@@ -262,6 +274,112 @@ test("package identity mismatches refuse before release", () => {
     const out = detect(repo.dir, ["--before", repo.baseSha, "--after", after]);
     assert.notEqual(out.status, 0, c.label);
     assert.match(out.stderr, /name is/i, c.label);
+  }
+});
+
+test("release package metadata may change only the version fields", () => {
+  const overlay = (
+    repo: string,
+    file: string,
+    mutate: (data: Record<string, unknown>) => void,
+  ): string => {
+    const data = JSON.parse(readFileSync(join(repo, file), "utf8"));
+    mutate(data);
+    writeJson(repo, file, data);
+    return commitAll(repo, "metadata change");
+  };
+  const cases: Array<{
+    label: string;
+    file: "package.json" | "package-lock.json";
+    mutate: (data: Record<string, unknown>) => void;
+  }> = [
+    {
+      label: "changed package.json dependency",
+      file: "package.json",
+      mutate: (pkg) => {
+        pkg.dependencies = { x: "1.0.0" };
+      },
+    },
+    {
+      label: "changed package.json files/bin/exports/scripts",
+      file: "package.json",
+      mutate: (pkg) => {
+        pkg.files = ["dist"];
+        pkg.bin = { planlet: "dist/planlet.mjs" };
+        pkg.exports = { ".": "./dist/index.js" };
+        pkg.scripts = { build: "echo x" };
+      },
+    },
+    {
+      label: "changed package-lock.json.lockfileVersion",
+      file: "package-lock.json",
+      mutate: (lock) => {
+        lock.lockfileVersion = 2;
+      },
+    },
+    {
+      label: "added nested lockfile package record",
+      file: "package-lock.json",
+      mutate: (lock) => {
+        (lock.packages as Record<string, unknown>)["node_modules/y"] = {
+          version: "1.0.0",
+        };
+      },
+    },
+    {
+      label: "changed nested lockfile package record",
+      file: "package-lock.json",
+      mutate: (lock) => {
+        (lock.packages as Record<string, Record<string, unknown>>)[
+          "node_modules/x"
+        ]!.version = "9.9.9";
+      },
+    },
+    {
+      label: "changed non-version metadata under packages['']",
+      file: "package-lock.json",
+      mutate: (lock) => {
+        (lock.packages as Record<string, Record<string, unknown>>)[
+          ""
+        ]!.license = "MIT";
+      },
+    },
+    {
+      label: "removed package field",
+      file: "package.json",
+      mutate: (pkg) => {
+        delete pkg.description;
+      },
+    },
+    {
+      label: "added package field",
+      file: "package.json",
+      mutate: (pkg) => {
+        pkg.keywords = ["test"];
+      },
+    },
+    {
+      label: "removed lockfile field",
+      file: "package-lock.json",
+      mutate: (lock) => {
+        delete lock.lockfileVersion;
+      },
+    },
+    {
+      label: "added lockfile field",
+      file: "package-lock.json",
+      mutate: (lock) => {
+        lock.metadata = { foo: "bar" };
+      },
+    },
+  ];
+  for (const c of cases) {
+    const repo = makeRepo();
+    writeReleaseState(repo.dir);
+    const after = overlay(repo.dir, c.file, c.mutate);
+    const out = detect(repo.dir, ["--before", repo.baseSha, "--after", after]);
+    assert.notEqual(out.status, 0, c.label);
+    assert.match(out.stderr, /beyond the permitted version/, c.label);
   }
 });
 

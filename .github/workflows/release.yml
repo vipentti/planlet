@@ -210,7 +210,39 @@ jobs:
       # --- Release mutations: GPG material and App token only after all
       # pre-mutation validation, then tag, npm, and GitHub release. ---
 
-      - name: Configure GPG signing for release tags
+      - name: Initialize isolated GPG home
+        shell: bash
+        run: |
+          set -euo pipefail
+          GNUPGHOME=$(mktemp -d)
+          chmod 700 "$GNUPGHOME"
+          echo "GNUPGHOME=$GNUPGHOME" >> "$GITHUB_ENV"
+
+      - name: Configure public-key verification
+        if: steps.check-release-tag.outputs.tag-exists == 'true'
+        env:
+          RELEASE_GPG_PUBLIC_KEY: ${{ secrets.RELEASE_GPG_PUBLIC_KEY }}
+          RELEASE_GPG_FINGERPRINT: ${{ vars.RELEASE_GPG_FINGERPRINT }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s\n' "$RELEASE_GPG_PUBLIC_KEY" | gpg --batch --homedir "$GNUPGHOME" --import
+          fpr=$(gpg --batch --homedir "$GNUPGHOME" --with-colons --list-keys | awk -F: '$1 == "fpr" { print $10; exit }')
+          test -n "$fpr" || {
+            echo "RELEASE_GPG_PUBLIC_KEY contains no public key" >&2
+            exit 1
+          }
+          test "$fpr" = "$RELEASE_GPG_FINGERPRINT" || {
+            echo "Imported public key fingerprint $fpr does not match RELEASE_GPG_FINGERPRINT" >&2
+            exit 1
+          }
+          test -z "$(gpg --batch --homedir "$GNUPGHOME" --with-colons --list-secret-keys)" || {
+            echo "Public-key verification home must not contain a secret key" >&2
+            exit 1
+          }
+
+      - name: Configure private-key signing
+        if: steps.check-release-tag.outputs.tag-exists == 'false'
         env:
           RELEASE_GPG_PRIVATE_KEY: ${{ secrets.RELEASE_GPG_PRIVATE_KEY }}
           RELEASE_GPG_PASSPHRASE: ${{ secrets.RELEASE_GPG_PASSPHRASE }}
@@ -220,9 +252,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          GNUPGHOME=$(mktemp -d)
-          chmod 700 "$GNUPGHOME"
-          echo "GNUPGHOME=$GNUPGHOME" >> "$GITHUB_ENV"
           printf '%s' "$RELEASE_GPG_PASSPHRASE" > "$GNUPGHOME/passphrase"
           chmod 600 "$GNUPGHOME/passphrase"
           printf '%s\n' "$RELEASE_GPG_PRIVATE_KEY" | gpg --batch --homedir "$GNUPGHOME" --import

@@ -18,7 +18,7 @@
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { parseArgs } from "node:util";
+import { isDeepStrictEqual, parseArgs } from "node:util";
 import { fileURLToPath } from "node:url";
 
 import {
@@ -160,6 +160,7 @@ if (after !== headSha) {
 const afterPkg = readJsonFromWorktree("package.json");
 const afterLock = readJsonFromWorktree("package-lock.json");
 const beforePkg = readJsonFromGit("package.json", before);
+const beforeLock = readJsonFromGit("package-lock.json", before);
 
 const afterVersion = afterPkg.version;
 const beforeVersion = beforePkg.version;
@@ -202,6 +203,53 @@ const identityMismatch = packageIdentityMismatch(
   "@vipentti/planlet",
 );
 if (identityMismatch) fail(identityMismatch);
+
+// A prepared release merge may change ONLY the three root version fields.
+// Normalize those fields back to their previous values, then require semantic
+// deep equality so any other metadata change fails before environment
+// approval. Raw text comparison is not used: release:prepare serializes parsed
+// JSON, so formatting and property order are not part of the contract.
+function semanticChangeKeys(beforeObj, afterObj, excludedKeys) {
+  const normalized = structuredClone(afterObj);
+  const keys = new Set([...Object.keys(beforeObj), ...Object.keys(afterObj)]);
+  const changed = [];
+  for (const key of keys) {
+    if (excludedKeys.includes(key)) continue;
+    if (
+      !Object.hasOwn(beforeObj, key) ||
+      !Object.hasOwn(afterObj, key) ||
+      !isDeepStrictEqual(normalized[key], beforeObj[key])
+    ) {
+      changed.push(key);
+    }
+  }
+  return changed;
+}
+
+const normalizedPkg = structuredClone(afterPkg);
+normalizedPkg.version = beforeVersion;
+const pkgChanges = semanticChangeKeys(beforePkg, normalizedPkg, ["version"]);
+if (pkgChanges.length > 0) {
+  fail(
+    `package.json changes beyond the permitted version field: ${pkgChanges.join(
+      ", ",
+    )}. A release merge may only change package.json.version.`,
+  );
+}
+
+const normalizedLock = structuredClone(afterLock);
+normalizedLock.version = beforeLock.version;
+if (normalizedLock.packages?.[""] && beforeLock.packages?.[""]) {
+  normalizedLock.packages[""].version = beforeLock.packages[""].version;
+}
+const lockChanges = semanticChangeKeys(beforeLock, normalizedLock, ["version"]);
+if (lockChanges.length > 0) {
+  fail(
+    `package-lock.json changes beyond the permitted version fields: ${lockChanges.join(
+      ", ",
+    )}. A release merge may only change lockfile version fields.`,
+  );
+}
 
 const changed = git("diff", "--name-only", before, after)
   .stdout.trim()

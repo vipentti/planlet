@@ -159,11 +159,13 @@ only; repository files are read and packaged as data, never executed. It
 performs a fresh origin/main ancestry check after approval, extracts release
 notes inline, packages the already-verified committed output with
 `npm pack --json --ignore-scripts`, validates the packed artifact inline, then
-runs the GPG tag signing, App-authenticated tag push, GitHub signature
-confirmation, npm publish-or-verify (lifecycle scripts disabled for packing
-and publication), and GitHub release steps. The remote tag is the final
-irreversible mutation before npm publication; pushing it does not start a
-second workflow run. Exact step details live in
+runs GPG verification/signing (public-key-only when an exact remote tag
+already exists; private-key signing only when a new tag must be created),
+App-authenticated tag push, GitHub signature confirmation, npm
+publish-or-verify (lifecycle scripts disabled for packing and publication),
+and GitHub release steps. The remote tag is the final irreversible mutation
+before npm publication; pushing it does not start a second workflow run. Exact
+step details live in
 [`.github/workflows/release.yml`](.github/workflows/release.yml).
 
 Rerun behavior:
@@ -187,6 +189,7 @@ The `release` GitHub Environment must provide these secrets:
 
 | Secret                    | Purpose                                                         |
 | ------------------------- | --------------------------------------------------------------- |
+| `RELEASE_GPG_PUBLIC_KEY`  | ASCII-armored public key of the dedicated release-only GPG key  |
 | `RELEASE_GPG_PRIVATE_KEY` | ASCII-armored private key of the dedicated release-only GPG key |
 | `RELEASE_GPG_PASSPHRASE`  | Passphrase for that private key                                 |
 | `RELEASE_APP_PRIVATE_KEY` | PEM private key of the dedicated Release Automation GitHub App  |
@@ -202,10 +205,15 @@ And these variables:
 
 The signing key must be a dedicated release-only GPG key. Its email must be
 verified on the GitHub account that holds the public key, so GitHub reports the
-tag signature as verified. The workflow imports the key into an isolated
-temporary GPG home, verifies the fingerprint exactly, signs in batch mode with
-loopback pinentry, and removes the key material in an `always()` cleanup step.
-The private key is used for release tags only, never for commits.
+tag signature as verified. The workflow initializes an isolated temporary GPG
+home and splits key material by execution path: when an exact remote tag
+already exists, it imports **only** `RELEASE_GPG_PUBLIC_KEY` for verification
+(no passphrase file, no signing wrapper, no private key loaded); when a new
+tag must be signed, it imports `RELEASE_GPG_PRIVATE_KEY`, verifies the exact
+fingerprint, and signs in batch mode with a loopback-pinentry wrapper. Both
+paths verify the imported key fingerprint against `RELEASE_GPG_FINGERPRINT`,
+and the `always()` cleanup step removes the temporary home. The private key is
+used for release tags only, never for commits.
 
 Tag push authentication uses a dedicated **Release Automation GitHub App**; the
 App does not replace the GPG signing key. The repository owner must configure
@@ -214,13 +222,23 @@ externally:
 1. Create or reuse a private Release Automation GitHub App.
 2. Grant the App repository Contents read/write.
 3. Install the App only on `vipentti/planlet`.
-4. Add the App as an always-allowed actor on the existing `v*` tag-ruleset
-   bypass list.
-5. Retain rules blocking tag updates, force changes, and deletions.
-6. Store the App ID as the `RELEASE_APP_ID` variable in the `release`
+4. Configure **two separate active `v*` tag rulesets**:
+   - **`release-tag creation`**: target tags matching `v*`; enable **Restrict
+     creations**; add the Release Automation App to **this ruleset's** bypass
+     list (normal always-allow bypass mode, required for direct tag creation).
+     This is the only tag ruleset the App may bypass.
+   - **`release-tag immutability`**: target tags matching `v*`; enable
+     **Restrict updates**, **Restrict deletions**, and **Block force pushes**;
+     do **not** include the App in the bypass list (prefer an empty bypass
+     list).
+5. Store the App ID as the `RELEASE_APP_ID` variable in the `release`
    environment.
-7. Store the App PEM private key as the `RELEASE_APP_PRIVATE_KEY` secret in the
+6. Store the App PEM private key as the `RELEASE_APP_PRIVATE_KEY` secret in the
    `release` environment.
+
+**The Release Automation App receives a tag-creation bypass only. It must never
+bypass the ruleset that prevents updates, force changes, and deletions of
+existing release tags.**
 
 The workflow generates a short-lived installation token per approved release
 run, scoped to `vipentti/planlet` with Contents read/write only, and uses it
