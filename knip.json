@@ -8,6 +8,7 @@
     "planlet",
     "printf",
     "sha256sum",
-    "ssh-keygen"
+    "ssh-keygen",
+    "where"
   ]
 }
