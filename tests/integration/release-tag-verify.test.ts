@@ -15,14 +15,15 @@ test.after(() => {
   }
 });
 
+function gpgHomePath(home: string): string {
+  if (process.platform !== "win32" || home.startsWith("/")) return home;
+  return `/${home.slice(0, 1).toLowerCase()}${home.slice(2).replaceAll("\\", "/")}`;
+}
+
 function gpgEnv(home: string): NodeJS.ProcessEnv {
-  const gpgHome =
-    process.platform === "win32"
-      ? `/${home.slice(0, 1).toLowerCase()}${home.slice(2).replaceAll("\\", "/")}`
-      : home;
   return {
     ...process.env,
-    GNUPGHOME: gpgHome,
+    GNUPGHOME: gpgHomePath(home),
     MSYS2_ARG_CONV_EXCL: "*",
     MSYS_NO_PATHCONV: "1",
   };
@@ -30,11 +31,11 @@ function gpgEnv(home: string): NodeJS.ProcessEnv {
 
 function startGpgAgent(home: string) {
   if (process.platform === "win32") return;
-  const result = spawnSync("gpgconf", ["--launch", "gpg-agent"], {
-    encoding: "utf8",
+  const result = spawnSync("gpg-agent", ["--daemon"], {
+    stdio: "ignore",
     env: gpgEnv(home),
   });
-  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.equal(result.status, 0);
 }
 
 function git(repo: string, ...args: string[]) {
@@ -110,7 +111,7 @@ function verify(
   args: { tag: string; target: string; message: string },
 ) {
   const previous = process.env.GNUPGHOME;
-  process.env.GNUPGHOME = repo.home;
+  process.env.GNUPGHOME = gpgHomePath(repo.home);
   try {
     return verifyReleaseTag({
       cwd: repo.dir,

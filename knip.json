@@ -3,7 +3,7 @@
   "ignore": ["scripts/changelog.mjs", "scripts/verify-release-tag.d.mts"],
   "ignoreBinaries": [
     "gpg",
-    "gpgconf",
+    "gpg-agent",
     "planlet",
     "printf",
     "sha256sum",

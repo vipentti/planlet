@@ -46,14 +46,15 @@ interface GpgFixture {
   readonly fingerprint: string;
 }
 
+function gpgHomePath(home: string): string {
+  if (process.platform !== "win32" || home.startsWith("/")) return home;
+  return `/${home.slice(0, 1).toLowerCase()}${home.slice(2).replaceAll("\\", "/")}`;
+}
+
 function gpgEnv(home: string): NodeJS.ProcessEnv {
-  const gpgHome =
-    process.platform === "win32"
-      ? `/${home.slice(0, 1).toLowerCase()}${home.slice(2).replaceAll("\\", "/")}`
-      : home;
   return {
     ...process.env,
-    GNUPGHOME: gpgHome,
+    GNUPGHOME: gpgHomePath(home),
     MSYS2_ARG_CONV_EXCL: "*",
     MSYS_NO_PATHCONV: "1",
   };
@@ -61,11 +62,11 @@ function gpgEnv(home: string): NodeJS.ProcessEnv {
 
 function startGpgAgent(home: string) {
   if (process.platform === "win32") return;
-  const result = spawnSync("gpgconf", ["--launch", "gpg-agent"], {
-    encoding: "utf8",
+  const result = spawnSync("gpg-agent", ["--daemon"], {
+    stdio: "ignore",
     env: gpgEnv(home),
   });
-  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.equal(result.status, 0);
 }
 
 function utcDay(offsetDays: number): string {
@@ -229,15 +230,10 @@ function makeRepo(options: MakeOptions = {}): Repo {
 
   const ghLog = ghStub(base, options.prList ?? "[]");
   const env: NodeJS.ProcessEnv = {
-    ...process.env,
+    ...gpgEnv(gpgFixture.home),
     PATH: join(base, "bin") + delimiter + process.env.PATH,
-    GNUPGHOME: gpgFixture.home,
     RELEASE_GPG_FINGERPRINT: gpgFixture.fingerprint,
     PLANLET_TEST_REPO: dir,
-    // Stop the git-for-windows MSYS runtime from rewriting the absolute hook
-    // and node paths embedded in fixture commit hooks.
-    MSYS2_ARG_CONV_EXCL: "*",
-    MSYS_NO_PATHCONV: "1",
   };
   return {
     dir,
@@ -295,7 +291,7 @@ function exportGpgKey(
 
 function withGpgHome<T>(home: string, callback: () => T): T {
   const previous = process.env.GNUPGHOME;
-  process.env.GNUPGHOME = home;
+  process.env.GNUPGHOME = gpgHomePath(home);
   try {
     return callback();
   } finally {

@@ -40,14 +40,15 @@ interface RepoFixture {
   readonly target: string;
 }
 
+function gpgHomePath(home: string): string {
+  if (process.platform !== "win32" || home.startsWith("/")) return home;
+  return `/${home.slice(0, 1).toLowerCase()}${home.slice(2).replaceAll("\\", "/")}`;
+}
+
 function gpgEnv(home: string): NodeJS.ProcessEnv {
-  const gpgHome =
-    process.platform === "win32"
-      ? `/${home.slice(0, 1).toLowerCase()}${home.slice(2).replaceAll("\\", "/")}`
-      : home;
   return {
     ...process.env,
-    GNUPGHOME: gpgHome,
+    GNUPGHOME: gpgHomePath(home),
     MSYS2_ARG_CONV_EXCL: "*",
     MSYS_NO_PATHCONV: "1",
   };
@@ -55,11 +56,11 @@ function gpgEnv(home: string): NodeJS.ProcessEnv {
 
 function startGpgAgent(home: string) {
   if (process.platform === "win32") return;
-  const result = spawnSync("gpgconf", ["--launch", "gpg-agent"], {
-    encoding: "utf8",
+  const result = spawnSync("gpg-agent", ["--daemon"], {
+    stdio: "ignore",
     env: gpgEnv(home),
   });
-  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.equal(result.status, 0);
 }
 
 function gpg(home: string, ...args: string[]) {
@@ -122,7 +123,7 @@ function importMaterial(home: string, material: string) {
 
 function withGpgHome<T>(home: string, callback: () => T): T {
   const previous = process.env.GNUPGHOME;
-  process.env.GNUPGHOME = home;
+  process.env.GNUPGHOME = gpgHomePath(home);
   try {
     return callback();
   } finally {
@@ -239,7 +240,7 @@ function runWorkflowTagVerifier(
     [
       "#!/usr/bin/env bash",
       "set -euo pipefail",
-      `RUNNER_TEMP=${base}`,
+      `RUNNER_TEMP=${JSON.stringify(gpgHomePath(base))}`,
       `target=${repo.target}`,
       `expected=${expectedFingerprint.toUpperCase()}`,
       tagVerifierBlock(),
@@ -360,8 +361,7 @@ test("public-key setup rejects multiple primary public keys", () => {
   const home = mkdtempSync(join(tmpdir(), "planlet-release-gpg-public-two-"));
   tempDirs.push(home);
   const result = runSetup("Configure public-key verification", {
-    ...process.env,
-    GNUPGHOME: home,
+    ...gpgEnv(home),
     RELEASE_GPG_PUBLIC_KEY: expectedKey.publicKey + secondKey.publicKey,
     RELEASE_GPG_FINGERPRINT: expectedKey.primary,
   });
@@ -373,8 +373,7 @@ test("private-key setup rejects multiple primary secret keys", () => {
   const home = mkdtempSync(join(tmpdir(), "planlet-release-gpg-secret-two-"));
   tempDirs.push(home);
   const result = runSetup("Configure private-key signing", {
-    ...process.env,
-    GNUPGHOME: home,
+    ...gpgEnv(home),
     RELEASE_GPG_PRIVATE_KEY: expectedKey.privateKey + secondKey.privateKey,
     RELEASE_GPG_PASSPHRASE: "",
     RELEASE_GPG_FINGERPRINT: expectedKey.primary,
@@ -389,8 +388,7 @@ test("existing-tag rerun imports no private key", () => {
   const home = mkdtempSync(join(tmpdir(), "planlet-release-gpg-public-only-"));
   tempDirs.push(home);
   const result = runSetup("Configure public-key verification", {
-    ...process.env,
-    GNUPGHOME: home,
+    ...gpgEnv(home),
     RELEASE_GPG_PUBLIC_KEY: expectedKey.publicKey,
     RELEASE_GPG_PRIVATE_KEY: "not imported on existing-tag rerun",
     RELEASE_GPG_FINGERPRINT: expectedKey.primary,
@@ -407,8 +405,7 @@ test("newly created tag uses configured dedicated signing key", () => {
   const setup = runSetup(
     "Configure private-key signing",
     {
-      ...process.env,
-      GNUPGHOME: home,
+      ...gpgEnv(home),
       RELEASE_GPG_PRIVATE_KEY: expectedKey.privateKey,
       RELEASE_GPG_PASSPHRASE: "",
       RELEASE_GPG_FINGERPRINT: expectedKey.primary,
