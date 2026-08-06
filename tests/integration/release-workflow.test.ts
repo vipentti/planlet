@@ -538,11 +538,12 @@ test("GPG setup counts primary keys without counting subkeys", () => {
 test("exact tag signer validation is fail-closed and case-normalized", () => {
   const release = jobSection("release");
   assert.match(release, /\^\[0-9A-Fa-f\]\{40\}\$/);
-  assert.match(release, /mapfile -t valid_fingerprints/);
+  assert.match(release, /valid_count=.*valid_fingerprints/s);
+  assert.match(release, /awk 'NF \{ count\+\+ \}/);
   assert.match(release, /\$2 == "VALIDSIG"/);
   assert.match(release, /primary=\$12/);
   assert.match(release, /tr '\[:lower:\]' '\[:upper:\]'/);
-  assert.match(release, /test "\$\{#valid_fingerprints\[@\]\}" -eq 1/);
+  assert.match(release, /test "\$valid_count" -eq 1/);
   assert.match(release, /git verify-tag --raw/);
 });
 

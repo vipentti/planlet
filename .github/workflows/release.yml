@@ -538,7 +538,8 @@ jobs:
               echo "git verify-tag failed for ${t}" >&2
               exit 1
             fi
-            mapfile -t valid_fingerprints < <(
+            local valid_fingerprints
+            valid_fingerprints=$(
               awk '$1 == "[GNUPG:]" && $2 == "VALIDSIG" {
                 signing=$3
                 primary=$12
@@ -550,11 +551,13 @@ jobs:
               }' "$status_file"
             )
             rm -f "$status_file"
-            test "${#valid_fingerprints[@]}" -eq 1 || {
+            local valid_count
+            valid_count=$(printf '%s\n' "$valid_fingerprints" | awk 'NF { count++ } END { print count + 0 }')
+            test "$valid_count" -eq 1 || {
               echo "Expected exactly one valid GPG signature" >&2
               exit 1
             }
-            actual=$(printf '%s' "${valid_fingerprints[0]}" | tr '[:lower:]' '[:upper:]')
+            actual=$(printf '%s\n' "$valid_fingerprints" | sed -n '1p' | tr '[:lower:]' '[:upper:]')
             test "$actual" = "$expected" || {
               echo "Tag signature primary fingerprint $actual does not match expected $expected" >&2
               exit 1
