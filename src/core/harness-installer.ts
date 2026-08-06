@@ -36,7 +36,6 @@ export {
   serializeInstallationManifest,
 } from "./harness-manifest.js";
 export type { InstallationManifest } from "./harness-manifest.js";
-export type { InstallTransactionHooks } from "./harness-publish.js";
 
 type HarnessState = "missing" | "unmanaged" | "installed" | "modified";
 

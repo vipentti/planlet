@@ -98,7 +98,6 @@ function compactSummary(
 interface EmitOutcome<T> {
   readonly exitCode: ExitCode;
   readonly data: T | undefined;
-  readonly warnings: readonly string[];
 }
 
 function emit<T>(
@@ -116,13 +115,12 @@ function emit<T>(
     return {
       exitCode: rendered.exitCode,
       data: outcome.data,
-      warnings: outcome.warnings ?? [],
     };
   } catch (error) {
     if (!isPlanletError(error)) throw error;
     const rendered = renderToonError(error.toStructuredError());
     if (rendered.stderr.length > 0) context.stderr(rendered.stderr);
-    return { exitCode: rendered.exitCode, data: undefined, warnings: [] };
+    return { exitCode: rendered.exitCode, data: undefined };
   }
 }
 

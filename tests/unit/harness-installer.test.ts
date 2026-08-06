@@ -16,14 +16,16 @@ import { dirname, join } from "node:path";
 import test from "node:test";
 
 import {
-  INSTALLATION_MANIFEST,
-  createInstallationManifest,
   detectHarnesses,
   installHarnessSkills,
+} from "../../src/core/harness-installer.js";
+import {
+  INSTALLATION_MANIFEST,
+  createInstallationManifest,
   parseInstallationManifest,
   serializeInstallationManifest,
   type InstallationManifest,
-} from "../../src/core/harness-installer.js";
+} from "../../src/core/harness-manifest.js";
 import {
   HARNESS_INSTALL_LOCK_NAME,
   planletLockRoot,
@@ -71,14 +73,9 @@ const BASE_SOURCE = source({
   "planlet-example/references/guide.md": "Guide\n",
 });
 
-test("InstallationManifest remains exported from harness-installer", () => {
+test("manifest schema and hashes are deterministic and validated", () => {
   const manifest: InstallationManifest =
     createInstallationManifest(BASE_SOURCE);
-  assert.equal(manifest.schemaVersion, 2);
-});
-
-test("manifest schema and hashes are deterministic and validated", () => {
-  const manifest = createInstallationManifest(BASE_SOURCE);
   const serialized = serializeInstallationManifest(manifest);
 
   assert.deepEqual(manifest, {
