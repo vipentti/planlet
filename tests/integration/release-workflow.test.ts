@@ -30,6 +30,13 @@ function indexOfLine(predicate: (line: string) => boolean): number {
   return lines.findIndex(predicate);
 }
 
+function bashPath(path: string): string {
+  if (process.platform !== "win32" || !/^[A-Za-z]:[\\/]/.test(path)) {
+    return path;
+  }
+  return `/${path.slice(0, 1).toLowerCase()}${path.slice(2).replaceAll("\\", "/")}`;
+}
+
 function jobSection(name: string, next?: string): string {
   const start = indexOfLine((line) => line.trim() === name + ":");
   const end = next
@@ -107,7 +114,9 @@ function runTagProbe(exitCode: number) {
       encoding: "utf8",
       env: {
         ...process.env,
-        PATH: bin + delimiter + process.env.PATH,
+        PATH: [bin, ...(process.env.PATH ?? "").split(delimiter)]
+          .map(bashPath)
+          .join(":"),
         VERSION: "1.2.3",
         GITHUB_OUTPUT: output,
       },

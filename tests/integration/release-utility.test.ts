@@ -48,7 +48,7 @@ interface GpgFixture {
 
 function gpgHomePath(home: string): string {
   if (process.platform !== "win32" || home.startsWith("/")) return home;
-  return `/${home.slice(0, 1).toLowerCase()}${home.slice(2).replaceAll("\\", "/")}`;
+  return home.replaceAll("\\", "/");
 }
 
 function gpgEnv(home: string): NodeJS.ProcessEnv {
@@ -62,10 +62,14 @@ function gpgEnv(home: string): NodeJS.ProcessEnv {
 
 function startGpgAgent(home: string) {
   if (process.platform === "win32") return;
-  const result = spawnSync("gpg-agent", ["--daemon"], {
-    stdio: "ignore",
-    env: gpgEnv(home),
-  });
+  const result = spawnSync(
+    "gpg-agent",
+    ["--homedir", home, "--use-standard-socket", "--daemon"],
+    {
+      stdio: "ignore",
+      env: gpgEnv(home),
+    },
+  );
   assert.equal(result.status, 0);
 }
 
