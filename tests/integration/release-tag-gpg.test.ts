@@ -22,6 +22,12 @@ const workflow = readFileSync(
 );
 const tempDirs: string[] = [];
 
+function fixtureTemp(prefix: string): string {
+  return mkdtempSync(
+    join(process.platform === "darwin" ? "/tmp" : tmpdir(), prefix),
+  );
+}
+
 test.after(() => {
   for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
 });
@@ -106,7 +112,7 @@ function makeKey(home: string, name: string): KeyFixture {
   return { home, primary, signing, publicKey, privateKey };
 }
 
-const fixtureRoot = mkdtempSync(join(tmpdir(), "planlet-release-gpg-"));
+const fixtureRoot = fixtureTemp("planlet-release-gpg-");
 tempDirs.push(fixtureRoot);
 const expectedKey = makeKey(join(fixtureRoot, "expected"), "expected-release");
 const secondKey = makeKey(join(fixtureRoot, "second"), "second-release");
@@ -144,7 +150,7 @@ function makeSignedRepo(
   signer: string,
   tag: string,
 ): RepoFixture {
-  const base = mkdtempSync(join(tmpdir(), "planlet-release-signed-"));
+  const base = fixtureTemp("planlet-release-signed-");
   tempDirs.push(base);
   const dir = join(base, "repo");
   mkdirSync(dir);
@@ -215,7 +221,7 @@ function tagVerifierBlock(): string {
 }
 
 function runSetup(name: string, env: NodeJS.ProcessEnv, cwd = repoRoot) {
-  const base = mkdtempSync(join(tmpdir(), "planlet-release-gpg-step-"));
+  const base = fixtureTemp("planlet-release-gpg-step-");
   tempDirs.push(base);
   const script = join(base, `${name}.sh`);
   writeFileSync(script, shellBlock(name));
@@ -231,7 +237,7 @@ function runWorkflowTagVerifier(
   repo: RepoFixture,
   expectedFingerprint: string,
 ) {
-  const base = mkdtempSync(join(tmpdir(), "planlet-release-gpg-workflow-"));
+  const base = fixtureTemp("planlet-release-gpg-workflow-");
   tempDirs.push(base);
   const script = join(base, "verify-tag.sh");
   writeFileSync(
@@ -256,7 +262,7 @@ function runWorkflowTagVerifier(
 }
 
 function emptyRepo(home: string): RepoFixture {
-  const base = mkdtempSync(join(tmpdir(), "planlet-release-gpg-empty-"));
+  const base = fixtureTemp("planlet-release-gpg-empty-");
   tempDirs.push(base);
   const dir = join(base, "repo");
   mkdirSync(dir);
@@ -314,7 +320,7 @@ test("protected workflow verifier accepts primary and signing-subkey tags", () =
 });
 
 test("valid signature from second imported key is rejected", () => {
-  const home = mkdtempSync(join(tmpdir(), "planlet-release-gpg-two-"));
+  const home = fixtureTemp("planlet-release-gpg-two-");
   tempDirs.push(home);
   importMaterial(home, expectedKey.publicKey + secondKey.privateKey);
   const repo = makeSignedRepo(home, secondKey.primary, "v1.2.3");
@@ -357,7 +363,7 @@ test("malformed expected fingerprint is rejected", () => {
 });
 
 test("public-key setup rejects multiple primary public keys", () => {
-  const home = mkdtempSync(join(tmpdir(), "planlet-release-gpg-public-two-"));
+  const home = fixtureTemp("planlet-release-gpg-public-two-");
   tempDirs.push(home);
   const result = runSetup("Configure public-key verification", {
     ...workflowEnv(home),
@@ -369,7 +375,7 @@ test("public-key setup rejects multiple primary public keys", () => {
 });
 
 test("private-key setup rejects multiple primary secret keys", () => {
-  const home = mkdtempSync(join(tmpdir(), "planlet-release-gpg-secret-two-"));
+  const home = fixtureTemp("planlet-release-gpg-secret-two-");
   tempDirs.push(home);
   const result = runSetup("Configure private-key signing", {
     ...workflowEnv(home),
@@ -384,7 +390,7 @@ test("private-key setup rejects multiple primary secret keys", () => {
 });
 
 test("existing-tag rerun imports no private key", () => {
-  const home = mkdtempSync(join(tmpdir(), "planlet-release-gpg-public-only-"));
+  const home = fixtureTemp("planlet-release-gpg-public-only-");
   tempDirs.push(home);
   const result = runSetup("Configure public-key verification", {
     ...workflowEnv(home),
@@ -398,7 +404,7 @@ test("existing-tag rerun imports no private key", () => {
 });
 
 test("newly created tag uses configured dedicated signing key", () => {
-  const home = mkdtempSync(join(tmpdir(), "planlet-release-gpg-private-only-"));
+  const home = fixtureTemp("planlet-release-gpg-private-only-");
   tempDirs.push(home);
   const repo = emptyRepo(home);
   const setup = runSetup(

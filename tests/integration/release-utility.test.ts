@@ -27,6 +27,13 @@ const sourceHelper = join(
 const sourceTagVerifier = join(repoRoot, "scripts", "verify-release-tag.mjs");
 
 const tempDirs: string[] = [];
+
+function fixtureTemp(prefix: string): string {
+  return mkdtempSync(
+    join(process.platform === "darwin" ? "/tmp" : tmpdir(), prefix),
+  );
+}
+
 test.after(() => {
   for (const dir of tempDirs) {
     rmSync(dir, { recursive: true, force: true });
@@ -127,7 +134,7 @@ interface MakeOptions {
 
 function makeRepo(options: MakeOptions = {}): Repo {
   const version = options.version ?? "0.1.0";
-  const base = mkdtempSync(join(tmpdir(), "planlet-release-"));
+  const base = fixtureTemp("planlet-release-");
   tempDirs.push(base);
   const dir = join(base, "work");
   const origin = join(base, "origin.git");

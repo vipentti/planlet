@@ -9,6 +9,13 @@ import { verifyReleaseTag } from "../../scripts/verify-release-tag.mjs";
 
 const tempDirs: string[] = [];
 const gpgHomes = new Map<string, string>();
+
+function fixtureTemp(prefix: string): string {
+  return mkdtempSync(
+    join(process.platform === "darwin" ? "/tmp" : tmpdir(), prefix),
+  );
+}
+
 test.after(() => {
   for (const dir of tempDirs) {
     rmSync(dir, { recursive: true, force: true });
@@ -55,7 +62,7 @@ function makeRepo(): {
   home: string;
   fingerprint: string;
 } {
-  const base = mkdtempSync(join(tmpdir(), "planlet-tag-verify-"));
+  const base = fixtureTemp("planlet-tag-verify-");
   tempDirs.push(base);
   const dir = join(base, "work");
   const home = join(base, "gnupg");
