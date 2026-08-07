@@ -190,6 +190,9 @@ Rerun behavior:
   mismatch fails without mutation.
 - npm version already published: treated as success only when registry identity
   and packed-artifact integrity match the source; otherwise the job fails.
+- npm version not yet published but the registry already carries a newer
+  stable version: the job refuses to publish, because publishing would move
+  the `latest` dist-tag backward and downgrade fresh installs.
 - GitHub release already exists: updated from the changelog notes.
 
 Merging another release PR before the previous release completes is

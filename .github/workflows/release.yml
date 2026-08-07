@@ -625,6 +625,11 @@ jobs:
               exit 1
             fi
             local valid_fingerprints
+            # Positional parsing depends on GnuPG's VALIDSIG layout: the
+            # primary fingerprint is the optional trailing 40-hex field
+            # (verified against gpg 2.4.4 on ubuntu-latest). On older gpg the
+            # field positions differ and this yields a malformed value, which
+            # fails closed below; it never falls through to a false accept.
             valid_fingerprints=$(
               awk '$1 == "[GNUPG:]" && $2 == "VALIDSIG" {
                 signing=$3
@@ -749,6 +754,37 @@ jobs:
           if npm_view; then
             verify_registry
           elif grep -q "E404" npm-view.err; then
+            # Refuse to publish when the registry already carries a newer
+            # stable version: publishing this one would move the latest
+            # dist-tag backward and downgrade fresh installs. Mirrors the
+            # detector's monotonic version rule against registry state.
+            if npm view "${PACKAGE_NAME}" versions --json --registry=https://registry.npmjs.org > published.json 2> published.err; then
+              node --input-type=module <<'NODE'
+            import { readFileSync } from "node:fs";
+            const version = process.env.VERSION;
+            const published = JSON.parse(readFileSync("published.json", "utf8"));
+            const list = Array.isArray(published) ? published : [];
+            const stable = list.filter((v) => /^\d+\.\d+\.\d+$/.test(v));
+            const target = version.split(".").map(Number);
+            const newer = stable.filter((v) => {
+              const p = v.split(".").map(Number);
+              return (
+                p[0] > target[0] ||
+                (p[0] === target[0] && p[1] > target[1]) ||
+                (p[0] === target[0] && p[1] === target[1] && p[2] > target[2])
+              );
+            });
+            if (newer.length > 0) {
+              console.error(
+                `Registry already has newer version(s) ${newer.join(", ")}; refusing to publish ${version}`,
+              );
+              process.exit(1);
+            }
+            NODE
+            elif ! grep -q "E404" published.err; then
+              cat published.err >&2
+              exit 1
+            fi
             npm publish "$PACKAGE_TARBALL" --ignore-scripts --access public --provenance --registry=https://registry.npmjs.org
             # Wait for packument visibility, then apply the same identity/integrity checks.
             visible=0

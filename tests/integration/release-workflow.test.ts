@@ -615,6 +615,16 @@ test("npm publish disables lifecycle scripts and pins the registry", () => {
   assert.match(release, /registry\.dist\?\.integrity, packed\.integrity/);
 });
 
+test("npm publish refuses a version below an already-published newer version", () => {
+  const release = jobSection("release");
+  assert.match(
+    release,
+    /npm view "\$\{PACKAGE_NAME\}" versions --json --registry=https:\/\/registry\.npmjs\.org/,
+  );
+  assert.match(release, /refusing to publish/);
+  assert.match(release, /newer version/);
+});
+
 test("registry verifier reads pack.json from downloaded artifact directory", () => {
   const dir = mkdtempSync(join(tmpdir(), "planlet-registry-verify-"));
   tempDirs.push(dir);
