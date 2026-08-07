@@ -8,7 +8,9 @@ verified in this worktree). Move the 6-file harness cluster into
 `src/core/harness/`, the 11-file plan cluster into `src/core/plan/`, and split
 `src/commands/handlers.ts` into `src/commands/shared.ts` plus one file per
 command. Pure file moves, import-path rewrites, and one mechanical handler
-split: no behavior, export, or logic change.
+split: no CLI-surface behavior or logic change, though the internal export
+surface was subsequently trimmed per review (dead manifest re-export shim
+removed, `EmitOutcome` made private).
 
 ## Scope
 
@@ -47,9 +49,11 @@ churn.
   (`./harness-manifest.js`, `./harnesses.js`, etc.) are unaffected by a
   same-group move. Rewrite only the floor/error imports: `./paths.js` →
   `../paths.js`, `./planlet-lock.js` → `../planlet-lock.js`,
-  `../errors/*` → `../../errors/*`. Keep the deliberate back-compat re-exports
-  in `harness-installer.ts` (`INSTALLATION_MANIFEST` plus the manifest helpers
-  re-exported from `harness-manifest.js`) intact. External importers to
+  `../errors/*` → `../../errors/*`. Keep the internal manifest imports the
+  installer implementation uses; the review follow-up removed the dead
+  back-compat re-export shim from `harness-installer.ts`
+  (`INSTALLATION_MANIFEST` plus the manifest helpers), so consumers import
+  directly from `harness-manifest.js`. External importers to
   update: `cli.ts` (2 import statements), `commands/handlers.ts` (2), and 6
   test files. Full suite after.
 - **T2** — Extract `shared.ts` from the current `handlers.ts` (the five shared
@@ -85,8 +89,10 @@ T2).
   (6 files).
 - `src/commands/` matches the report §5.3 target tree: `shared.ts` plus 13
   per-command files; no `handlers.ts`, no `index.ts` barrel.
-- No behavior change: same CLI surface, same exports and types, same test
-  outcomes. Back-compat re-exports in `harness-installer.ts` survive unchanged.
+- No CLI-surface behavior change: same commands, output, exit codes, and test
+  outcomes. Internal export surface trimmed per review: the dead manifest
+  re-export shim in `harness-installer.ts` was removed and `EmitOutcome` in
+  `commands/shared.ts` was made private.
 - All existing tests pass (`npm test`, 330 tests) and the full repository
   verification suite is green.
 - No `task-check.ts` / `task-uncheck.ts` split, no sub-subfolders inside

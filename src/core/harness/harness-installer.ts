@@ -29,14 +29,6 @@ import {
   type CanonicalSkillSource,
 } from "./skill-source.js";
 
-export {
-  INSTALLATION_MANIFEST,
-  createInstallationManifest,
-  parseInstallationManifest,
-  serializeInstallationManifest,
-} from "./harness-manifest.js";
-export type { InstallationManifest } from "./harness-manifest.js";
-
 type HarnessState = "missing" | "unmanaged" | "installed" | "modified";
 
 interface HarnessInstallationSummary {

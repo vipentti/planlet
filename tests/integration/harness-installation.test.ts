@@ -29,7 +29,7 @@ import {
   parseInstallationManifest,
   serializeInstallationManifest,
   type InstallationManifest,
-} from "../../src/core/harness/harness-installer.js";
+} from "../../src/core/harness/harness-manifest.js";
 import {
   enumerateCanonicalSkills,
   sha256,

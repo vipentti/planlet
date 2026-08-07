@@ -28,7 +28,7 @@ export function compactSummary(
   };
 }
 
-export interface EmitOutcome<T> {
+interface EmitOutcome<T> {
   readonly exitCode: ExitCode;
   readonly data: T | undefined;
 }
