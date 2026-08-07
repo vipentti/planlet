@@ -25,10 +25,6 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and thi
   repository-local agents, Claude Code, Codex, and GitHub Copilot markers while
   ignoring Planlet's own installed skill footprint.
 
-### Fixed
-
-- `release:prepare` now refreshes compare links for new releases and keeps prior links.
-
 ## [0.2.0] - 2026-08-05
 
 ### Added
