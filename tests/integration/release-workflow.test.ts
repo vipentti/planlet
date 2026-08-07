@@ -694,15 +694,20 @@ test("registry verifier reads pack.json from downloaded artifact directory", () 
   const artifactDir = join(dir, "artifact");
   mkdirSync(artifactDir);
   const integrity = "sha512-test-integrity";
+  const version = JSON.parse(
+    readFileSync(join(repoRoot, "package.json"), "utf8"),
+  ).version as string;
   writeFileSync(
     join(artifactDir, "pack.json"),
-    JSON.stringify([{ filename: "vipentti-planlet-0.2.0.tgz", integrity }]),
+    JSON.stringify([
+      { filename: `vipentti-planlet-${version}.tgz`, integrity },
+    ]),
   );
   writeFileSync(
     join(dir, "registry.json"),
     JSON.stringify({
       name: "@vipentti/planlet",
-      version: "0.2.0",
+      version,
       repository: { url: "git+https://github.com/vipentti/planlet.git" },
       dist: { integrity, tarball: "https://registry.test/planlet.tgz" },
     }),
@@ -720,7 +725,10 @@ test("registry verifier reads pack.json from downloaded artifact directory", () 
     },
   });
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /Verified @vipentti\/planlet@0\.2\.0/);
+  assert.ok(
+    result.stdout.includes(`Verified @vipentti/planlet@${version}`),
+    result.stdout,
+  );
 });
 
 test("public GPG key is documented and referenced in the protected job", () => {
