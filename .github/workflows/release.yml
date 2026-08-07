@@ -340,7 +340,7 @@ jobs:
           const version = process.env.VERSION;
           const expected = `vipentti-planlet-${version}.tgz`;
           const files = readdirSync(artifactDir).sort();
-          assert.deepEqual(files, [expected, "pack.json"], "artifact must contain exactly the expected tarball and pack.json");
+          assert.deepEqual(files, [expected, "pack.json"].sort(), "artifact must contain exactly the expected tarball and pack.json");
           const tarball = join(artifactDir, expected);
           const bytes = readFileSync(tarball);
           const sha256 = createHash("sha256").update(bytes).digest("hex");
