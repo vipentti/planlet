@@ -6,6 +6,7 @@
     "planlet",
     "printf",
     "sha256sum",
+    "shellcheck",
     "ssh-keygen",
     "where"
   ]
