@@ -9,7 +9,7 @@ import {
   isRealArchiveDate,
   isValidSlug,
   parseArchiveName,
-} from "../../src/core/slugs.js";
+} from "../../src/core/plan/slugs.js";
 import { PlanletError } from "../../src/errors/planlet-error.js";
 
 test("slug validation accepts descriptive lowercase kebab-case names", () => {

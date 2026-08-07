@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { PLANLET_STATES } from "../../src/core/models.js";
+import { PLANLET_STATES } from "../../src/core/plan/models.js";
 
 test("the lifecycle state model exposes the designed stable values", () => {
   assert.deepEqual(PLANLET_STATES, [

@@ -6,15 +6,15 @@ import {
   type PlanletTask,
   type PlanSummary,
 } from "./models.js";
-import { byName, resolveSafePath, tryLstat } from "./paths.js";
+import { byName, resolveSafePath, tryLstat } from "../paths.js";
 import { assertValidSlug, isValidSlug, parseArchiveName } from "./slugs.js";
 import type { PlanletLocation } from "./status.js";
 import {
   validatePlanletStructure,
   type ValidatedPlanletStructure,
 } from "./validation.js";
-import type { StructuredError } from "../errors/planlet-error.js";
-import { isPlanletError, PlanletError } from "../errors/planlet-error.js";
+import type { StructuredError } from "../../errors/planlet-error.js";
+import { isPlanletError, PlanletError } from "../../errors/planlet-error.js";
 
 export type ShowPart = "plan" | "tasks" | "summary";
 

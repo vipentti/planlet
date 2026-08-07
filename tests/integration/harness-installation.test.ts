@@ -16,7 +16,7 @@ import test from "node:test";
 
 import { decode } from "@toon-format/toon";
 
-import { renderAgentsSection } from "../../src/core/agent-snippet.js";
+import { renderAgentsSection } from "../../src/core/harness/agent-snippet.js";
 import {
   buildToolChoices,
   main,
@@ -29,11 +29,11 @@ import {
   parseInstallationManifest,
   serializeInstallationManifest,
   type InstallationManifest,
-} from "../../src/core/harness-installer.js";
+} from "../../src/core/harness/harness-manifest.js";
 import {
   enumerateCanonicalSkills,
   sha256,
-} from "../../src/core/skill-source.js";
+} from "../../src/core/harness/skill-source.js";
 
 interface Invocation {
   readonly exitCode: number;

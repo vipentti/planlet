@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import {
   mkdirSync,
   mkdtempSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -15,12 +16,14 @@ import {
   enumerateCanonicalSkills,
   resolveCanonicalSkillsPath,
   sha256,
-} from "../../src/core/skill-source.js";
+} from "../../src/core/harness/skill-source.js";
 import { PlanletError } from "../../src/errors/planlet-error.js";
 
 test("development module location resolves and enumerates canonical skills", () => {
   const root = resolveCanonicalSkillsPath(
-    pathToFileURL(join(process.cwd(), "src", "core", "skill-source.ts")).href,
+    pathToFileURL(
+      join(process.cwd(), "src", "core", "harness", "skill-source.ts"),
+    ).href,
   );
   const source = enumerateCanonicalSkills(root);
 
@@ -50,6 +53,38 @@ test("bundled module location resolves sibling canonical skills", () => {
   );
 });
 
+test("bundled sibling skills win over an ancestor decoy tree", () => {
+  const root = mkdtempSync(join(tmpdir(), "planlet-shadow-"));
+  try {
+    mkdirSync(join(root, "skills", "planlet-decoy"), { recursive: true });
+    writeFileSync(
+      join(root, "skills", "planlet-decoy", "SKILL.md"),
+      "# Decoy\n",
+    );
+    mkdirSync(join(root, "work", "repo", "skills", "planlet-real"), {
+      recursive: true,
+    });
+    writeFileSync(
+      join(root, "work", "repo", "skills", "planlet-real", "SKILL.md"),
+      "# Real\n",
+    );
+    mkdirSync(join(root, "work", "repo", "dist"), { recursive: true });
+    writeFileSync(
+      join(root, "work", "repo", "dist", "planlet.mjs"),
+      "export {};\n",
+    );
+
+    assert.equal(
+      resolveCanonicalSkillsPath(
+        pathToFileURL(join(root, "work", "repo", "dist", "planlet.mjs")).href,
+      ),
+      realpathSync(join(root, "work", "repo", "skills")),
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("canonical source probing reports non-missing filesystem failures", () => {
   const root = mkdtempSync(join(tmpdir(), "planlet-probe-"));
   try {
@@ -65,7 +100,8 @@ test("canonical source probing reports non-missing filesystem failures", () => {
     assert.throws(
       () =>
         resolveCanonicalSkillsPath(
-          pathToFileURL(join(root, "src", "core", "skill-source.ts")).href,
+          pathToFileURL(join(root, "src", "core", "harness", "skill-source.ts"))
+            .href,
         ),
       (error) =>
         error instanceof PlanletError &&

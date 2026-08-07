@@ -3,7 +3,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import test from "node:test";
 
-import { validatePlanletStructure } from "../../src/core/validation.js";
+import { validatePlanletStructure } from "../../src/core/plan/validation.js";
 
 const ROOT = resolve(import.meta.dirname, "../..");
 const SKILL_NAMES = [

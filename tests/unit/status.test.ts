@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import type { PlanletTask } from "../../src/core/models.js";
-import { deriveLifecycleState } from "../../src/core/status.js";
+import type { PlanletTask } from "../../src/core/plan/models.js";
+import { deriveLifecycleState } from "../../src/core/plan/status.js";
 
 const task = (id: `T${number}`, completed: boolean): PlanletTask => ({
   id,

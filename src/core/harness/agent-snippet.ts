@@ -2,8 +2,8 @@ import { spawnSync } from "node:child_process";
 import { readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { asWriteConflict } from "../errors/planlet-error.js";
-import { tryLstat } from "./paths.js";
+import { asWriteConflict } from "../../errors/planlet-error.js";
+import { tryLstat } from "../paths.js";
 import { sha256 } from "./skill-source.js";
 
 /**

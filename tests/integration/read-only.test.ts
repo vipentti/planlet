@@ -16,7 +16,7 @@ import {
   listPlanlets,
   showPlanlet,
   validatePlanlets,
-} from "../../src/core/read-only.js";
+} from "../../src/core/plan/read-only.js";
 import { PlanletError } from "../../src/errors/planlet-error.js";
 
 function withRepository(run: (root: string) => void): void {

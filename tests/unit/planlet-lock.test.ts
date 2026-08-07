@@ -14,7 +14,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { completePlanlet } from "../../src/core/planlet-completion.js";
+import { completePlanlet } from "../../src/core/plan/planlet-completion.js";
 import {
   acquireOwnedLock,
   planletLockRoot,
@@ -22,7 +22,7 @@ import {
   withPlanletLock,
   type OwnedLockHolder,
 } from "../../src/core/planlet-lock.js";
-import { updateTask } from "../../src/core/task-update.js";
+import { updateTask } from "../../src/core/plan/task-update.js";
 import { PlanletError } from "../../src/errors/planlet-error.js";
 import { renderToonError } from "../../src/output/toon.js";
 

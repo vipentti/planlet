@@ -1,5 +1,5 @@
 import type { PlanletTask } from "./models.js";
-import { PlanletError } from "../errors/planlet-error.js";
+import { PlanletError } from "../../errors/planlet-error.js";
 
 const TASK_ID_SOURCE = String.raw`T\d+`;
 

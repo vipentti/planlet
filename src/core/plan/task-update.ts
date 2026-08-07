@@ -7,13 +7,13 @@ import { deriveLifecycleState } from "./status.js";
 import {
   withPlanletLock,
   type PlanletLockDependencies,
-} from "./planlet-lock.js";
+} from "../planlet-lock.js";
 import { assertActivePlanletDirectory, readMarkdown } from "./planlet-files.js";
-import { atomicPublish, resolveSafePath } from "./paths.js";
+import { atomicPublish, resolveSafePath } from "../paths.js";
 import { assertValidSlug } from "./slugs.js";
 import { parseTaskLine } from "./task-parser.js";
 import { validatePlanletStructure } from "./validation.js";
-import { PlanletError, asWriteConflict } from "../errors/planlet-error.js";
+import { PlanletError, asWriteConflict } from "../../errors/planlet-error.js";
 
 type TaskUpdateOperation = "check" | "uncheck";
 

@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { updateTask } from "../../src/core/task-update.js";
+import { updateTask } from "../../src/core/plan/task-update.js";
 import { PlanletError } from "../../src/errors/planlet-error.js";
 
 function withPlanlet(

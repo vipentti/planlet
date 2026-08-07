@@ -16,7 +16,7 @@ import {
   detectHarnessSignals,
   normalizeToolSelector,
   resolveHarnessDestinations,
-} from "../../src/core/harnesses.js";
+} from "../../src/core/harness/harnesses.js";
 import { PlanletError } from "../../src/errors/planlet-error.js";
 
 function withRoot(run: (root: string) => void): void {

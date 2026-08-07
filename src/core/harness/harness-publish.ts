@@ -2,8 +2,8 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
-import { PlanletError, asWriteConflict } from "../errors/planlet-error.js";
-import { pathKind, resolveSafePath } from "./paths.js";
+import { PlanletError, asWriteConflict } from "../../errors/planlet-error.js";
+import { pathKind, resolveSafePath } from "../paths.js";
 import { INSTALLATION_MANIFEST } from "./harness-manifest.js";
 import type { CanonicalSkillSource } from "./skill-source.js";
 

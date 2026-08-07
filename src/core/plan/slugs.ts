@@ -1,4 +1,4 @@
-import { PlanletError } from "../errors/planlet-error.js";
+import { PlanletError } from "../../errors/planlet-error.js";
 
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const ARCHIVE_NAME_PATTERN = /^(\d{4}-\d{2}-\d{2})-(.+)$/;

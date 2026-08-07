@@ -9,8 +9,8 @@ import {
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { PlanletError } from "../errors/planlet-error.js";
-import { byName, errnoIs, isPathWithinRoot } from "./paths.js";
+import { PlanletError } from "../../errors/planlet-error.js";
+import { byName, errnoIs, isPathWithinRoot } from "../paths.js";
 
 interface CanonicalSkillFile {
   readonly skill: string;
@@ -59,8 +59,8 @@ export function resolveCanonicalSkillsPath(
 ): string {
   const moduleDirectory = dirname(fileURLToPath(moduleUrl));
   const candidates = [
-    resolve(moduleDirectory, "../../skills"),
     resolve(moduleDirectory, "../skills"),
+    resolve(moduleDirectory, "../../../skills"),
   ];
   for (const candidate of candidates) {
     if (hasCanonicalSkills(candidate)) return realpathSync(candidate);

@@ -18,14 +18,14 @@ import test from "node:test";
 import {
   detectHarnesses,
   installHarnessSkills,
-} from "../../src/core/harness-installer.js";
+} from "../../src/core/harness/harness-installer.js";
 import {
   INSTALLATION_MANIFEST,
   createInstallationManifest,
   parseInstallationManifest,
   serializeInstallationManifest,
   type InstallationManifest,
-} from "../../src/core/harness-manifest.js";
+} from "../../src/core/harness/harness-manifest.js";
 import {
   HARNESS_INSTALL_LOCK_NAME,
   planletLockRoot,
@@ -33,7 +33,7 @@ import {
 import {
   sha256,
   type CanonicalSkillSource,
-} from "../../src/core/skill-source.js";
+} from "../../src/core/harness/skill-source.js";
 import { PlanletError } from "../../src/errors/planlet-error.js";
 
 function source(files: Readonly<Record<string, string>>): CanonicalSkillSource {

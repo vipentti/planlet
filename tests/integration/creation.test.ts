@@ -12,8 +12,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { createPlanlet, deriveTitleFromSlug } from "../../src/core/creation.js";
-import { validatePlanletStructure } from "../../src/core/validation.js";
+import {
+  createPlanlet,
+  deriveTitleFromSlug,
+} from "../../src/core/plan/creation.js";
+import { validatePlanletStructure } from "../../src/core/plan/validation.js";
 import { PlanletError } from "../../src/errors/planlet-error.js";
 
 function withRepository(run: (root: string) => void): void {

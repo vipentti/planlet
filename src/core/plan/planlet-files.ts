@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 
-import { PlanletError } from "../errors/planlet-error.js";
-import { tryLstat } from "./paths.js";
+import { PlanletError } from "../../errors/planlet-error.js";
+import { tryLstat } from "../paths.js";
 
 export function assertActivePlanletDirectory(path: string, slug: string): void {
   const status = tryLstat(path);
