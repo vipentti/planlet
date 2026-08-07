@@ -650,6 +650,7 @@ jobs:
             }
             local obj
             obj=$(git rev-parse "refs/tags/${t}")
+            # shellcheck disable=SC2015 # fail-closed tag-object validation
             test "${#obj}" = 40 && test "$obj" = "$(printf '%s' "$obj" | tr -cd '0-9a-f')" || {
               echo "Tag ${t} object SHA is malformed" >&2
               exit 1

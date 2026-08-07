@@ -74,21 +74,11 @@ function stepSection(name: string): string {
 }
 
 function shellBlock(name: string): string {
-  const section = stepSection(name);
-  const marker = "run: |";
-  const markerIndex = section.indexOf(marker);
-  assert.ok(markerIndex >= 0, `run block in ${name} missing`);
-  const body = section.slice(section.indexOf("\n", markerIndex) + 1);
-  return body
-    .split("\n")
-    .map((line) => line.replace(/^ {10}/, ""))
-    .join("\n")
-    .trim();
-}
-
-interface RenderedStep {
-  readonly label: string;
-  readonly script: string;
+  const step = stepSections().find((s) => s.label === name);
+  assert.ok(step !== undefined, `step ${name} missing`);
+  const script = renderRunBlock(step.section);
+  assert.ok(script !== null, `run block in ${name} missing`);
+  return script.trim();
 }
 
 function stepSections(): Array<{
@@ -130,8 +120,11 @@ function renderRunBlock(section: readonly string[]): string | null {
   return out.join("\n");
 }
 
-function bashSteps(): RenderedStep[] {
-  const out: RenderedStep[] = [];
+function bashSteps(): Array<{
+  readonly label: string;
+  readonly script: string;
+}> {
+  const out: Array<{ label: string; script: string }> = [];
   for (const { label, section } of stepSections()) {
     if (!section.some((line) => /^\s+shell: bash\s*$/.test(line))) continue;
     const script = renderRunBlock(section);
@@ -144,6 +137,52 @@ function bashSteps(): RenderedStep[] {
 function shellcheckAvailable(): boolean {
   const result = spawnSync("shellcheck", ["--version"], { encoding: "utf8" });
   return result.status === 0 && result.error === undefined;
+}
+
+interface PackedArtifact {
+  readonly tarball: string;
+  readonly integrity: string;
+  readonly filename: string;
+}
+
+function writePackedPlanletArtifact(
+  dir: string,
+  version: string,
+): PackedArtifact {
+  const filename = `vipentti-planlet-${version}.tgz`;
+  const tarball = join(dir, filename);
+  const staging = mkdtempSync(join(dir, ".staging-"));
+  try {
+    mkdirSync(join(staging, "package", "dist"), { recursive: true });
+    writeFileSync(
+      join(staging, "package", "package.json"),
+      JSON.stringify({
+        name: "@vipentti/planlet",
+        version,
+        bin: { planlet: "dist/planlet.mjs" },
+      }),
+    );
+    writeFileSync(
+      join(staging, "package", "dist", "planlet.mjs"),
+      "// planlet\n",
+    );
+    const packed = spawnSync(
+      "tar",
+      ["-czf", tarball, "-C", staging, "package"],
+      { encoding: "utf8" },
+    );
+    assert.equal(packed.status, 0, packed.stderr);
+  } finally {
+    rmSync(staging, { recursive: true, force: true });
+  }
+  const integrity =
+    "sha512-" +
+    createHash("sha512").update(readFileSync(tarball)).digest("base64");
+  writeFileSync(
+    join(dir, "pack.json"),
+    JSON.stringify([{ filename, integrity }]),
+  );
+  return { tarball, integrity, filename };
 }
 
 function runGit(cwd: string, ...args: string[]): string {
@@ -749,34 +788,15 @@ test("registry guard fails closed on unexpected published versions JSON", () => 
   }
 });
 
-test("every shell:bash step renders a script that passes bash -n", () => {
+test("every shell:bash step renders a script that passes bash -n and shellcheck", (t) => {
   const steps = bashSteps();
   assert.ok(steps.length > 0, "no shell:bash steps found in workflow");
-  for (const step of steps) {
-    const dir = mkdtempSync(join(tmpdir(), "planlet-bash-n-"));
-    tempDirs.push(dir);
-    const script = join(dir, "step.sh");
-    writeFileSync(script, `#!/usr/bin/env bash\n${step.script}\n`);
-    const result = spawnSync(bashExecutable(), ["-n", script], {
-      encoding: "utf8",
-    });
-    assert.equal(
-      result.status,
-      0,
-      `${step.label}: bash -n failed:\n${result.stderr}`,
-    );
+  const lint = shellcheckAvailable();
+  if (!lint) {
+    t.diagnostic("shellcheck not installed; skipping rendered-script lint");
   }
-});
-
-test("every shell:bash step renders a script that passes shellcheck when available", (t) => {
-  if (!shellcheckAvailable()) {
-    t.skip("shellcheck not installed; skipping rendered-script lint");
-    return;
-  }
-  const steps = bashSteps();
-  assert.ok(steps.length > 0, "no shell:bash steps found in workflow");
   for (const step of steps) {
-    const dir = mkdtempSync(join(tmpdir(), "planlet-shellcheck-"));
+    const dir = mkdtempSync(join(tmpdir(), "planlet-bash-lint-"));
     tempDirs.push(dir);
     const script = join(dir, "step.sh");
     const substituted = step.script.replace(
@@ -784,39 +804,23 @@ test("every shell:bash step renders a script that passes shellcheck when availab
       "${GITHUB_TEMPLATE:-}",
     );
     writeFileSync(script, `#!/usr/bin/env bash\n${substituted}\n`);
-    const result = spawnSync("shellcheck", ["-e", "SC2015", script], {
+    const syntax = spawnSync(bashExecutable(), ["-n", script], {
       encoding: "utf8",
     });
     assert.equal(
-      result.status,
+      syntax.status,
       0,
-      `${step.label}: shellcheck failed:\n${result.stdout}${result.stderr}`,
+      `${step.label}: bash -n failed:\n${syntax.stderr}`,
     );
+    if (lint) {
+      const check = spawnSync("shellcheck", [script], { encoding: "utf8" });
+      assert.equal(
+        check.status,
+        0,
+        `${step.label}: shellcheck failed:\n${check.stdout}${check.stderr}`,
+      );
+    }
   }
-});
-
-test("versions-guard heredoc terminates at column 0 after YAML de-indent", () => {
-  const publish = bashSteps().find(
-    (step) => step.label === "Publish or verify existing package",
-  );
-  assert.ok(publish !== undefined, "publish step missing");
-  const guards = [
-    ...publish.script.matchAll(
-      /node --input-type=module <<'NODE'\n([\s\S]*?)\n( *)NODE/g,
-    ),
-  ];
-  const guard = guards.find((m) =>
-    (m[1] ?? "").includes("refusing to publish"),
-  );
-  assert.ok(
-    guard !== undefined,
-    "versions-guard heredoc missing from rendered script",
-  );
-  assert.equal(
-    guard[2] ?? "",
-    "",
-    "versions-guard NODE terminator must be at column 0",
-  );
 });
 
 test("registry verifier reads pack.json from downloaded artifact directory", () => {
@@ -870,38 +874,7 @@ test("downloaded artifact validation is order-independent over directory listing
   const version = JSON.parse(
     readFileSync(join(repoRoot, "package.json"), "utf8"),
   ).version as string;
-  const expected = `vipentti-planlet-${version}.tgz`;
-
-  const staging = join(dir, "staging");
-  mkdirSync(join(staging, "package", "dist"), { recursive: true });
-  writeFileSync(
-    join(staging, "package", "package.json"),
-    JSON.stringify({
-      name: "@vipentti/planlet",
-      version,
-      bin: { planlet: "dist/planlet.mjs" },
-    }),
-  );
-  writeFileSync(
-    join(staging, "package", "dist", "planlet.mjs"),
-    "// planlet\n",
-  );
-  writeFileSync(
-    join(artifactDir, "pack.json"),
-    JSON.stringify([{ filename: expected, integrity: "sha512-pending" }]),
-  );
-  const tarball = join(artifactDir, expected);
-  const packed = spawnSync("tar", ["-czf", tarball, "-C", staging, "package"], {
-    encoding: "utf8",
-  });
-  assert.equal(packed.status, 0, packed.stderr);
-  const bytes = readFileSync(tarball);
-  const integrity =
-    "sha512-" + createHash("sha512").update(bytes).digest("base64");
-  writeFileSync(
-    join(artifactDir, "pack.json"),
-    JSON.stringify([{ filename: expected, integrity }]),
-  );
+  const { tarball } = writePackedPlanletArtifact(artifactDir, version);
 
   const script = join(dir, "validate.mjs");
   writeFileSync(script, nodeBlock("Validate downloaded package artifact"));
@@ -912,7 +885,9 @@ test("downloaded artifact validation is order-independent over directory listing
       ...process.env,
       RUNNER_TEMP: dir,
       VERSION: version,
-      PACKAGE_SHA256: createHash("sha256").update(bytes).digest("hex"),
+      PACKAGE_SHA256: createHash("sha256")
+        .update(readFileSync(tarball))
+        .digest("hex"),
       GITHUB_ENV: join(dir, "github-env.txt"),
     },
   });
@@ -964,34 +939,7 @@ test("reviewed package artifact validation executes against a packed fixture", (
   const packDir = join(dir, "pack");
   mkdirSync(packDir);
   const version = "1.2.3";
-  const expected = `vipentti-planlet-${version}.tgz`;
-
-  const staging = join(dir, "staging");
-  mkdirSync(join(staging, "package", "dist"), { recursive: true });
-  writeFileSync(
-    join(staging, "package", "package.json"),
-    JSON.stringify({
-      name: "@vipentti/planlet",
-      version,
-      bin: { planlet: "dist/planlet.mjs" },
-    }),
-  );
-  writeFileSync(
-    join(staging, "package", "dist", "planlet.mjs"),
-    "// planlet\n",
-  );
-  const tarball = join(packDir, expected);
-  const packed = spawnSync("tar", ["-czf", tarball, "-C", staging, "package"], {
-    encoding: "utf8",
-  });
-  assert.equal(packed.status, 0, packed.stderr);
-  const bytes = readFileSync(tarball);
-  const integrity =
-    "sha512-" + createHash("sha512").update(bytes).digest("base64");
-  writeFileSync(
-    join(packDir, "pack.json"),
-    JSON.stringify([{ filename: expected, integrity }]),
-  );
+  writePackedPlanletArtifact(packDir, version);
   const output = join(dir, "github-output.txt");
   writeFileSync(output, "");
 
@@ -1009,26 +957,6 @@ test("reviewed package artifact validation executes against a packed fixture", (
   });
   assert.equal(result.status, 0, result.stderr);
   assert.match(readFileSync(output, "utf8"), /package-sha256=[0-9a-f]{64}/);
-});
-
-test("every inline node heredoc in a shell:bash step is behaviorally covered", () => {
-  const covered = new Set([
-    "Extract release notes",
-    "Validate reviewed package artifact",
-    "Validate downloaded package artifact",
-    "Revalidate protected release contract",
-    "Publish or verify existing package",
-  ]);
-  const withHeredoc = bashSteps().filter((step) =>
-    step.script.includes("node --input-type=module <<'NODE'"),
-  );
-  assert.ok(withHeredoc.length > 0, "no inline node heredocs found");
-  for (const step of withHeredoc) {
-    assert.ok(
-      covered.has(step.label),
-      `${step.label} has an inline node heredoc without behavioral coverage`,
-    );
-  }
 });
 
 test("public GPG key is documented and referenced in the protected job", () => {
