@@ -86,6 +86,66 @@ function shellBlock(name: string): string {
     .trim();
 }
 
+interface RenderedStep {
+  readonly label: string;
+  readonly script: string;
+}
+
+function stepSections(): Array<{
+  readonly label: string;
+  readonly section: string[];
+}> {
+  const result: Array<{ label: string; section: string[] }> = [];
+  let start = -1;
+  let label = "";
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i] ?? "";
+    if (/^ {6}- /.test(line)) {
+      if (start >= 0) result.push({ label, section: lines.slice(start, i) });
+      start = i;
+      const m = /^\s+- (?:name|id):\s*(.*?)\s*$/.exec(line);
+      label = m?.[1] ?? "";
+    }
+  }
+  if (start >= 0) result.push({ label, section: lines.slice(start) });
+  return result;
+}
+
+function renderRunBlock(section: readonly string[]): string | null {
+  const runIdx = section.findIndex((line) => line.trim() === "run: |");
+  if (runIdx < 0) return null;
+  const body = section.slice(runIdx + 1);
+  const first = body.find((line) => line.trim() !== "");
+  if (!first) return "";
+  const base = /^ */.exec(first)?.[0].length ?? 0;
+  const out: string[] = [];
+  for (const line of body) {
+    if (line.trim() === "") {
+      out.push("");
+      continue;
+    }
+    if ((/^ */.exec(line)?.[0].length ?? 0) < base) break;
+    out.push(line.slice(base));
+  }
+  return out.join("\n");
+}
+
+function bashSteps(): RenderedStep[] {
+  const out: RenderedStep[] = [];
+  for (const { label, section } of stepSections()) {
+    if (!section.some((line) => /^\s+shell: bash\s*$/.test(line))) continue;
+    const script = renderRunBlock(section);
+    if (script === null) continue;
+    out.push({ label, script });
+  }
+  return out;
+}
+
+function shellcheckAvailable(): boolean {
+  const result = spawnSync("shellcheck", ["--version"], { encoding: "utf8" });
+  return result.status === 0 && result.error === undefined;
+}
+
 function runGit(cwd: string, ...args: string[]): string {
   const result = spawnSync("git", args, {
     cwd,
@@ -689,6 +749,76 @@ test("registry guard fails closed on unexpected published versions JSON", () => 
   }
 });
 
+test("every shell:bash step renders a script that passes bash -n", () => {
+  const steps = bashSteps();
+  assert.ok(steps.length > 0, "no shell:bash steps found in workflow");
+  for (const step of steps) {
+    const dir = mkdtempSync(join(tmpdir(), "planlet-bash-n-"));
+    tempDirs.push(dir);
+    const script = join(dir, "step.sh");
+    writeFileSync(script, `#!/usr/bin/env bash\n${step.script}\n`);
+    const result = spawnSync(bashExecutable(), ["-n", script], {
+      encoding: "utf8",
+    });
+    assert.equal(
+      result.status,
+      0,
+      `${step.label}: bash -n failed:\n${result.stderr}`,
+    );
+  }
+});
+
+test("every shell:bash step renders a script that passes shellcheck when available", (t) => {
+  if (!shellcheckAvailable()) {
+    t.skip("shellcheck not installed; skipping rendered-script lint");
+    return;
+  }
+  const steps = bashSteps();
+  assert.ok(steps.length > 0, "no shell:bash steps found in workflow");
+  for (const step of steps) {
+    const dir = mkdtempSync(join(tmpdir(), "planlet-shellcheck-"));
+    tempDirs.push(dir);
+    const script = join(dir, "step.sh");
+    const substituted = step.script.replace(
+      /\$\{\{[^}]*\}\}/g,
+      "${GITHUB_TEMPLATE:-}",
+    );
+    writeFileSync(script, `#!/usr/bin/env bash\n${substituted}\n`);
+    const result = spawnSync("shellcheck", ["-e", "SC2015", script], {
+      encoding: "utf8",
+    });
+    assert.equal(
+      result.status,
+      0,
+      `${step.label}: shellcheck failed:\n${result.stdout}${result.stderr}`,
+    );
+  }
+});
+
+test("versions-guard heredoc terminates at column 0 after YAML de-indent", () => {
+  const publish = bashSteps().find(
+    (step) => step.label === "Publish or verify existing package",
+  );
+  assert.ok(publish !== undefined, "publish step missing");
+  const guards = [
+    ...publish.script.matchAll(
+      /node --input-type=module <<'NODE'\n([\s\S]*?)\n( *)NODE/g,
+    ),
+  ];
+  const guard = guards.find((m) =>
+    (m[1] ?? "").includes("refusing to publish"),
+  );
+  assert.ok(
+    guard !== undefined,
+    "versions-guard heredoc missing from rendered script",
+  );
+  assert.equal(
+    guard[2] ?? "",
+    "",
+    "versions-guard NODE terminator must be at column 0",
+  );
+});
+
 test("registry verifier reads pack.json from downloaded artifact directory", () => {
   const dir = mkdtempSync(join(tmpdir(), "planlet-registry-verify-"));
   tempDirs.push(dir);
@@ -791,6 +921,114 @@ test("downloaded artifact validation is order-independent over directory listing
     readFileSync(join(dir, "github-env.txt"), "utf8"),
     /PACKAGE_TARBALL=/,
   );
+});
+
+test("release-notes extraction writes notes for the release version", () => {
+  const dir = mkdtempSync(join(tmpdir(), "planlet-release-notes-"));
+  tempDirs.push(dir);
+  const version = "1.2.3";
+  writeFileSync(
+    join(dir, "CHANGELOG.md"),
+    [
+      "# Changelog",
+      "",
+      "## [Unreleased]",
+      "",
+      `## [${version}] - 2026-08-07`,
+      "",
+      "### Added",
+      "",
+      "- some feature",
+      "",
+      `[Unreleased]: https://example.test/compare/v1.1.0...HEAD`,
+      `[${version}]: https://example.test/compare/v1.1.0...v${version}`,
+      "",
+    ].join("\n"),
+  );
+  const script = join(dir, "notes.mjs");
+  writeFileSync(script, nodeBlock("Extract release notes"));
+  const result = spawnSync(process.execPath, [script], {
+    cwd: dir,
+    encoding: "utf8",
+    env: { ...process.env, VERSION: version, RUNNER_TEMP: dir },
+  });
+  assert.equal(result.status, 0, result.stderr);
+  const notes = readFileSync(join(dir, "release-notes.md"), "utf8");
+  assert.match(notes, /### Added/);
+  assert.match(notes, /- some feature/);
+});
+
+test("reviewed package artifact validation executes against a packed fixture", () => {
+  const dir = mkdtempSync(join(tmpdir(), "planlet-pack-review-"));
+  tempDirs.push(dir);
+  const packDir = join(dir, "pack");
+  mkdirSync(packDir);
+  const version = "1.2.3";
+  const expected = `vipentti-planlet-${version}.tgz`;
+
+  const staging = join(dir, "staging");
+  mkdirSync(join(staging, "package", "dist"), { recursive: true });
+  writeFileSync(
+    join(staging, "package", "package.json"),
+    JSON.stringify({
+      name: "@vipentti/planlet",
+      version,
+      bin: { planlet: "dist/planlet.mjs" },
+    }),
+  );
+  writeFileSync(
+    join(staging, "package", "dist", "planlet.mjs"),
+    "// planlet\n",
+  );
+  const tarball = join(packDir, expected);
+  const packed = spawnSync("tar", ["-czf", tarball, "-C", staging, "package"], {
+    encoding: "utf8",
+  });
+  assert.equal(packed.status, 0, packed.stderr);
+  const bytes = readFileSync(tarball);
+  const integrity =
+    "sha512-" + createHash("sha512").update(bytes).digest("base64");
+  writeFileSync(
+    join(packDir, "pack.json"),
+    JSON.stringify([{ filename: expected, integrity }]),
+  );
+  const output = join(dir, "github-output.txt");
+  writeFileSync(output, "");
+
+  const script = join(dir, "validate.mjs");
+  writeFileSync(script, nodeBlock("Validate reviewed package artifact"));
+  const result = spawnSync(process.execPath, [script], {
+    cwd: dir,
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      RUNNER_TEMP: dir,
+      VERSION: version,
+      GITHUB_OUTPUT: output,
+    },
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(readFileSync(output, "utf8"), /package-sha256=[0-9a-f]{64}/);
+});
+
+test("every inline node heredoc in a shell:bash step is behaviorally covered", () => {
+  const covered = new Set([
+    "Extract release notes",
+    "Validate reviewed package artifact",
+    "Validate downloaded package artifact",
+    "Revalidate protected release contract",
+    "Publish or verify existing package",
+  ]);
+  const withHeredoc = bashSteps().filter((step) =>
+    step.script.includes("node --input-type=module <<'NODE'"),
+  );
+  assert.ok(withHeredoc.length > 0, "no inline node heredocs found");
+  for (const step of withHeredoc) {
+    assert.ok(
+      covered.has(step.label),
+      `${step.label} has an inline node heredoc without behavioral coverage`,
+    );
+  }
 });
 
 test("public GPG key is documented and referenced in the protected job", () => {
