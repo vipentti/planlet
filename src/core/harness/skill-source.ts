@@ -59,9 +59,8 @@ export function resolveCanonicalSkillsPath(
 ): string {
   const moduleDirectory = dirname(fileURLToPath(moduleUrl));
   const candidates = [
-    resolve(moduleDirectory, "../../../skills"),
-    resolve(moduleDirectory, "../../skills"),
     resolve(moduleDirectory, "../skills"),
+    resolve(moduleDirectory, "../../../skills"),
   ];
   for (const candidate of candidates) {
     if (hasCanonicalSkills(candidate)) return realpathSync(candidate);
