@@ -187,24 +187,46 @@ function runProtectedContract(options: ProtectedContractOptions = {}) {
   });
 }
 
-function nodeBlock(name: string): string {
+function heredocBlocks(name: string): string[] {
   const start = workflow.indexOf(`- name: ${name}`);
   assert.ok(start >= 0, `step ${name} missing`);
-  const marker = "<<'NODE'";
-  const heredoc = workflow.indexOf(marker, start);
-  const codeStart = heredoc + marker.length;
-  const codeEnd = workflow.indexOf("\n          NODE", codeStart);
+  const blocks: string[] = [];
+  let search = start;
+  while (true) {
+    const heredoc = workflow.indexOf("<<'NODE'", search);
+    if (heredoc < 0) break;
+    const contentStart = workflow.indexOf("\n", heredoc) + 1;
+    const terminator = /^[ \t]*NODE\s*$/m;
+    const match = terminator.exec(workflow.slice(contentStart));
+    if (!match) break;
+    const codeEnd = contentStart + match.index;
+    const code = workflow.slice(contentStart, codeEnd);
+    const lines = code.split("\n");
+    const nonEmpty = lines.filter((line) => line.trim() !== "");
+    const indent = nonEmpty.reduce(
+      (min, line) => Math.min(min, /^ */.exec(line)?.[0].length ?? 0),
+      Infinity,
+    );
+    blocks.push(lines.map((line) => line.slice(indent)).join("\n"));
+    search = codeEnd;
+  }
+  return blocks;
+}
+
+function nodeBlock(name: string): string {
+  const blocks = heredocBlocks(name);
+  const block = blocks[0];
+  assert.ok(block !== undefined, `inline block in ${name} missing`);
+  return block;
+}
+
+function nodeBlockContaining(name: string, marker: string): string {
+  const block = heredocBlocks(name).find((code) => code.includes(marker));
   assert.ok(
-    codeStart > 0 && codeEnd > codeStart,
-    `inline block in ${name} missing`,
+    block !== undefined,
+    `inline block containing ${marker} in ${name} missing`,
   );
-  const lines = workflow.slice(codeStart, codeEnd).split("\n");
-  const nonEmpty = lines.filter((line) => line.trim() !== "");
-  const indent = nonEmpty.reduce(
-    (min, line) => Math.min(min, /^ */.exec(line)?.[0].length ?? 0),
-    Infinity,
-  );
-  return lines.map((line) => line.slice(indent)).join("\n");
+  return block;
 }
 
 function runTagProbe(exitCode: number) {
@@ -613,6 +635,57 @@ test("npm publish disables lifecycle scripts and pins the registry", () => {
   assert.match(release, /registry\.repository\?\.url, source\.repository\.url/);
   assert.match(release, /registry\.gitHead, process\.env\.GITHUB_SHA/);
   assert.match(release, /registry\.dist\?\.integrity, packed\.integrity/);
+});
+
+test("npm publish refuses a version below an already-published newer version", () => {
+  const release = jobSection("release");
+  assert.match(
+    release,
+    /npm view "\$\{PACKAGE_NAME\}" versions --json --registry=https:\/\/registry\.npmjs\.org/,
+  );
+  assert.match(release, /refusing to publish/);
+});
+
+test("registry guard fails closed on unexpected published versions JSON", () => {
+  const dir = mkdtempSync(join(tmpdir(), "planlet-registry-guard-"));
+  tempDirs.push(dir);
+  const script = join(dir, "guard.mjs");
+  writeFileSync(
+    script,
+    nodeBlockContaining("Publish or verify existing package", "published.json"),
+  );
+
+  const cases: Array<{ fixture: string; version: string; expectOk: boolean }> =
+    [
+      // Array with a newer stable version refuses.
+      {
+        fixture: '["0.1.0","0.2.0","0.3.5"]',
+        version: "0.3.0",
+        expectOk: false,
+      },
+      // Singleton string with a newer stable version refuses.
+      { fixture: '"0.3.5"', version: "0.3.0", expectOk: false },
+      // Unexpected successful object shape fails closed.
+      { fixture: '{"version":"0.3.5"}', version: "0.3.0", expectOk: false },
+      // Array with no newer stable version proceeds.
+      { fixture: '["0.1.0","0.2.0"]', version: "0.3.0", expectOk: true },
+      // Prerelease-only newer values stay ignored.
+      { fixture: '["0.3.0-rc.1"]', version: "0.3.0", expectOk: true },
+    ];
+
+  for (const c of cases) {
+    writeFileSync(join(dir, "published.json"), c.fixture);
+    const result = spawnSync(process.execPath, [script], {
+      cwd: dir,
+      encoding: "utf8",
+      env: { ...process.env, VERSION: c.version },
+    });
+    assert.equal(
+      result.status === 0,
+      c.expectOk,
+      `fixture ${c.fixture}: ${result.stderr || result.stdout}`,
+    );
+  }
 });
 
 test("registry verifier reads pack.json from downloaded artifact directory", () => {

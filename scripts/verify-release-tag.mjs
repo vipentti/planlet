@@ -14,6 +14,11 @@ function git(cwd, ...args) {
 }
 
 function validSignatureFingerprint(output, expectedFingerprint) {
+  // Parses GnuPG's VALIDSIG status line. The primary fingerprint is the last
+  // whitespace-separated field (the optional trailing 40-hex field in gpg
+  // 2.4+, verified against gpg 2.4.4). On older gpg the layout differs and
+  // this falls back to the signing fingerprint or a malformed value; either
+  // way the comparison below fails closed rather than accepting a wrong key.
   const records = output
     .split(/\r?\n/)
     .map((line) => line.trim().split(/\s+/))
