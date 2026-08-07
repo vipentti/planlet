@@ -6,8 +6,6 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and thi
 
 ## [Unreleased]
 
-## [0.3.1] - 2026-08-07
-
 ### Added
 
 - `planlet onboard` prints a short agent-onboarding snippet for pasting into
@@ -88,8 +86,7 @@ First release. Everything below is new, so these notes describe what Planlet is 
 - Unexpected failures surface as a structured `internal_error` with no stack or path leakage; set `PLANLET_DEBUG=1` for diagnostic detail.
 - Planlet and repository paths reject directory traversal and symlink escape, and file writes are atomic or recoverable.
 
-[Unreleased]: https://github.com/vipentti/planlet/compare/v0.3.1...HEAD
-[0.3.1]: https://github.com/vipentti/planlet/compare/v0.2.0...v0.3.1
+[Unreleased]: https://github.com/vipentti/planlet/compare/v0.2.0...HEAD
 [0.2.0]: https://github.com/vipentti/planlet/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/vipentti/planlet/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/vipentti/planlet/compare/v0.1.0...v0.1.1
