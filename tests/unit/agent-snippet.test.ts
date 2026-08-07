@@ -16,7 +16,7 @@ import {
   AGENT_SNIPPET,
   renderAgentsSection,
   updateAgentFiles,
-} from "../../src/core/agent-snippet.js";
+} from "../../src/core/harness/agent-snippet.js";
 import { PlanletError } from "../../src/errors/planlet-error.js";
 
 function withRoot(run: (root: string) => void): void {

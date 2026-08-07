@@ -15,13 +15,11 @@ import test from "node:test";
 
 import { decode } from "@toon-format/toon";
 
-import {
-  handleCreate,
-  handleShow,
-  handleTasks,
-  handleValidate,
-  type ExecutionContext,
-} from "../../src/commands/handlers.js";
+import { handleCreate } from "../../src/commands/create.js";
+import type { ExecutionContext } from "../../src/commands/shared.js";
+import { handleShow } from "../../src/commands/show.js";
+import { handleTasks } from "../../src/commands/tasks.js";
+import { handleValidate } from "../../src/commands/validate.js";
 import type { ExitCode } from "../../src/errors/codes.js";
 
 const COMPLETE_PLAN =

@@ -3,7 +3,7 @@ import { parseCompletionRecord } from "./completion.js";
 import { assertValidArchiveName, isValidSlug } from "./slugs.js";
 import { deriveLifecycleState, type PlanletLocation } from "./status.js";
 import { parseTasks } from "./task-parser.js";
-import { PlanletError } from "../errors/planlet-error.js";
+import { PlanletError } from "../../errors/planlet-error.js";
 
 const RECOMMENDED_PLAN_SECTIONS = Object.freeze([
   "Summary",

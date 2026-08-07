@@ -4,29 +4,27 @@ import { resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { parseArgs, type ParseArgsOptionsConfig } from "node:util";
 
-import {
-  handleComplete,
-  handleHarnessInit,
-  handleHarnessUpdate,
-  handleTools,
-  handleCreate,
-  handleDashboard,
-  handleList,
-  handleOnboard,
-  handleShow,
-  handleStatus,
-  handleTasks,
-  handleTaskUpdate,
-  handleValidate,
-  type ExecutionContext,
-} from "./commands/handlers.js";
-import { detectHarnesses } from "./core/harness-installer.js";
+import { handleComplete } from "./commands/complete.js";
+import { handleCreate } from "./commands/create.js";
+import { handleDashboard } from "./commands/dashboard.js";
+import { handleHarnessInit } from "./commands/init.js";
+import { handleList } from "./commands/list.js";
+import { handleOnboard } from "./commands/onboard.js";
+import { handleShow } from "./commands/show.js";
+import { handleStatus } from "./commands/status.js";
+import { handleTasks } from "./commands/tasks.js";
+import { handleTaskUpdate } from "./commands/task-update.js";
+import { handleTools } from "./commands/tools.js";
+import { handleHarnessUpdate } from "./commands/update.js";
+import { handleValidate } from "./commands/validate.js";
+import type { ExecutionContext } from "./commands/shared.js";
+import { detectHarnesses } from "./core/harness/harness-installer.js";
 import {
   detectHarnessSignals,
   normalizeToolSelector,
   resolveHarnessDestinations,
-} from "./core/harnesses.js";
-import { PLANLET_STATES, type PlanletState } from "./core/models.js";
+} from "./core/harness/harnesses.js";
+import { PLANLET_STATES, type PlanletState } from "./core/plan/models.js";
 import { discoverRepositoryRoot } from "./core/repository.js";
 import { EXIT_CODES, type ExitCode } from "./errors/codes.js";
 import { isPlanletError } from "./errors/planlet-error.js";

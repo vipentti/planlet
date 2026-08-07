@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { PlanletError } from "../../src/errors/planlet-error.js";
-import { parseTaskLine, parseTasks } from "../../src/core/task-parser.js";
+import { parseTaskLine, parseTasks } from "../../src/core/plan/task-parser.js";
 
 test("task parsing recognizes only exact top-level checklist lines", () => {
   assert.deepEqual(parseTaskLine("- [ ] T12 Ship the parser"), {

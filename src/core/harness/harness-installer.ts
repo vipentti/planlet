@@ -1,7 +1,7 @@
 import { mkdirSync, readFileSync, readdirSync, type Dirent } from "node:fs";
 import { join } from "node:path";
 
-import { PlanletError, isPlanletError } from "../errors/planlet-error.js";
+import { PlanletError, isPlanletError } from "../../errors/planlet-error.js";
 import { updateAgentFiles, type AgentFileState } from "./agent-snippet.js";
 import {
   HARNESS_ADAPTERS,
@@ -10,7 +10,7 @@ import {
   type HarnessDestination,
   type HarnessToolId,
 } from "./harnesses.js";
-import { byName, pathKind, resolveSafePath, sortedRecord } from "./paths.js";
+import { byName, pathKind, resolveSafePath, sortedRecord } from "../paths.js";
 import {
   INSTALLATION_MANIFEST,
   createInstallationManifest,
@@ -21,8 +21,8 @@ import {
   publishDestinationTransaction,
   type InstallTransactionHooks,
 } from "./harness-publish.js";
-import { withHarnessInstallLock } from "./planlet-lock.js";
-import type { PlanletLockDependencies } from "./planlet-lock.js";
+import { withHarnessInstallLock } from "../planlet-lock.js";
+import type { PlanletLockDependencies } from "../planlet-lock.js";
 import {
   enumerateCanonicalSkills,
   sha256,

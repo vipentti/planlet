@@ -4,7 +4,7 @@ import test from "node:test";
 import {
   isValidUtcTimestamp,
   parseCompletionRecord,
-} from "../../src/core/completion.js";
+} from "../../src/core/plan/completion.js";
 import { PlanletError } from "../../src/errors/planlet-error.js";
 
 test("completion parsing accepts normal and incomplete override records", () => {

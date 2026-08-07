@@ -13,10 +13,8 @@ import test from "node:test";
 import { decode } from "@toon-format/toon";
 
 import { main, type CliRuntime } from "../../src/cli.js";
-import {
-  handleList,
-  type ExecutionContext,
-} from "../../src/commands/handlers.js";
+import { handleList } from "../../src/commands/list.js";
+import type { ExecutionContext } from "../../src/commands/shared.js";
 
 interface Capture {
   readonly stdout: string[];

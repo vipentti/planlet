@@ -6,7 +6,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { main } from "../../src/cli.js";
-import { AGENT_SNIPPET } from "../../src/core/agent-snippet.js";
+import { AGENT_SNIPPET } from "../../src/core/harness/agent-snippet.js";
 
 test("help exits successfully without using process I/O or repository state", async () => {
   const stdout: string[] = [];

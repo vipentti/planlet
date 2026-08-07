@@ -1,6 +1,6 @@
 import type { CompletionRecord, PlanletTask } from "./models.js";
 import { TASK_ID_PATTERN } from "./task-parser.js";
-import { PlanletError } from "../errors/planlet-error.js";
+import { PlanletError } from "../../errors/planlet-error.js";
 
 // Match the completion heading tolerantly (case, surrounding whitespace) so a
 // near-miss like `## completion` surfaces a parse error instead of silently

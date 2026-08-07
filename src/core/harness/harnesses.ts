@@ -1,7 +1,7 @@
 import { readdirSync, type Dirent } from "node:fs";
 
-import { PlanletError } from "../errors/planlet-error.js";
-import { resolveSafePath, tryLstat } from "./paths.js";
+import { PlanletError } from "../../errors/planlet-error.js";
+import { resolveSafePath, tryLstat } from "../paths.js";
 
 type HarnessMarker = Readonly<{
   readonly relativePath: string;

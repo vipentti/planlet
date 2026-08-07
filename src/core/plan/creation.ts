@@ -8,9 +8,9 @@ import {
 import { randomUUID } from "node:crypto";
 
 import type { PlanSummary } from "./models.js";
-import { atomicPublish, resolveSafePath, tryLstat } from "./paths.js";
+import { atomicPublish, resolveSafePath, tryLstat } from "../paths.js";
 import { assertValidSlug, parseArchiveName } from "./slugs.js";
-import { PlanletError, asWriteConflict } from "../errors/planlet-error.js";
+import { PlanletError, asWriteConflict } from "../../errors/planlet-error.js";
 
 export interface CreatePlanletOptions {
   readonly repositoryRoot: string;

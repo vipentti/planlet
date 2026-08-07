@@ -15,12 +15,14 @@ import {
   enumerateCanonicalSkills,
   resolveCanonicalSkillsPath,
   sha256,
-} from "../../src/core/skill-source.js";
+} from "../../src/core/harness/skill-source.js";
 import { PlanletError } from "../../src/errors/planlet-error.js";
 
 test("development module location resolves and enumerates canonical skills", () => {
   const root = resolveCanonicalSkillsPath(
-    pathToFileURL(join(process.cwd(), "src", "core", "skill-source.ts")).href,
+    pathToFileURL(
+      join(process.cwd(), "src", "core", "harness", "skill-source.ts"),
+    ).href,
   );
   const source = enumerateCanonicalSkills(root);
 
@@ -65,7 +67,8 @@ test("canonical source probing reports non-missing filesystem failures", () => {
     assert.throws(
       () =>
         resolveCanonicalSkillsPath(
-          pathToFileURL(join(root, "src", "core", "skill-source.ts")).href,
+          pathToFileURL(join(root, "src", "core", "harness", "skill-source.ts"))
+            .href,
         ),
       (error) =>
         error instanceof PlanletError &&

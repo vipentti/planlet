@@ -1,5 +1,5 @@
-import { PlanletError } from "../errors/planlet-error.js";
-import { sortedRecord } from "./paths.js";
+import { PlanletError } from "../../errors/planlet-error.js";
+import { sortedRecord } from "../paths.js";
 import type { CanonicalSkillSource } from "./skill-source.js";
 
 export const INSTALLATION_MANIFEST = ".planlet-manifest.json";

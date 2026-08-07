@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { PlanletError } from "../../src/errors/planlet-error.js";
-import { validatePlanletStructure } from "../../src/core/validation.js";
+import { validatePlanletStructure } from "../../src/core/plan/validation.js";
 
 test("active planlet validation accepts a narrow valid structure", () => {
   const validated = validatePlanletStructure({

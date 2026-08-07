@@ -13,8 +13,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { completePlanlet } from "../../src/core/planlet-completion.js";
-import { validatePlanletStructure } from "../../src/core/validation.js";
+import { completePlanlet } from "../../src/core/plan/planlet-completion.js";
+import { validatePlanletStructure } from "../../src/core/plan/validation.js";
 import { PlanletError } from "../../src/errors/planlet-error.js";
 
 const PLAN =
