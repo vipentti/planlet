@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
   chmodSync,
   mkdirSync,
@@ -728,6 +729,67 @@ test("registry verifier reads pack.json from downloaded artifact directory", () 
   assert.ok(
     result.stdout.includes(`Verified @vipentti/planlet@${version}`),
     result.stdout,
+  );
+});
+
+test("downloaded artifact validation is order-independent over directory listing", () => {
+  const dir = mkdtempSync(join(tmpdir(), "planlet-artifact-order-"));
+  tempDirs.push(dir);
+  const artifactDir = join(dir, "artifact");
+  mkdirSync(artifactDir);
+  const version = JSON.parse(
+    readFileSync(join(repoRoot, "package.json"), "utf8"),
+  ).version as string;
+  const expected = `vipentti-planlet-${version}.tgz`;
+
+  const staging = join(dir, "staging");
+  mkdirSync(join(staging, "package", "dist"), { recursive: true });
+  writeFileSync(
+    join(staging, "package", "package.json"),
+    JSON.stringify({
+      name: "@vipentti/planlet",
+      version,
+      bin: { planlet: "dist/planlet.mjs" },
+    }),
+  );
+  writeFileSync(
+    join(staging, "package", "dist", "planlet.mjs"),
+    "// planlet\n",
+  );
+  writeFileSync(
+    join(artifactDir, "pack.json"),
+    JSON.stringify([{ filename: expected, integrity: "sha512-pending" }]),
+  );
+  const tarball = join(artifactDir, expected);
+  const packed = spawnSync("tar", ["-czf", tarball, "-C", staging, "package"], {
+    encoding: "utf8",
+  });
+  assert.equal(packed.status, 0, packed.stderr);
+  const bytes = readFileSync(tarball);
+  const integrity =
+    "sha512-" + createHash("sha512").update(bytes).digest("base64");
+  writeFileSync(
+    join(artifactDir, "pack.json"),
+    JSON.stringify([{ filename: expected, integrity }]),
+  );
+
+  const script = join(dir, "validate.mjs");
+  writeFileSync(script, nodeBlock("Validate downloaded package artifact"));
+  const result = spawnSync(process.execPath, [script], {
+    cwd: dir,
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      RUNNER_TEMP: dir,
+      VERSION: version,
+      PACKAGE_SHA256: createHash("sha256").update(bytes).digest("hex"),
+      GITHUB_ENV: join(dir, "github-env.txt"),
+    },
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(
+    readFileSync(join(dir, "github-env.txt"), "utf8"),
+    /PACKAGE_TARBALL=/,
   );
 });
 
