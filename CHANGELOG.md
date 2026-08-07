@@ -6,6 +6,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and thi
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-07
+
 ### Added
 
 - `planlet onboard` prints a short agent-onboarding snippet for pasting into
@@ -22,10 +24,6 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and thi
 - Interactive `planlet init` now preselects harness destinations from
   repository-local agents, Claude Code, Codex, and GitHub Copilot markers while
   ignoring Planlet's own installed skill footprint.
-
-### Fixed
-
-- `release:prepare` now refreshes compare links for new releases and keeps prior links.
 
 ## [0.2.0] - 2026-08-05
 
@@ -90,7 +88,8 @@ First release. Everything below is new, so these notes describe what Planlet is 
 - Unexpected failures surface as a structured `internal_error` with no stack or path leakage; set `PLANLET_DEBUG=1` for diagnostic detail.
 - Planlet and repository paths reject directory traversal and symlink escape, and file writes are atomic or recoverable.
 
-[Unreleased]: https://github.com/vipentti/planlet/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/vipentti/planlet/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/vipentti/planlet/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/vipentti/planlet/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/vipentti/planlet/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/vipentti/planlet/compare/v0.1.0...v0.1.1
