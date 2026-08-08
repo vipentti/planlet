@@ -49,19 +49,14 @@ const COMMAND_HELP: Readonly<Record<string, string>> = {
   tools: "Usage: planlet tools\n",
   onboard: "Usage: planlet onboard\n",
   list: "Usage: planlet list [--state <state>] [--completed]\n",
-  create:
-    "Usage: planlet create <slug> [--title <title>] [--no-stage]\n\n" +
-    "--no-stage leaves the new planlet files unstaged.\n",
+  create: "Usage: planlet create <slug> [--title <title>]\n",
   show: "Usage: planlet show <slug> [--part plan|tasks|summary]\n",
   status: "Usage: planlet status <slug>\n",
   validate: "Usage: planlet validate [<slug>|--all]\n",
   tasks: "Usage: planlet tasks <slug> [--remaining|--completed]\n",
-  task:
-    "Usage: planlet task check|uncheck <slug> <task-id> [--no-stage]\n\n" +
-    "--no-stage leaves tasks.md unstaged.\n",
+  task: "Usage: planlet task check|uncheck <slug> <task-id>\n",
   complete:
-    "Usage: planlet complete <slug> [--allow-incomplete --reason <text>] [--no-stage]\n\n" +
-    "--no-stage leaves the archived planlet unstaged.\n",
+    "Usage: planlet complete <slug> [--allow-incomplete --reason <text>]\n",
 };
 
 function renderHelp(): string {
@@ -330,14 +325,9 @@ function prepareCommand(
     case "create": {
       const { values, positionals } = parse(arguments_, {
         title: { type: "string" },
-        "no-stage": { type: "boolean" },
       });
       requirePositionals(positionals, 1, command);
-      const commandArguments = {
-        slug: positionals[0]!,
-        title: values.title,
-        stage: values["no-stage"] !== true,
-      };
+      const commandArguments = { slug: positionals[0]!, title: values.title };
       return (context) => handleCreate(commandArguments, context);
     }
     case "show": {
@@ -390,9 +380,7 @@ function prepareCommand(
       return (context) => handleTasks(commandArguments, context);
     }
     case "task": {
-      const { values, positionals } = parse(arguments_, {
-        "no-stage": { type: "boolean" },
-      });
+      const { positionals } = parse(arguments_, {});
       requirePositionals(positionals, 3, command);
       const operation = positionals[0];
       if (operation !== "check" && operation !== "uncheck") {
@@ -402,7 +390,6 @@ function prepareCommand(
         operation: operation as "check" | "uncheck",
         slug: positionals[1]!,
         taskId: positionals[2]!,
-        stage: values["no-stage"] !== true,
       };
       return (context) => handleTaskUpdate(commandArguments, context);
     }
@@ -410,7 +397,6 @@ function prepareCommand(
       const { values, positionals } = parse(arguments_, {
         "allow-incomplete": { type: "boolean" },
         reason: { type: "string" },
-        "no-stage": { type: "boolean" },
       });
       requirePositionals(positionals, 1, command);
       if (values.reason !== undefined && !values["allow-incomplete"]) {
@@ -420,7 +406,6 @@ function prepareCommand(
         slug: positionals[0]!,
         allowIncomplete: values["allow-incomplete"],
         reason: values.reason,
-        stage: values["no-stage"] !== true,
       };
       return (context) => handleComplete(commandArguments, context);
     }

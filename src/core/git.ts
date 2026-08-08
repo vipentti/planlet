@@ -3,13 +3,14 @@ import { join } from "node:path";
 
 import { tryLstat } from "./paths.js";
 
-/**
- * True when the repository root carries a git marker. Uses lstat so the gate
- * also passes in git worktrees, where `.git` is a regular file rather than a
- * directory.
- */
-export function hasGitMarker(repositoryRoot: string): boolean {
-  return tryLstat(join(repositoryRoot, ".git")) !== null;
+// lstat so the gate also passes in worktrees, where `.git` is a regular file;
+// any error other than a missing marker counts as no marker.
+function hasGitMarker(repositoryRoot: string): boolean {
+  try {
+    return tryLstat(join(repositoryRoot, ".git")) !== null;
+  } catch {
+    return false;
+  }
 }
 
 function runGitAdd(
@@ -29,27 +30,29 @@ function runGitAdd(
   return undefined;
 }
 
-/**
- * Stages one explicit path. Returns a warning message on failure, undefined on
- * success. Call only after `hasGitMarker`; the caller turns failures into
- * warnings, never command failures. Never stages with `-A` and never inspects
- * the rest of the working tree.
- */
-export function stageFile(
-  repositoryRoot: string,
-  file: string,
-): string | undefined {
-  return runGitAdd(repositoryRoot, [file]);
-}
-
-/**
- * Stages several explicit paths with one `git add`. Completion passes the
- * source directory (whose pathspec covers the recursive deletion) together
- * with the destination directory so git records the move as a rename.
- */
-export function stagePaths(
+// Completion passes the source directory (its pathspec covers the recursive
+// deletion) together with the destination so git records the move as a rename.
+function stagePaths(
   repositoryRoot: string,
   paths: readonly string[],
 ): string | undefined {
   return runGitAdd(repositoryRoot, paths);
+}
+
+/**
+ * Stages the given paths when the repository has a git marker, appending a
+ * warning to `warnings` on failure. The single guard every planlet-writing
+ * command uses: git failure is a warning, never a failed command.
+ */
+export function tryStage(
+  repositoryRoot: string,
+  paths: readonly string[],
+  warnings: string[],
+  label: string,
+): void {
+  if (!hasGitMarker(repositoryRoot)) return;
+  const failure = stagePaths(repositoryRoot, paths);
+  if (failure !== undefined) {
+    warnings.push(`Could not stage ${label}: ${failure}`);
+  }
 }

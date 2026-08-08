@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
 import {
   existsSync,
   mkdirSync,
@@ -17,54 +16,22 @@ import test from "node:test";
 import { completePlanlet } from "../../src/core/plan/planlet-completion.js";
 import { validatePlanletStructure } from "../../src/core/plan/validation.js";
 import { PlanletError } from "../../src/errors/planlet-error.js";
+import { commitAll, porcelain, withGitRoot } from "./git-fixtures.js";
 
 const PLAN =
   "# Fixture Plan\n\n## Summary\nFixture.\n\n## Scope\nFixture.\n\n## Approach\nFixture.\n\n## Acceptance Criteria\n- Works.\n\n## Verification\nTests.\n";
 
-function withRepository(
+async function withRepository(
   tasksMarkdown: string,
   run: (root: string, source: string) => void,
-): void {
-  const root = mkdtempSync(join(tmpdir(), "planlet-completion-"));
-  const source = join(root, "plans", "fixture-plan");
-  const init = spawnSync("git", ["init", "-q", root], { encoding: "utf8" });
-  assert.equal(init.status, 0, init.stderr);
-  mkdirSync(source, { recursive: true });
-  writeFileSync(join(source, "plan.md"), PLAN);
-  writeFileSync(join(source, "tasks.md"), tasksMarkdown);
-  try {
+): Promise<void> {
+  await withGitRoot(async (root) => {
+    const source = join(root, "plans", "fixture-plan");
+    mkdirSync(source, { recursive: true });
+    writeFileSync(join(source, "plan.md"), PLAN);
+    writeFileSync(join(source, "tasks.md"), tasksMarkdown);
     run(root, source);
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
-}
-
-function porcelain(root: string): string[] {
-  const result = spawnSync("git", ["status", "--porcelain"], {
-    cwd: root,
-    encoding: "utf8",
   });
-  assert.equal(result.status, 0, result.stderr);
-  return result.stdout.split("\n").filter((line) => line.length > 0);
-}
-
-function commitAll(root: string, message: string): void {
-  const add = spawnSync("git", ["add", "."], { cwd: root, encoding: "utf8" });
-  assert.equal(add.status, 0, add.stderr);
-  const commit = spawnSync(
-    "git",
-    [
-      "-c",
-      "user.email=planlet@test",
-      "-c",
-      "user.name=Planlet Test",
-      "commit",
-      "-qm",
-      message,
-    ],
-    { cwd: root, encoding: "utf8" },
-  );
-  assert.equal(commit.status, 0, commit.stderr);
 }
 
 const COMPLETE_TASKS =
@@ -72,8 +39,8 @@ const COMPLETE_TASKS =
 const INCOMPLETE_TASKS =
   "# Tasks: Fixture Plan\n\n- [x] T1 First task\n- [ ] T2 Second task\n- [ ] T4 Fourth task\n";
 
-test("normal completion uses one UTC instant for its audit and archive date", () => {
-  withRepository(COMPLETE_TASKS, (root, source) => {
+test("normal completion uses one UTC instant for its audit and archive date", async () => {
+  await withRepository(COMPLETE_TASKS, (root, source) => {
     let clockReads = 0;
     const result = completePlanlet({
       repositoryRoot: root,
@@ -117,8 +84,8 @@ test("normal completion uses one UTC instant for its audit and archive date", ()
   });
 });
 
-test("incomplete override records remaining IDs and the approved reason", () => {
-  withRepository(INCOMPLETE_TASKS, (root, source) => {
+test("incomplete override records remaining IDs and the approved reason", async () => {
+  await withRepository(INCOMPLETE_TASKS, (root, source) => {
     commitAll(root, "base");
     const result = completePlanlet({
       repositoryRoot: root,
@@ -157,8 +124,8 @@ for (const [mode, tasksMarkdown, options] of [
     { allowIncomplete: true, reason: "External gates pending" },
   ],
 ] as const) {
-  test(`a free-form evidence section survives ${mode} completion unchanged`, () => {
-    withRepository(tasksMarkdown, (root) => {
+  test(`a free-form evidence section survives ${mode} completion unchanged`, async () => {
+    await withRepository(tasksMarkdown, (root) => {
       const result = completePlanlet({
         repositoryRoot: root,
         slug: "fixture-plan",
@@ -194,9 +161,9 @@ for (const [mode, tasksMarkdown, options] of [
   });
 }
 
-test("normal completion refuses an empty draft without changing the source", () => {
+test("normal completion refuses an empty draft without changing the source", async () => {
   const draftTasks = "# Tasks: Fixture Plan\n";
-  withRepository(draftTasks, (root, source) => {
+  await withRepository(draftTasks, (root, source) => {
     assert.throws(
       () => completePlanlet({ repositoryRoot: root, slug: "fixture-plan" }),
       (error) => {
@@ -210,8 +177,8 @@ test("normal completion refuses an empty draft without changing the source", () 
   });
 });
 
-test("normal completion refuses incomplete tasks without changing the source", () => {
-  withRepository(INCOMPLETE_TASKS, (root, source) => {
+test("normal completion refuses incomplete tasks without changing the source", async () => {
+  await withRepository(INCOMPLETE_TASKS, (root, source) => {
     assert.throws(
       () => completePlanlet({ repositoryRoot: root, slug: "fixture-plan" }),
       (error) => {
@@ -228,9 +195,9 @@ test("normal completion refuses incomplete tasks without changing the source", (
   });
 });
 
-test("incomplete override rejects invalid reasons with a structured error", () => {
+test("incomplete override rejects invalid reasons with a structured error", async () => {
   for (const reason of [undefined, "", "   ", "first line\nsecond line"]) {
-    withRepository(INCOMPLETE_TASKS, (root, source) => {
+    await withRepository(INCOMPLETE_TASKS, (root, source) => {
       assert.throws(
         () =>
           completePlanlet({
@@ -254,8 +221,8 @@ test("incomplete override rejects invalid reasons with a structured error", () =
   }
 });
 
-test("completion rejects an internal symlink without moving its target", () => {
-  withRepository(COMPLETE_TASKS, (root, source) => {
+test("completion rejects an internal symlink without moving its target", async () => {
+  await withRepository(COMPLETE_TASKS, (root, source) => {
     const target = join(root, "internal-target");
     rmSync(source, { recursive: true });
     mkdirSync(target);
@@ -276,8 +243,8 @@ test("completion rejects an internal symlink without moving its target", () => {
   });
 });
 
-test("completion refuses destination and logical-slug collisions without touching the source", () => {
-  withRepository(COMPLETE_TASKS, (root, source) => {
+test("completion refuses destination and logical-slug collisions without touching the source", async () => {
+  await withRepository(COMPLETE_TASKS, (root, source) => {
     mkdirSync(join(root, "plans", "completed", "2026-07-22-fixture-plan"), {
       recursive: true,
     });
@@ -297,7 +264,7 @@ test("completion refuses destination and logical-slug collisions without touchin
     );
   });
 
-  withRepository(COMPLETE_TASKS, (root, source) => {
+  await withRepository(COMPLETE_TASKS, (root, source) => {
     mkdirSync(join(root, "plans", "completed", "2025-01-01-fixture-plan"), {
       recursive: true,
     });
@@ -318,8 +285,8 @@ test("completion refuses destination and logical-slug collisions without touchin
   });
 });
 
-test("a movement failure keeps the audit so completion can resume", () => {
-  withRepository(COMPLETE_TASKS, (root, source) => {
+test("a movement failure keeps the audit so completion can resume", async () => {
+  await withRepository(COMPLETE_TASKS, (root, source) => {
     assert.throws(
       () =>
         completePlanlet({
@@ -357,12 +324,12 @@ test("a movement failure keeps the audit so completion can resume", () => {
   });
 });
 
-test("completion resumes a valid audit left by process interruption", () => {
+test("completion resumes a valid audit left by process interruption", async () => {
   const interrupted =
     `${COMPLETE_TASKS}\n## Completion\n\n` +
     "- Completed at: 2026-07-22T12:00:00.000Z\n" +
     "- Mode: normal\n";
-  withRepository(interrupted, (root, source) => {
+  await withRepository(interrupted, (root, source) => {
     let clockReads = 0;
     const result = completePlanlet({
       repositoryRoot: root,
@@ -386,8 +353,8 @@ test("completion resumes a valid audit left by process interruption", () => {
   });
 });
 
-test("completion stages the moved planlet and git reports the rename", () => {
-  withRepository(COMPLETE_TASKS, (root, source) => {
+test("completion stages the moved planlet and git reports the rename", async () => {
+  await withRepository(COMPLETE_TASKS, (root, source) => {
     commitAll(root, "base");
     writeFileSync(join(root, "other.txt"), "keep unstaged\n");
 
@@ -404,27 +371,6 @@ test("completion stages the moved planlet and git reports the rename", () => {
       "A  plans/completed/2027-01-02-fixture-plan/tasks.md",
       "D  plans/fixture-plan/tasks.md",
       "R  plans/fixture-plan/plan.md -> plans/completed/2027-01-02-fixture-plan/plan.md",
-    ]);
-  });
-});
-
-test("completion with stage disabled leaves the archived planlet unstaged", () => {
-  withRepository(COMPLETE_TASKS, (root, source) => {
-    commitAll(root, "base");
-
-    const result = completePlanlet({
-      repositoryRoot: root,
-      slug: "fixture-plan",
-      stage: false,
-      dependencies: { now: () => new Date("2027-01-02T00:00:00.125Z") },
-    });
-
-    assert.equal(existsSync(source), false);
-    assert.equal(existsSync(result.destination), true);
-    assert.deepEqual(porcelain(root).sort(), [
-      " D plans/fixture-plan/plan.md",
-      " D plans/fixture-plan/tasks.md",
-      "?? plans/completed/",
     ]);
   });
 });

@@ -6,7 +6,6 @@ export interface CompleteCommandArguments {
   readonly slug: string;
   readonly allowIncomplete?: boolean | undefined;
   readonly reason?: string | undefined;
-  readonly stage?: boolean | undefined;
 }
 
 export function handleComplete(

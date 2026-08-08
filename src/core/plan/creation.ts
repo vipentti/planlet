@@ -6,10 +6,11 @@ import {
   writeFileSync,
 } from "node:fs";
 import { randomUUID } from "node:crypto";
+import { relative } from "node:path";
 
 import type { PlanSummary } from "./models.js";
 import { atomicPublish, resolveSafePath, tryLstat } from "../paths.js";
-import { hasGitMarker, stageFile } from "../git.js";
+import { tryStage } from "../git.js";
 import { assertValidSlug, parseArchiveName } from "./slugs.js";
 import { PlanletError, asWriteConflict } from "../../errors/planlet-error.js";
 
@@ -17,8 +18,6 @@ export interface CreatePlanletOptions {
   readonly repositoryRoot: string;
   readonly slug: string;
   readonly title?: string | undefined;
-  /** Set to false (via --no-stage) to leave the new planlet unstaged. */
-  readonly stage?: boolean | undefined;
   readonly dependencies?: Partial<CreatePlanletDependencies> | undefined;
 }
 
@@ -152,12 +151,12 @@ export function createPlanlet(options: CreatePlanletOptions): PlanSummary {
   });
 
   const warnings: string[] = [];
-  if (options.stage !== false && hasGitMarker(options.repositoryRoot)) {
-    const failure = stageFile(options.repositoryRoot, targetPath);
-    if (failure !== undefined) {
-      warnings.push(`Could not stage new planlet: ${failure}`);
-    }
-  }
+  tryStage(
+    options.repositoryRoot,
+    [relative(options.repositoryRoot, targetPath)],
+    warnings,
+    "new planlet",
+  );
 
   return {
     slug,

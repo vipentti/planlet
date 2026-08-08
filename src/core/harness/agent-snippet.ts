@@ -2,7 +2,7 @@ import { readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { asWriteConflict } from "../../errors/planlet-error.js";
-import { hasGitMarker, stageFile } from "../git.js";
+import { tryStage } from "../git.js";
 import { tryLstat } from "../paths.js";
 import { sha256 } from "./skill-source.js";
 
@@ -231,12 +231,7 @@ export function updateAgentFiles(options: {
     if (outcome.warning !== undefined) warnings.push(outcome.warning);
     if (outcome.state === "added" || outcome.state === "updated") {
       changed = true;
-      if (hasGitMarker(options.repositoryRoot)) {
-        const failure = stageFile(options.repositoryRoot, file);
-        if (failure !== undefined) {
-          warnings.push(`Could not stage ${file}: ${failure}`);
-        }
-      }
+      tryStage(options.repositoryRoot, [file], warnings, file);
     }
   }
 

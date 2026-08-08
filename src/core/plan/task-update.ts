@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { renameSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { relative, resolve } from "node:path";
 
 import type { PlanletState, PlanletTask } from "./models.js";
 import { deriveLifecycleState } from "./status.js";
@@ -10,7 +10,7 @@ import {
 } from "../planlet-lock.js";
 import { assertActivePlanletDirectory, readMarkdown } from "./planlet-files.js";
 import { atomicPublish, resolveSafePath } from "../paths.js";
-import { hasGitMarker, stageFile } from "../git.js";
+import { tryStage } from "../git.js";
 import { assertValidSlug } from "./slugs.js";
 import { parseTaskLine } from "./task-parser.js";
 import { validatePlanletStructure } from "./validation.js";
@@ -23,8 +23,6 @@ export interface UpdateTaskOptions {
   readonly slug: string;
   readonly taskId: string;
   readonly operation: TaskUpdateOperation;
-  /** Set to false (via --no-stage) to leave tasks.md unstaged. */
-  readonly stage?: boolean | undefined;
   readonly dependencies?: Partial<UpdateTaskDependencies>;
 }
 
@@ -221,12 +219,12 @@ function updateTaskLocked(
   });
 
   const warnings = [...validated.warnings];
-  if (options.stage !== false && hasGitMarker(options.repositoryRoot)) {
-    const failure = stageFile(options.repositoryRoot, tasksPath);
-    if (failure !== undefined) {
-      warnings.push(`Could not stage tasks.md: ${failure}`);
-    }
-  }
+  tryStage(
+    options.repositoryRoot,
+    [relative(options.repositoryRoot, tasksPath)],
+    warnings,
+    "tasks.md",
+  );
 
   return {
     slug,

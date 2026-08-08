@@ -1001,7 +1001,7 @@ interface PlanSummary {
 - Make task checking idempotent: checking an already checked task succeeds without duplicating changes.
 - Per-planlet CLI write locks cover concurrent `task check` / `task uncheck` / `complete` in one repository working tree on one machine, for one user. Because the lock root lives in the OS temp directory, a single checkout mounted into separate machines, containers, or user accounts gets separate lock namespaces. Cross-branch edits of `tasks.md` still surface as ordinary git merge conflicts on checkbox lines.
 - Optional precondition hashes remain a possible future hardening for non-CLI writers.
-- When a command writes or renames plan files inside a git working tree, it stages exactly those paths with an explicit-path `git add`, gated on a git marker (`.git` present) so non-git roots never invoke git. Git failures become warnings, never command failures. The CLI never stages with `git add -A`, never commits, and never inspects working-tree cleanliness; index management otherwise remains the user's responsibility. `--no-stage` opts out per command. Completion still uses a plain filesystem move; git detects the rename from the resulting delete-plus-add.
+- When a command writes or renames plan files inside a git working tree, it stages exactly those paths with an explicit-path `git add`, gated on a git marker (`.git` present) so non-git roots never invoke git. Git failures become warnings, never command failures. The CLI never stages with `git add -A`, never commits, and never inspects working-tree cleanliness; index management otherwise remains the user's responsibility. Completion still uses a plain filesystem move; git detects the rename from the resulting delete-plus-add.
 
 ## 19. Validation Rules
 

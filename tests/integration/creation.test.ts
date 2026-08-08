@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
 import {
   mkdirSync,
   mkdtempSync,
@@ -19,33 +18,18 @@ import {
 } from "../../src/core/plan/creation.js";
 import { validatePlanletStructure } from "../../src/core/plan/validation.js";
 import { PlanletError } from "../../src/errors/planlet-error.js";
+import { porcelain, withGitRoot } from "./git-fixtures.js";
 
-function withRepository(run: (root: string) => void): void {
-  const root = mkdtempSync(join(tmpdir(), "planlet-creation-"));
-  const init = spawnSync("git", ["init", "-q", root], { encoding: "utf8" });
-  assert.equal(init.status, 0, init.stderr);
-  try {
-    run(root);
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
-}
-
-function porcelain(root: string): string[] {
-  const result = spawnSync("git", ["status", "--porcelain"], {
-    cwd: root,
-    encoding: "utf8",
-  });
-  assert.equal(result.status, 0, result.stderr);
-  return result.stdout.split("\n").filter((line) => line.length > 0);
+async function withRepository(run: (root: string) => void): Promise<void> {
+  await withGitRoot(async (root) => run(root));
 }
 
 function readStub(root: string, slug: string, filename: string): string {
   return readFileSync(join(root, "plans", slug, filename), "utf8");
 }
 
-test("creation initializes plans and publishes exactly two derived-title stubs", () => {
-  withRepository((root) => {
+test("creation initializes plans and publishes exactly two derived-title stubs", async () => {
+  await withRepository((root) => {
     const summary = createPlanlet({
       repositoryRoot: root,
       slug: "api-v2-core",
@@ -80,8 +64,8 @@ test("creation initializes plans and publishes exactly two derived-title stubs",
   });
 });
 
-test("creation trims explicit titles and rejects empty or multiline titles", () => {
-  withRepository((root) => {
+test("creation trims explicit titles and rejects empty or multiline titles", async () => {
+  await withRepository((root) => {
     createPlanlet({
       repositoryRoot: root,
       slug: "custom-title",
@@ -98,7 +82,7 @@ test("creation trims explicit titles and rejects empty or multiline titles", () 
   });
 
   for (const title of ["   ", "First line\nSecond line", "First\rSecond"]) {
-    withRepository((root) => {
+    await withRepository((root) => {
       assert.throws(
         () => createPlanlet({ repositoryRoot: root, slug: "bad-title", title }),
         (error) =>
@@ -109,8 +93,8 @@ test("creation trims explicit titles and rejects empty or multiline titles", () 
   }
 });
 
-test("creation refuses active and completed logical-slug collisions", () => {
-  withRepository((root) => {
+test("creation refuses active and completed logical-slug collisions", async () => {
+  await withRepository((root) => {
     createPlanlet({ repositoryRoot: root, slug: "existing-plan" });
     assert.throws(
       () => createPlanlet({ repositoryRoot: root, slug: "existing-plan" }),
@@ -119,7 +103,7 @@ test("creation refuses active and completed logical-slug collisions", () => {
     );
   });
 
-  withRepository((root) => {
+  await withRepository((root) => {
     mkdirSync(join(root, "plans", "completed", "2026-07-22-existing-plan"), {
       recursive: true,
     });
@@ -135,8 +119,8 @@ test("creation refuses active and completed logical-slug collisions", () => {
   });
 });
 
-test("creation removes its temporary directory after a partial write failure", () => {
-  withRepository((root) => {
+test("creation removes its temporary directory after a partial write failure", async () => {
+  await withRepository((root) => {
     let writes = 0;
     assert.throws(
       () =>
@@ -163,8 +147,8 @@ test("creation removes its temporary directory after a partial write failure", (
   });
 });
 
-test("creation translates cleanup failures without masking the creation failure", () => {
-  withRepository((root) => {
+test("creation translates cleanup failures without masking the creation failure", async () => {
+  await withRepository((root) => {
     const writeFailure = new Error("simulated write failure");
     const cleanupFailure = new Error("simulated cleanup failure");
     const temporaryName = ".cleanup-failure.create-fixture";
@@ -207,8 +191,8 @@ test("creation translates cleanup failures without masking the creation failure"
   });
 });
 
-test("creation stages the new planlet directory in a git repository", () => {
-  withRepository((root) => {
+test("creation stages the new planlet directory in a git repository", async () => {
+  await withRepository((root) => {
     const summary = createPlanlet({
       repositoryRoot: root,
       slug: "api-v2-core",
@@ -219,19 +203,6 @@ test("creation stages the new planlet directory in a git repository", () => {
       "A  plans/api-v2-core/plan.md",
       "A  plans/api-v2-core/tasks.md",
     ]);
-  });
-});
-
-test("creation with stage disabled leaves the new planlet untracked", () => {
-  withRepository((root) => {
-    const summary = createPlanlet({
-      repositoryRoot: root,
-      slug: "api-v2-core",
-      stage: false,
-    });
-
-    assert.deepEqual(summary.warnings, []);
-    assert.deepEqual(porcelain(root), ["?? plans/"]);
   });
 });
 
@@ -260,9 +231,8 @@ test("a creation git failure becomes a warning and creation still succeeds", () 
     });
 
     assert.equal(readStub(root, "api-v2-core", "plan.md"), "# Api V2 Core\n");
-    assert.deepEqual(summary.warnings, [
-      "Could not stage new planlet: fatal: not a git repository: (null)",
-    ]);
+    assert.equal(summary.warnings.length, 1);
+    assert.ok(summary.warnings[0]!.startsWith("Could not stage new planlet"));
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

@@ -136,27 +136,26 @@ Running `planlet` with no command displays the active-plan dashboard.
 
 When the repository uses git, `create`, `task check` / `task uncheck`, and
 `complete` stage the planlet files they write or move with explicit-path
-`git add`, scoped to exactly those paths. Pass `--no-stage` to leave the
-written files unstaged. A git failure becomes a warning, never a failed
-command; repositories without git are never touched.
+`git add`, scoped to exactly those paths. A git failure becomes a warning,
+never a failed command; repositories without git are never touched.
 
 ## Commands
 
-| Command                                                             | Purpose                                                                 |
-| ------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| `init [--tools <ids>] [--force] [--no-agents]`                      | Create `plans/`, install harness skills, write agent onboarding section |
-| `update [--tools <ids>] [--force]`                                  | Refresh installed skill copies from canonical sources                   |
-| `tools`                                                             | Report skill destinations and installation state                        |
-| `onboard`                                                           | Print the agent onboarding snippet                                      |
-| `list [--state <state>] [--completed]`                              | List planlets                                                           |
-| `create <slug> [--title <title>] [--no-stage]`                      | Scaffold a new planlet                                                  |
-| `show <slug> [--part plan\|tasks\|summary]`                         | Show planlet content                                                    |
-| `status <slug>`                                                     | Report state and task counts                                            |
-| `validate [<slug>\|--all]`                                          | Validate planlet structure                                              |
-| `tasks <slug> [--remaining\|--completed]`                           | List tasks                                                              |
-| `task check\|uncheck <slug> <task-id> [--no-stage]`                 | Toggle a task checkbox                                                  |
-| `complete <slug> [--allow-incomplete --reason <text>] [--no-stage]` | Archive a planlet under `plans/completed/`                              |
-| `help [command]`                                                    | Show usage                                                              |
+| Command                                                | Purpose                                                                 |
+| ------------------------------------------------------ | ----------------------------------------------------------------------- |
+| `init [--tools <ids>] [--force] [--no-agents]`         | Create `plans/`, install harness skills, write agent onboarding section |
+| `update [--tools <ids>] [--force]`                     | Refresh installed skill copies from canonical sources                   |
+| `tools`                                                | Report skill destinations and installation state                        |
+| `onboard`                                              | Print the agent onboarding snippet                                      |
+| `list [--state <state>] [--completed]`                 | List planlets                                                           |
+| `create <slug> [--title <title>]`                      | Scaffold a new planlet                                                  |
+| `show <slug> [--part plan\|tasks\|summary]`            | Show planlet content                                                    |
+| `status <slug>`                                        | Report state and task counts                                            |
+| `validate [<slug>\|--all]`                             | Validate planlet structure                                              |
+| `tasks <slug> [--remaining\|--completed]`              | List tasks                                                              |
+| `task check\|uncheck <slug> <task-id>`                 | Toggle a task checkbox                                                  |
+| `complete <slug> [--allow-incomplete --reason <text>]` | Archive a planlet under `plans/completed/`                              |
+| `help [command]`                                       | Show usage                                                              |
 
 Global options: `--root <path>` selects the repository root, `--full` returns
 complete `show --part plan|tasks` content, and `--version` prints the version

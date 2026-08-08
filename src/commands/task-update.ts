@@ -6,7 +6,6 @@ export interface TaskUpdateCommandArguments {
   readonly operation: "check" | "uncheck";
   readonly slug: string;
   readonly taskId: string;
-  readonly stage?: boolean | undefined;
 }
 
 export function handleTaskUpdate(
