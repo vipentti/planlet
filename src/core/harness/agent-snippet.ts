@@ -231,7 +231,11 @@ export function updateAgentFiles(options: {
     if (outcome.warning !== undefined) warnings.push(outcome.warning);
     if (outcome.state === "added" || outcome.state === "updated") {
       changed = true;
-      tryStage(options.repositoryRoot, [file], warnings, file);
+      tryStage(
+        options.repositoryRoot,
+        [join(options.repositoryRoot, file)],
+        warnings,
+      );
     }
   }
 

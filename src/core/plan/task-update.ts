@@ -219,7 +219,7 @@ function updateTaskLocked(
   });
 
   const warnings = [...validated.warnings];
-  tryStage(options.repositoryRoot, [tasksPath], warnings, "tasks.md");
+  tryStage(options.repositoryRoot, [tasksPath], warnings);
 
   return {
     slug,

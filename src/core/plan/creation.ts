@@ -150,7 +150,7 @@ export function createPlanlet(options: CreatePlanletOptions): PlanSummary {
   });
 
   const warnings: string[] = [];
-  tryStage(options.repositoryRoot, [targetPath], warnings, "new planlet");
+  tryStage(options.repositoryRoot, [targetPath], warnings);
 
   return {
     slug,

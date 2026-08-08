@@ -25,6 +25,24 @@ async function withPlanlet(
   tasksMarkdown: string,
   run: (root: string, tasksPath: string) => void,
 ): Promise<void> {
+  const root = mkdtempSync(join(tmpdir(), "planlet-task-update-"));
+  const planletPath = join(root, "plans", "fixture-plan");
+  const tasksPath = join(planletPath, "tasks.md");
+  mkdirSync(join(root, ".git"));
+  mkdirSync(planletPath, { recursive: true });
+  writeFileSync(join(planletPath, "plan.md"), "# Fixture Plan\n");
+  writeFileSync(tasksPath, tasksMarkdown);
+  try {
+    run(root, tasksPath);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+async function withGitPlanlet(
+  tasksMarkdown: string,
+  run: (root: string, tasksPath: string) => void,
+): Promise<void> {
   await withGitRoot(async (root) => {
     const planletPath = join(root, "plans", "fixture-plan");
     const tasksPath = join(planletPath, "tasks.md");
@@ -327,7 +345,7 @@ test("task mutations cannot diverge from an active completion record", async () 
 });
 
 test("task check stages only tasks.md in a git repository", async () => {
-  await withPlanlet(MARKDOWN, (root, tasksPath) => {
+  await withGitPlanlet(MARKDOWN, (root, tasksPath) => {
     commitAll(root, "base");
     writeFileSync(join(root, "unrelated.txt"), "keep unstaged\n");
 
@@ -383,7 +401,7 @@ test("task check stages in a git worktree", async () => {
 });
 
 test("an unchanged task update stages nothing", async () => {
-  await withPlanlet(MARKDOWN, (root) => {
+  await withGitPlanlet(MARKDOWN, (root) => {
     commitAll(root, "base");
 
     const result = updateTask({
@@ -441,9 +459,7 @@ test("a git failure becomes a warning and the update still succeeds", () => {
 
     assert.equal(result.changed, true);
     assert.equal(
-      result.warnings.some((warning) =>
-        warning.startsWith("Could not stage tasks.md"),
-      ),
+      result.warnings.some((warning) => warning.startsWith("Could not stage")),
       true,
     );
   } finally {

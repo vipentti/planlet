@@ -136,7 +136,8 @@ Running `planlet` with no command displays the active-plan dashboard.
 
 When the repository uses git, `create`, `task check` / `task uncheck`, and
 `complete` stage the planlet files they write or move with explicit-path
-`git add`, scoped to exactly those paths. A git failure becomes a warning,
+`git add`, scoped to exactly those paths. Staging is unconditional in git
+roots — there is no `--no-stage` escape hatch. A git failure becomes a warning,
 never a failed command; repositories without git are never touched.
 
 ## Commands

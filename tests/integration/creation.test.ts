@@ -18,9 +18,24 @@ import {
 } from "../../src/core/plan/creation.js";
 import { validatePlanletStructure } from "../../src/core/plan/validation.js";
 import { PlanletError } from "../../src/errors/planlet-error.js";
-import { porcelain, withGitRoot } from "./git-fixtures.js";
+import {
+  addWorktree,
+  commitAll,
+  porcelain,
+  withGitRoot,
+} from "./git-fixtures.js";
 
 async function withRepository(run: (root: string) => void): Promise<void> {
+  const root = mkdtempSync(join(tmpdir(), "planlet-creation-"));
+  mkdirSync(join(root, ".git"));
+  try {
+    run(root);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+async function withGitRepository(run: (root: string) => void): Promise<void> {
   await withGitRoot(async (root) => run(root));
 }
 
@@ -29,7 +44,7 @@ function readStub(root: string, slug: string, filename: string): string {
 }
 
 test("creation initializes plans and publishes exactly two derived-title stubs", async () => {
-  await withRepository((root) => {
+  await withGitRepository((root) => {
     const summary = createPlanlet({
       repositoryRoot: root,
       slug: "api-v2-core",
@@ -192,7 +207,7 @@ test("creation translates cleanup failures without masking the creation failure"
 });
 
 test("creation stages the new planlet directory in a git repository", async () => {
-  await withRepository((root) => {
+  await withGitRepository((root) => {
     const summary = createPlanlet({
       repositoryRoot: root,
       slug: "api-v2-core",
@@ -232,8 +247,34 @@ test("a creation git failure becomes a warning and creation still succeeds", () 
 
     assert.equal(readStub(root, "api-v2-core", "plan.md"), "# Api V2 Core\n");
     assert.equal(summary.warnings.length, 1);
-    assert.ok(summary.warnings[0]!.startsWith("Could not stage new planlet"));
+    assert.ok(summary.warnings[0]!.startsWith("Could not stage"));
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test("creation stages the new planlet directory in a git worktree", async () => {
+  await withGitRoot(async (root) => {
+    writeFileSync(join(root, "placeholder.txt"), "x\n");
+    commitAll(root, "base");
+    const worktreePath = join(
+      tmpdir(),
+      `planlet-creation-worktree-${Math.random().toString(36).slice(2)}`,
+    );
+    addWorktree(root, worktreePath, "fixture-wt");
+    try {
+      const summary = createPlanlet({
+        repositoryRoot: worktreePath,
+        slug: "api-v2-core",
+      });
+
+      assert.deepEqual(summary.warnings, []);
+      assert.deepEqual(porcelain(worktreePath).sort(), [
+        "A  plans/api-v2-core/plan.md",
+        "A  plans/api-v2-core/tasks.md",
+      ]);
+    } finally {
+      rmSync(worktreePath, { recursive: true, force: true });
+    }
+  });
 });
