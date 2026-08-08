@@ -74,14 +74,15 @@ When a PR checks the last unchecked task of a plan, also run
 
 ## Changelog
 
-When a change is user-visible product, Planlet CLI (`planlet`), or published-skill
-behavior, update [`CHANGELOG.md`](CHANGELOG.md) under `[Unreleased]` in the same
-change set. Skip an entry — and say so in the PR — for chore, internal-only, or
-contributor-doc-only work, and for repository-local maintainer tooling under
-`scripts/` (for example `release.mjs` and changelog-release helpers). Those
-scripts are not published product surface; document operator-facing script
-changes in [`RELEASING.md`](RELEASING.md) instead. Format and release-cut
-procedure live there; do not duplicate them here.
+A changelog entry is REQUIRED when a change is user-visible product, Planlet
+CLI (`planlet`), or published-skill behavior: update [`CHANGELOG.md`](CHANGELOG.md)
+under `[Unreleased]` in the same change set. The entry is optional only for
+chore, internal-only, or contributor-doc-only work, and for repository-local
+maintainer tooling under `scripts/` (for example `release.mjs` and
+changelog-release helpers); skip it and say so in the PR. Those scripts are not
+published product surface; document operator-facing script changes in
+[`RELEASING.md`](RELEASING.md) instead. Format and release-cut procedure live
+there; do not duplicate them here.
 
 ## Planlet file conventions
 
