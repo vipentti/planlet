@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
   "files": {
-    "planlet-complete/SKILL.md": "ee9ae73747273d62bc8390a464203289e72be4b2a8a32ccec8941f15b74952d3",
+    "planlet-complete/SKILL.md": "4d24af4b7603349deaacc8ece7c1c6b84ba07f9eed33b8bb26b01a7ff7c054e5",
     "planlet-complete/agents/openai.yaml": "f4df999b41feddee85f906ceddf84ced3a5ef60daf7467e7a37bec158cb8451e",
     "planlet-complete/references/completion-guidance.md": "0a14fb567098df8bf77e14769df4e994e1d653459b8a870962152af133af34cf",
     "planlet-implement/SKILL.md": "5c5cc63e6e05fcb4ffae0080b75e6ec4b0f09cc48720f4775e345a1650cf7096",
