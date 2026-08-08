@@ -6,6 +6,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and thi
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-08-08
+
 ### Fixed
 
 - planlet-implement and planlet-complete skills now state the commit-boundary invariant: planlet state must never trail the repository state it describes across a commit, push, or branch boundary. Commit authority and commit granularity stay with the user; staged planlet changes may be left pending for the caller to commit.
@@ -104,7 +106,8 @@ First release. Everything below is new, so these notes describe what Planlet is 
 - Unexpected failures surface as a structured `internal_error` with no stack or path leakage; set `PLANLET_DEBUG=1` for diagnostic detail.
 - Planlet and repository paths reject directory traversal and symlink escape, and file writes are atomic or recoverable.
 
-[Unreleased]: https://github.com/vipentti/planlet/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/vipentti/planlet/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/vipentti/planlet/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/vipentti/planlet/compare/v0.3.2...v0.4.0
 [0.3.2]: https://github.com/vipentti/planlet/compare/v0.2.0...v0.3.2
 [0.2.0]: https://github.com/vipentti/planlet/compare/v0.1.2...v0.2.0
