@@ -142,7 +142,7 @@ path-scoped `git add -A` when the moved planlet was already tracked or staged
 never tracked. Staging is unconditional in git roots — there is no
 `--no-stage` escape hatch. A git failure becomes a warning, never a failed
 command; repositories without git are never touched. `planlet create` writes
-scaffold stubs and does not stage them.
+scaffold stubs and does not stage them. The CLI never commits, and Planlet operations do not require the agent to commit. When a commit is made, include staged Planlet state with the repository state it records; task and completion changes may be batched into one commit.
 
 ## Commands
 

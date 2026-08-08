@@ -41,4 +41,4 @@ Do not implement remaining tasks, complete several planlets, overwrite a destina
 
 ## Finish
 
-Report logical slug, recorded UTC timestamp, mode, remaining task IDs for override, final archive path, whether an optional evidence section was present, and post-completion validation result. If operation stopped, report exact source state and blocking code.
+Completion does not itself require a commit. Keep archive and completion changes with the repository state they describe. If the user requested a commit or the surrounding workflow grants commit authority, verified implementation, task updates, and completion changes may share one atomic commit; no separate completion commit is required. Otherwise leave the intended changes staged and report them for the caller to commit. Before performing a push or branch switch, ensure no Planlet state would be separated from the repository state it describes. Report logical slug, recorded UTC timestamp, mode, remaining task IDs for override, final archive path, whether an optional evidence section was present, and post-completion validation result. If operation stopped, report exact source state and blocking code.
