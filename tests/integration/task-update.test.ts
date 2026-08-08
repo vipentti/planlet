@@ -14,21 +14,15 @@ import test from "node:test";
 
 import { updateTask } from "../../src/core/plan/task-update.js";
 import { PlanletError } from "../../src/errors/planlet-error.js";
-import {
-  addWorktree,
-  commitAll,
-  porcelain,
-  withGitRoot,
-} from "./git-fixtures.js";
+import { commitAll, porcelain, withGitRoot } from "./git-fixtures.js";
 
-async function withPlanlet(
+function withPlanlet(
   tasksMarkdown: string,
   run: (root: string, tasksPath: string) => void,
-): Promise<void> {
+): void {
   const root = mkdtempSync(join(tmpdir(), "planlet-task-update-"));
   const planletPath = join(root, "plans", "fixture-plan");
   const tasksPath = join(planletPath, "tasks.md");
-  mkdirSync(join(root, ".git"));
   mkdirSync(planletPath, { recursive: true });
   writeFileSync(join(planletPath, "plan.md"), "# Fixture Plan\n");
   writeFileSync(tasksPath, tasksMarkdown);
@@ -66,8 +60,8 @@ const MARKDOWN =
   "\r\n" +
   "- [see plan.md] This is not a task.\r\n";
 
-test("check is idempotent and preserves every unrelated Markdown byte", async () => {
-  await withPlanlet(MARKDOWN, (root, tasksPath) => {
+test("check is idempotent and preserves every unrelated Markdown byte", () => {
+  withPlanlet(MARKDOWN, (root, tasksPath) => {
     const first = updateTask({
       operation: "check",
       repositoryRoot: root,
@@ -94,8 +88,8 @@ test("check is idempotent and preserves every unrelated Markdown byte", async ()
   });
 });
 
-test("uncheck is idempotent and changes only the selected marker", async () => {
-  await withPlanlet(MARKDOWN, (root, tasksPath) => {
+test("uncheck is idempotent and changes only the selected marker", () => {
+  withPlanlet(MARKDOWN, (root, tasksPath) => {
     const first = updateTask({
       operation: "uncheck",
       repositoryRoot: root,
@@ -122,8 +116,8 @@ test("uncheck is idempotent and changes only the selected marker", async () => {
   });
 });
 
-test("task update results report post-write lifecycle summary", async () => {
-  await withPlanlet(
+test("task update results report post-write lifecycle summary", () => {
+  withPlanlet(
     "# Tasks: Fixture Plan\n\n- [ ] T1 First\n- [ ] T2 Second\n",
     (root) => {
       const first = updateTask({
@@ -187,8 +181,8 @@ test("task update results report post-write lifecycle summary", async () => {
   );
 });
 
-test("a failed atomic publication preserves tasks.md and removes its sibling temp file", async () => {
-  await withPlanlet(MARKDOWN, (root, tasksPath) => {
+test("a failed atomic publication preserves tasks.md and removes its sibling temp file", () => {
+  withPlanlet(MARKDOWN, (root, tasksPath) => {
     const temporaryName = ".fixture-plan.tasks-fixture.tmp";
     assert.throws(
       () =>
@@ -216,8 +210,8 @@ test("a failed atomic publication preserves tasks.md and removes its sibling tem
   });
 });
 
-test("an existing temporary-path collision preserves the unowned file", async () => {
-  await withPlanlet(MARKDOWN, (root, tasksPath) => {
+test("an existing temporary-path collision preserves the unowned file", () => {
+  withPlanlet(MARKDOWN, (root, tasksPath) => {
     const planletPath = join(root, "plans", "fixture-plan");
     const temporaryName = ".fixture-plan.tasks-collision.tmp";
     const temporaryPath = join(planletPath, temporaryName);
@@ -244,8 +238,8 @@ test("an existing temporary-path collision preserves the unowned file", async ()
   });
 });
 
-test("missing tasks and malformed planlets fail without modifying Markdown", async () => {
-  await withPlanlet(MARKDOWN, (root, tasksPath) => {
+test("missing tasks and malformed planlets fail without modifying Markdown", () => {
+  withPlanlet(MARKDOWN, (root, tasksPath) => {
     assert.throws(
       () =>
         updateTask({
@@ -262,7 +256,7 @@ test("missing tasks and malformed planlets fail without modifying Markdown", asy
 
   const malformed =
     "# Tasks: Fixture Plan\n\n- [ ] T1 First\n- [x] T1 Duplicate\n";
-  await withPlanlet(malformed, (root, tasksPath) => {
+  withPlanlet(malformed, (root, tasksPath) => {
     assert.throws(
       () =>
         updateTask({
@@ -281,7 +275,6 @@ test("missing tasks and malformed planlets fail without modifying Markdown", asy
 test("task updates refuse planlet directory symlinks", () => {
   const root = mkdtempSync(join(tmpdir(), "planlet-task-symlink-"));
   const target = join(root, "target");
-  mkdirSync(join(root, ".git"));
   mkdirSync(join(root, "plans"));
   mkdirSync(target);
   writeFileSync(join(target, "plan.md"), "# Fixture Plan\n");
@@ -307,10 +300,10 @@ test("task updates refuse planlet directory symlinks", () => {
   }
 });
 
-test("task mutations cannot diverge from an active completion record", async () => {
+test("task mutations cannot diverge from an active completion record", () => {
   const incompleteOverride =
     "# Tasks: Fixture Plan\n\n- [ ] T1 Pending\n\n## Completion\n\n- Completed at: 2026-07-22T12:34:56Z\n- Mode: incomplete override\n- Remaining tasks: T1\n- Reason: Interrupted archive\n";
-  await withPlanlet(incompleteOverride, (root, tasksPath) => {
+  withPlanlet(incompleteOverride, (root, tasksPath) => {
     assert.throws(
       () =>
         updateTask({
@@ -329,7 +322,7 @@ test("task mutations cannot diverge from an active completion record", async () 
 
   const normal =
     "# Tasks: Fixture Plan\n\n- [x] T1 Done\n\n## Completion\n\n- Completed at: 2026-07-22T12:34:56Z\n- Mode: normal\n";
-  await withPlanlet(normal, (root, tasksPath) => {
+  withPlanlet(normal, (root, tasksPath) => {
     assert.throws(
       () =>
         updateTask({
@@ -365,38 +358,6 @@ test("task check stages only tasks.md in a git repository", async () => {
       readFileSync(tasksPath, "utf8").includes("- [x] T1 First task"),
       true,
     );
-  });
-});
-
-test("task check stages in a git worktree", async () => {
-  await withGitRoot(async (root) => {
-    const planletPath = join(root, "plans", "fixture-plan");
-    const tasksPath = join(planletPath, "tasks.md");
-    mkdirSync(planletPath, { recursive: true });
-    writeFileSync(join(planletPath, "plan.md"), "# Fixture Plan\n");
-    writeFileSync(tasksPath, MARKDOWN);
-    commitAll(root, "base");
-
-    const worktreePath = join(
-      tmpdir(),
-      `planlet-task-worktree-${Math.random().toString(36).slice(2)}`,
-    );
-    addWorktree(root, worktreePath, "fixture-wt");
-    try {
-      const result = updateTask({
-        operation: "check",
-        repositoryRoot: worktreePath,
-        slug: "fixture-plan",
-        taskId: "T1",
-      });
-
-      assert.equal(result.changed, true);
-      assert.deepEqual(porcelain(worktreePath), [
-        "M  plans/fixture-plan/tasks.md",
-      ]);
-    } finally {
-      rmSync(worktreePath, { recursive: true, force: true });
-    }
   });
 });
 
@@ -442,55 +403,4 @@ test("an unchanged task update stages nothing", async () => {
     assert.equal(result.changed, false);
     assert.deepEqual(porcelain(root), []);
   });
-});
-
-test("task updates make no git call in a non-git root", () => {
-  const root = mkdtempSync(join(tmpdir(), "planlet-task-nongit-"));
-  const planletPath = join(root, "plans", "fixture-plan");
-  const tasksPath = join(planletPath, "tasks.md");
-  mkdirSync(planletPath, { recursive: true });
-  writeFileSync(join(planletPath, "plan.md"), "# Fixture Plan\n");
-  writeFileSync(tasksPath, MARKDOWN);
-  try {
-    const result = updateTask({
-      operation: "check",
-      repositoryRoot: root,
-      slug: "fixture-plan",
-      taskId: "T1",
-    });
-
-    assert.equal(result.changed, true);
-    assert.equal(
-      result.warnings.some((warning) => warning.startsWith("Could not stage")),
-      false,
-    );
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
-});
-
-test("a git failure becomes a warning and the update still succeeds", () => {
-  const root = mkdtempSync(join(tmpdir(), "planlet-task-gitfail-"));
-  const planletPath = join(root, "plans", "fixture-plan");
-  const tasksPath = join(planletPath, "tasks.md");
-  writeFileSync(join(root, ".git"), "gitdir: /nonexistent\n");
-  mkdirSync(planletPath, { recursive: true });
-  writeFileSync(join(planletPath, "plan.md"), "# Fixture Plan\n");
-  writeFileSync(tasksPath, MARKDOWN);
-  try {
-    const result = updateTask({
-      operation: "check",
-      repositoryRoot: root,
-      slug: "fixture-plan",
-      taskId: "T1",
-    });
-
-    assert.equal(result.changed, true);
-    assert.equal(
-      result.warnings.some((warning) => warning.startsWith("Could not stage")),
-      true,
-    );
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
 });

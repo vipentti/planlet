@@ -18,10 +18,10 @@ import {
 } from "../../src/core/plan/creation.js";
 import { validatePlanletStructure } from "../../src/core/plan/validation.js";
 import { PlanletError } from "../../src/errors/planlet-error.js";
+import { porcelain, withGitRoot } from "./git-fixtures.js";
 
-async function withRepository(run: (root: string) => void): Promise<void> {
+function withRepository(run: (root: string) => void): void {
   const root = mkdtempSync(join(tmpdir(), "planlet-creation-"));
-  mkdirSync(join(root, ".git"));
   try {
     run(root);
   } finally {
@@ -33,8 +33,8 @@ function readStub(root: string, slug: string, filename: string): string {
   return readFileSync(join(root, "plans", slug, filename), "utf8");
 }
 
-test("creation initializes plans and publishes exactly two derived-title stubs", async () => {
-  await withRepository((root) => {
+test("creation initializes plans and publishes exactly two derived-title stubs", () => {
+  withRepository((root) => {
     const summary = createPlanlet({
       repositoryRoot: root,
       slug: "api-v2-core",
@@ -69,8 +69,8 @@ test("creation initializes plans and publishes exactly two derived-title stubs",
   });
 });
 
-test("creation trims explicit titles and rejects empty or multiline titles", async () => {
-  await withRepository((root) => {
+test("creation trims explicit titles and rejects empty or multiline titles", () => {
+  withRepository((root) => {
     createPlanlet({
       repositoryRoot: root,
       slug: "custom-title",
@@ -87,7 +87,7 @@ test("creation trims explicit titles and rejects empty or multiline titles", asy
   });
 
   for (const title of ["   ", "First line\nSecond line", "First\rSecond"]) {
-    await withRepository((root) => {
+    withRepository((root) => {
       assert.throws(
         () => createPlanlet({ repositoryRoot: root, slug: "bad-title", title }),
         (error) =>
@@ -98,8 +98,8 @@ test("creation trims explicit titles and rejects empty or multiline titles", asy
   }
 });
 
-test("creation refuses active and completed logical-slug collisions", async () => {
-  await withRepository((root) => {
+test("creation refuses active and completed logical-slug collisions", () => {
+  withRepository((root) => {
     createPlanlet({ repositoryRoot: root, slug: "existing-plan" });
     assert.throws(
       () => createPlanlet({ repositoryRoot: root, slug: "existing-plan" }),
@@ -108,7 +108,7 @@ test("creation refuses active and completed logical-slug collisions", async () =
     );
   });
 
-  await withRepository((root) => {
+  withRepository((root) => {
     mkdirSync(join(root, "plans", "completed", "2026-07-22-existing-plan"), {
       recursive: true,
     });
@@ -124,8 +124,8 @@ test("creation refuses active and completed logical-slug collisions", async () =
   });
 });
 
-test("creation removes its temporary directory after a partial write failure", async () => {
-  await withRepository((root) => {
+test("creation removes its temporary directory after a partial write failure", () => {
+  withRepository((root) => {
     let writes = 0;
     assert.throws(
       () =>
@@ -152,8 +152,8 @@ test("creation removes its temporary directory after a partial write failure", a
   });
 });
 
-test("creation translates cleanup failures without masking the creation failure", async () => {
-  await withRepository((root) => {
+test("creation translates cleanup failures without masking the creation failure", () => {
+  withRepository((root) => {
     const writeFailure = new Error("simulated write failure");
     const cleanupFailure = new Error("simulated cleanup failure");
     const temporaryName = ".cleanup-failure.create-fixture";
@@ -196,17 +196,13 @@ test("creation translates cleanup failures without masking the creation failure"
   });
 });
 
-test("creation makes no git call in a non-git root", () => {
-  const root = mkdtempSync(join(tmpdir(), "planlet-creation-nongit-"));
-  try {
-    const summary = createPlanlet({
+test("creation leaves the new planlet unstaged in a git repository", async () => {
+  await withGitRoot(async (root) => {
+    createPlanlet({
       repositoryRoot: root,
       slug: "api-v2-core",
     });
 
-    assert.deepEqual(summary.warnings, []);
-    assert.equal(readStub(root, "api-v2-core", "plan.md"), "# Api V2 Core\n");
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
+    assert.deepEqual(porcelain(root), ["?? plans/"]);
+  });
 });

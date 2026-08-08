@@ -72,7 +72,6 @@ function decodedRecord(output: string): Record<string, unknown> {
 
 async function withRoot(run: (root: string) => Promise<void>): Promise<void> {
   const root = mkdtempSync(join(tmpdir(), "planlet-install-command-"));
-  mkdirSync(join(root, ".git"));
   try {
     await run(root);
   } finally {

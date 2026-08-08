@@ -21,7 +21,6 @@ import { PlanletError } from "../../src/errors/planlet-error.js";
 
 function withRepository(run: (root: string) => void): void {
   const root = mkdtempSync(join(tmpdir(), "planlet-read-only-"));
-  mkdirSync(join(root, ".git"));
   mkdirSync(join(root, "plans"));
   try {
     run(root);

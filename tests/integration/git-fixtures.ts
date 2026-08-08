@@ -6,7 +6,7 @@ import { join } from "node:path";
 
 /** Creates a real git repository under a fresh temp directory and cleans up. */
 export async function withGitRoot(
-  run: (root: string) => Promise<void>,
+  run: (root: string) => void | Promise<void>,
 ): Promise<void> {
   const root = mkdtempSync(join(tmpdir(), "planlet-git-"));
   const init = spawnSync("git", ["init", "-q", root], { encoding: "utf8" });

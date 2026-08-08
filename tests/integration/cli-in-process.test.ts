@@ -25,7 +25,6 @@ async function withRepository(
   run: (root: string) => Promise<void>,
 ): Promise<void> {
   const root = mkdtempSync(join(tmpdir(), "planlet-cli-"));
-  mkdirSync(join(root, ".git"));
   mkdirSync(join(root, "plans"));
   try {
     await run(root);

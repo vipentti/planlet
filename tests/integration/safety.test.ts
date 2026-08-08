@@ -48,7 +48,6 @@ function withRepository(
 ): void {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "planlet-safety-")));
   const outside = realpathSync(mkdtempSync(join(tmpdir(), "planlet-escape-")));
-  mkdirSync(join(root, ".git"));
   if (options.plans !== false) {
     mkdirSync(join(root, "plans"));
   }

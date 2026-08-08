@@ -66,19 +66,22 @@ function withGitMarker(
 
 /**
  * Stages the given paths with one explicit `git add`, appending a warning to
- * `warnings` on failure. The guard every task-mutation command uses: git
- * failure is a warning, never a failed command.
+ * `warnings` on failure. `label` names the paths in warnings independently of
+ * the git pathspec (so callers can show a repository-relative name). The guard
+ * every task-mutation command uses: git failure is a warning, never a failed
+ * command.
  */
 export function tryStage(
   repositoryRoot: string,
   paths: readonly string[],
   warnings: string[],
+  label?: string | undefined,
 ): void {
-  const label = paths.join(" ");
-  withGitMarker(repositoryRoot, warnings, label, (repo) => {
+  const displayLabel = label ?? paths.join(" ");
+  withGitMarker(repositoryRoot, warnings, displayLabel, (repo) => {
     const failure = runGit(repo, ["add", "--", ...paths]);
     if (failure !== undefined) {
-      warnings.push(`Could not stage ${label}: ${failure}`);
+      warnings.push(`Could not stage ${displayLabel}: ${failure}`);
     }
   });
 }

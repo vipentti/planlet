@@ -235,6 +235,7 @@ export function updateAgentFiles(options: {
         options.repositoryRoot,
         [join(options.repositoryRoot, file)],
         warnings,
+        file,
       );
     }
   }
