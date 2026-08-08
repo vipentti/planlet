@@ -400,6 +400,34 @@ test("task check stages in a git worktree", async () => {
   });
 });
 
+test("task check stages through a nested root inside a parent worktree", async () => {
+  await withGitRoot(async (root) => {
+    const pkg = join(root, "packages", "pkg");
+    mkdirSync(join(pkg, "plans", "fixture-plan"), { recursive: true });
+    writeFileSync(
+      join(pkg, "plans", "fixture-plan", "plan.md"),
+      "# Fixture Plan\n",
+    );
+    writeFileSync(join(pkg, "plans", "fixture-plan", "tasks.md"), MARKDOWN);
+    commitAll(root, "base");
+    writeFileSync(join(root, "unrelated.txt"), "keep unstaged\n");
+    writeFileSync(join(pkg, "unrelated.txt"), "keep unstaged\n");
+
+    const result = updateTask({
+      operation: "check",
+      repositoryRoot: pkg,
+      slug: "fixture-plan",
+      taskId: "T1",
+    });
+
+    assert.equal(result.changed, true);
+    const lines = porcelain(root);
+    assert.ok(lines.includes("M  packages/pkg/plans/fixture-plan/tasks.md"));
+    assert.ok(lines.includes("?? unrelated.txt"));
+    assert.ok(lines.includes("?? packages/pkg/unrelated.txt"));
+  });
+});
+
 test("an unchanged task update stages nothing", async () => {
   await withGitPlanlet(MARKDOWN, (root) => {
     commitAll(root, "base");

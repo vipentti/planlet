@@ -20,6 +20,7 @@ import {
   addWorktree,
   commitAll,
   porcelain,
+  stageFile,
   withGitRoot,
 } from "./git-fixtures.js";
 
@@ -393,6 +394,62 @@ test("completion stages the moved planlet and git reports the rename", async () 
       "A  plans/completed/2027-01-02-fixture-plan/tasks.md",
       "D  plans/fixture-plan/tasks.md",
       "R  plans/fixture-plan/plan.md -> plans/completed/2027-01-02-fixture-plan/plan.md",
+    ]);
+  });
+});
+
+test("completion stages the move for a staged-but-uncommitted planlet", async () => {
+  await withGitRepository(COMPLETE_TASKS, (root, source) => {
+    commitAll(root, "base");
+    writeFileSync(join(root, "other.txt"), "keep unstaged\n");
+    const tasksPath = join(source, "tasks.md");
+    writeFileSync(tasksPath, `${COMPLETE_TASKS}# Staged draft\n`);
+    stageFile(root, tasksPath);
+
+    const result = completePlanlet({
+      repositoryRoot: root,
+      slug: "fixture-plan",
+      dependencies: { now: () => new Date("2027-01-02T00:00:00.125Z") },
+    });
+
+    assert.equal(existsSync(source), false);
+    assert.equal(existsSync(result.destination), true);
+    const lines = porcelain(root);
+    assert.ok(lines.includes("?? other.txt"));
+    assert.ok(
+      lines.includes("A  plans/completed/2027-01-02-fixture-plan/tasks.md"),
+    );
+    assert.ok(lines.includes("D  plans/fixture-plan/tasks.md"));
+    assert.ok(
+      lines.includes(
+        "R  plans/fixture-plan/plan.md -> plans/completed/2027-01-02-fixture-plan/plan.md",
+      ),
+    );
+  });
+});
+
+test("completion stages the destination for a never-tracked planlet", async () => {
+  await withGitRoot(async (root) => {
+    writeFileSync(join(root, "placeholder.txt"), "x\n");
+    commitAll(root, "base");
+    const source = join(root, "plans", "fixture-plan");
+    mkdirSync(source, { recursive: true });
+    writeFileSync(join(source, "plan.md"), PLAN);
+    writeFileSync(join(source, "tasks.md"), COMPLETE_TASKS);
+    writeFileSync(join(root, "other.txt"), "keep unstaged\n");
+
+    const result = completePlanlet({
+      repositoryRoot: root,
+      slug: "fixture-plan",
+      dependencies: { now: () => new Date("2027-01-02T00:00:00.125Z") },
+    });
+
+    assert.equal(existsSync(result.destination), true);
+    assert.deepEqual(result.summary.warnings, []);
+    assert.deepEqual(porcelain(root).sort(), [
+      "?? other.txt",
+      "A  plans/completed/2027-01-02-fixture-plan/plan.md",
+      "A  plans/completed/2027-01-02-fixture-plan/tasks.md",
     ]);
   });
 });

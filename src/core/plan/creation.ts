@@ -9,7 +9,6 @@ import { randomUUID } from "node:crypto";
 
 import type { PlanSummary } from "./models.js";
 import { atomicPublish, resolveSafePath, tryLstat } from "../paths.js";
-import { tryStage } from "../git.js";
 import { assertValidSlug, parseArchiveName } from "./slugs.js";
 import { PlanletError, asWriteConflict } from "../../errors/planlet-error.js";
 
@@ -149,9 +148,6 @@ export function createPlanlet(options: CreatePlanletOptions): PlanSummary {
     },
   });
 
-  const warnings: string[] = [];
-  tryStage(options.repositoryRoot, [targetPath], warnings);
-
   return {
     slug,
     title,
@@ -159,6 +155,6 @@ export function createPlanlet(options: CreatePlanletOptions): PlanSummary {
     completedTasks: 0,
     totalTasks: 0,
     path: targetPath,
-    warnings,
+    warnings: [],
   };
 }

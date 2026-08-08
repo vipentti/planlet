@@ -17,7 +17,7 @@ import {
 } from "../planlet-lock.js";
 import { assertActivePlanletDirectory, readMarkdown } from "./planlet-files.js";
 import { atomicPublish, resolveSafePath, tryLstat } from "../paths.js";
-import { tryStage } from "../git.js";
+import { tryStageMove } from "../git.js";
 import {
   assertValidSlug,
   createArchiveName,
@@ -196,7 +196,7 @@ function resumeRecordedCompletion(
 
   const completedTasks = active.tasks.length - remainingTaskIds.length;
   const warnings = [...completedValidation.warnings];
-  tryStage(options.repositoryRoot, [source, destination], warnings);
+  tryStageMove(options.repositoryRoot, source, destination, warnings);
   return {
     slug,
     archiveName,
@@ -409,7 +409,7 @@ function completePlanletLocked(
   if (mode === "incomplete override") {
     warnings.push("Completed planlet contains an incomplete-task override");
   }
-  tryStage(options.repositoryRoot, [source, destination], warnings);
+  tryStageMove(options.repositoryRoot, source, destination, warnings);
   return {
     slug,
     archiveName,

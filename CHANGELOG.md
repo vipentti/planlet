@@ -8,10 +8,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and thi
 
 ### Added
 
-- `planlet create`, `task check` / `task uncheck`, and `complete` now stage
-  the planlet files they write or move with an explicit-path `git add` when the
-  repository uses git, scoped to exactly those paths. A git failure is a
-  warning, never a failed command.
+- `planlet task check` / `task uncheck` and `complete` now stage the planlet
+  files they write or move with explicit-path `git add` when the repository
+  uses git, scoped to exactly those paths. A git failure is a warning, never a
+  failed command.
 
 ## [0.3.2] - 2026-08-07
 
