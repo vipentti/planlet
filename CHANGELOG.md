@@ -6,6 +6,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and thi
 
 ## [Unreleased]
 
+### Fixed
+
+- planlet-implement and planlet-complete skills now state the commit-boundary invariant: planlet state must never trail the repository state it describes across a commit, push, or branch boundary. Commit authority and commit granularity stay with the user; staged planlet changes may be left pending for the caller to commit.
+
 ## [0.4.0] - 2026-08-08
 
 ### Added
