@@ -41,4 +41,4 @@ Do not implement remaining tasks, complete several planlets, overwrite a destina
 
 ## Finish
 
-Report logical slug, recorded UTC timestamp, mode, remaining task IDs for override, final archive path, whether an optional evidence section was present, and post-completion validation result. If operation stopped, report exact source state and blocking code.
+Commit the archive move (the planlet directory and any completion record) and confirm `git status --short` is clean before reporting. Report logical slug, recorded UTC timestamp, mode, remaining task IDs for override, final archive path, whether an optional evidence section was present, and post-completion validation result. If operation stopped, report exact source state and blocking code.
