@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import {
   mkdirSync,
   mkdtempSync,
@@ -21,12 +22,22 @@ import { PlanletError } from "../../src/errors/planlet-error.js";
 
 function withRepository(run: (root: string) => void): void {
   const root = mkdtempSync(join(tmpdir(), "planlet-creation-"));
-  mkdirSync(join(root, ".git"));
+  const init = spawnSync("git", ["init", "-q", root], { encoding: "utf8" });
+  assert.equal(init.status, 0, init.stderr);
   try {
     run(root);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+}
+
+function porcelain(root: string): string[] {
+  const result = spawnSync("git", ["status", "--porcelain"], {
+    cwd: root,
+    encoding: "utf8",
+  });
+  assert.equal(result.status, 0, result.stderr);
+  return result.stdout.split("\n").filter((line) => line.length > 0);
 }
 
 function readStub(root: string, slug: string, filename: string): string {
@@ -194,4 +205,65 @@ test("creation translates cleanup failures without masking the creation failure"
 
     assert.deepEqual(readdirSync(join(root, "plans")), [temporaryName]);
   });
+});
+
+test("creation stages the new planlet directory in a git repository", () => {
+  withRepository((root) => {
+    const summary = createPlanlet({
+      repositoryRoot: root,
+      slug: "api-v2-core",
+    });
+
+    assert.deepEqual(summary.warnings, []);
+    assert.deepEqual(porcelain(root).sort(), [
+      "A  plans/api-v2-core/plan.md",
+      "A  plans/api-v2-core/tasks.md",
+    ]);
+  });
+});
+
+test("creation with stage disabled leaves the new planlet untracked", () => {
+  withRepository((root) => {
+    const summary = createPlanlet({
+      repositoryRoot: root,
+      slug: "api-v2-core",
+      stage: false,
+    });
+
+    assert.deepEqual(summary.warnings, []);
+    assert.deepEqual(porcelain(root), ["?? plans/"]);
+  });
+});
+
+test("creation makes no git call in a non-git root", () => {
+  const root = mkdtempSync(join(tmpdir(), "planlet-creation-nongit-"));
+  try {
+    const summary = createPlanlet({
+      repositoryRoot: root,
+      slug: "api-v2-core",
+    });
+
+    assert.deepEqual(summary.warnings, []);
+    assert.equal(readStub(root, "api-v2-core", "plan.md"), "# Api V2 Core\n");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a creation git failure becomes a warning and creation still succeeds", () => {
+  const root = mkdtempSync(join(tmpdir(), "planlet-creation-gitfail-"));
+  writeFileSync(join(root, ".git"), "gitdir: /nonexistent\n");
+  try {
+    const summary = createPlanlet({
+      repositoryRoot: root,
+      slug: "api-v2-core",
+    });
+
+    assert.equal(readStub(root, "api-v2-core", "plan.md"), "# Api V2 Core\n");
+    assert.deepEqual(summary.warnings, [
+      "Could not stage new planlet: fatal: not a git repository: (null)",
+    ]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });

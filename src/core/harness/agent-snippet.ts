@@ -1,8 +1,8 @@
-import { spawnSync } from "node:child_process";
 import { readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { asWriteConflict } from "../../errors/planlet-error.js";
+import { hasGitMarker, stageFile } from "../git.js";
 import { tryLstat } from "../paths.js";
 import { sha256 } from "./skill-source.js";
 
@@ -192,24 +192,6 @@ function updateAgentFile(
     writeAgentFile(dependencies, path, file, outcome.content);
   }
   return { state: outcome.state };
-}
-
-function hasGitMarker(repositoryRoot: string): boolean {
-  return tryLstat(join(repositoryRoot, ".git")) !== null;
-}
-
-function stageFile(repositoryRoot: string, file: string): string | undefined {
-  const result = spawnSync("git", ["add", file], {
-    cwd: repositoryRoot,
-    encoding: "utf8",
-  });
-  if (result.error !== undefined) return result.error.message;
-  if (result.status !== 0) {
-    return (
-      result.stderr.trim() || `git add exited with status ${result.status}`
-    );
-  }
-  return undefined;
 }
 
 /**

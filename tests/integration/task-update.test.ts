@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import {
   mkdirSync,
   mkdtempSync,
@@ -22,7 +23,8 @@ function withPlanlet(
   const root = mkdtempSync(join(tmpdir(), "planlet-task-update-"));
   const planletPath = join(root, "plans", "fixture-plan");
   const tasksPath = join(planletPath, "tasks.md");
-  mkdirSync(join(root, ".git"));
+  const init = spawnSync("git", ["init", "-q", root], { encoding: "utf8" });
+  assert.equal(init.status, 0, init.stderr);
   mkdirSync(planletPath, { recursive: true });
   writeFileSync(join(planletPath, "plan.md"), "# Fixture Plan\n");
   writeFileSync(tasksPath, tasksMarkdown);
@@ -31,6 +33,34 @@ function withPlanlet(
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+}
+
+function porcelain(root: string): string[] {
+  const result = spawnSync("git", ["status", "--porcelain"], {
+    cwd: root,
+    encoding: "utf8",
+  });
+  assert.equal(result.status, 0, result.stderr);
+  return result.stdout.split("\n").filter((line) => line.length > 0);
+}
+
+function commitAll(root: string, message: string): void {
+  const add = spawnSync("git", ["add", "."], { cwd: root, encoding: "utf8" });
+  assert.equal(add.status, 0, add.stderr);
+  const commit = spawnSync(
+    "git",
+    [
+      "-c",
+      "user.email=planlet@test",
+      "-c",
+      "user.name=Planlet Test",
+      "commit",
+      "-qm",
+      message,
+    ],
+    { cwd: root, encoding: "utf8" },
+  );
+  assert.equal(commit.status, 0, commit.stderr);
 }
 
 const MARKDOWN =
@@ -322,4 +352,114 @@ test("task mutations cannot diverge from an active completion record", () => {
     );
     assert.equal(readFileSync(tasksPath, "utf8"), normal);
   });
+});
+
+test("task check stages only tasks.md in a git repository", () => {
+  withPlanlet(MARKDOWN, (root, tasksPath) => {
+    commitAll(root, "base");
+    writeFileSync(join(root, "unrelated.txt"), "keep unstaged\n");
+
+    const result = updateTask({
+      operation: "check",
+      repositoryRoot: root,
+      slug: "fixture-plan",
+      taskId: "T1",
+    });
+
+    assert.equal(result.changed, true);
+    assert.deepEqual(porcelain(root).sort(), [
+      "?? unrelated.txt",
+      "M  plans/fixture-plan/tasks.md",
+    ]);
+    assert.equal(
+      readFileSync(tasksPath, "utf8").includes("- [x] T1 First task"),
+      true,
+    );
+  });
+});
+
+test("task check with stage disabled leaves tasks.md unstaged", () => {
+  withPlanlet(MARKDOWN, (root) => {
+    commitAll(root, "base");
+
+    const result = updateTask({
+      operation: "check",
+      repositoryRoot: root,
+      slug: "fixture-plan",
+      taskId: "T1",
+      stage: false,
+    });
+
+    assert.equal(result.changed, true);
+    assert.deepEqual(porcelain(root), [" M plans/fixture-plan/tasks.md"]);
+  });
+});
+
+test("an unchanged task update stages nothing", () => {
+  withPlanlet(MARKDOWN, (root) => {
+    commitAll(root, "base");
+
+    const result = updateTask({
+      operation: "check",
+      repositoryRoot: root,
+      slug: "fixture-plan",
+      taskId: "T2",
+    });
+
+    assert.equal(result.changed, false);
+    assert.deepEqual(porcelain(root), []);
+  });
+});
+
+test("task updates make no git call in a non-git root", () => {
+  const root = mkdtempSync(join(tmpdir(), "planlet-task-nongit-"));
+  const planletPath = join(root, "plans", "fixture-plan");
+  const tasksPath = join(planletPath, "tasks.md");
+  mkdirSync(planletPath, { recursive: true });
+  writeFileSync(join(planletPath, "plan.md"), "# Fixture Plan\n");
+  writeFileSync(tasksPath, MARKDOWN);
+  try {
+    const result = updateTask({
+      operation: "check",
+      repositoryRoot: root,
+      slug: "fixture-plan",
+      taskId: "T1",
+    });
+
+    assert.equal(result.changed, true);
+    assert.equal(
+      result.warnings.some((warning) => warning.startsWith("Could not stage")),
+      false,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a git failure becomes a warning and the update still succeeds", () => {
+  const root = mkdtempSync(join(tmpdir(), "planlet-task-gitfail-"));
+  const planletPath = join(root, "plans", "fixture-plan");
+  const tasksPath = join(planletPath, "tasks.md");
+  writeFileSync(join(root, ".git"), "gitdir: /nonexistent\n");
+  mkdirSync(planletPath, { recursive: true });
+  writeFileSync(join(planletPath, "plan.md"), "# Fixture Plan\n");
+  writeFileSync(tasksPath, MARKDOWN);
+  try {
+    const result = updateTask({
+      operation: "check",
+      repositoryRoot: root,
+      slug: "fixture-plan",
+      taskId: "T1",
+    });
+
+    assert.equal(result.changed, true);
+    assert.equal(
+      result.warnings.some((warning) =>
+        warning.startsWith("Could not stage tasks.md"),
+      ),
+      true,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });

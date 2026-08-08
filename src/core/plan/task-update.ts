@@ -10,6 +10,7 @@ import {
 } from "../planlet-lock.js";
 import { assertActivePlanletDirectory, readMarkdown } from "./planlet-files.js";
 import { atomicPublish, resolveSafePath } from "../paths.js";
+import { hasGitMarker, stageFile } from "../git.js";
 import { assertValidSlug } from "./slugs.js";
 import { parseTaskLine } from "./task-parser.js";
 import { validatePlanletStructure } from "./validation.js";
@@ -22,6 +23,8 @@ export interface UpdateTaskOptions {
   readonly slug: string;
   readonly taskId: string;
   readonly operation: TaskUpdateOperation;
+  /** Set to false (via --no-stage) to leave tasks.md unstaged. */
+  readonly stage?: boolean | undefined;
   readonly dependencies?: Partial<UpdateTaskDependencies>;
 }
 
@@ -217,11 +220,19 @@ function updateTaskLocked(
     },
   });
 
+  const warnings = [...validated.warnings];
+  if (options.stage !== false && hasGitMarker(options.repositoryRoot)) {
+    const failure = stageFile(options.repositoryRoot, tasksPath);
+    if (failure !== undefined) {
+      warnings.push(`Could not stage tasks.md: ${failure}`);
+    }
+  }
+
   return {
     slug,
     task: { ...task, completed },
     changed: true,
     ...summarize(slug, revalidated.tasks),
-    warnings: validated.warnings,
+    warnings,
   };
 }

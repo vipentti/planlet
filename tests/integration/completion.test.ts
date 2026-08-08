@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import {
   existsSync,
   mkdirSync,
@@ -26,7 +27,8 @@ function withRepository(
 ): void {
   const root = mkdtempSync(join(tmpdir(), "planlet-completion-"));
   const source = join(root, "plans", "fixture-plan");
-  mkdirSync(join(root, ".git"));
+  const init = spawnSync("git", ["init", "-q", root], { encoding: "utf8" });
+  assert.equal(init.status, 0, init.stderr);
   mkdirSync(source, { recursive: true });
   writeFileSync(join(source, "plan.md"), PLAN);
   writeFileSync(join(source, "tasks.md"), tasksMarkdown);
@@ -35,6 +37,34 @@ function withRepository(
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+}
+
+function porcelain(root: string): string[] {
+  const result = spawnSync("git", ["status", "--porcelain"], {
+    cwd: root,
+    encoding: "utf8",
+  });
+  assert.equal(result.status, 0, result.stderr);
+  return result.stdout.split("\n").filter((line) => line.length > 0);
+}
+
+function commitAll(root: string, message: string): void {
+  const add = spawnSync("git", ["add", "."], { cwd: root, encoding: "utf8" });
+  assert.equal(add.status, 0, add.stderr);
+  const commit = spawnSync(
+    "git",
+    [
+      "-c",
+      "user.email=planlet@test",
+      "-c",
+      "user.name=Planlet Test",
+      "commit",
+      "-qm",
+      message,
+    ],
+    { cwd: root, encoding: "utf8" },
+  );
+  assert.equal(commit.status, 0, commit.stderr);
 }
 
 const COMPLETE_TASKS =
@@ -89,6 +119,7 @@ test("normal completion uses one UTC instant for its audit and archive date", ()
 
 test("incomplete override records remaining IDs and the approved reason", () => {
   withRepository(INCOMPLETE_TASKS, (root, source) => {
+    commitAll(root, "base");
     const result = completePlanlet({
       repositoryRoot: root,
       slug: "fixture-plan",
@@ -353,4 +384,98 @@ test("completion resumes a valid audit left by process interruption", () => {
       interrupted,
     );
   });
+});
+
+test("completion stages the moved planlet and git reports the rename", () => {
+  withRepository(COMPLETE_TASKS, (root, source) => {
+    commitAll(root, "base");
+    writeFileSync(join(root, "other.txt"), "keep unstaged\n");
+
+    const result = completePlanlet({
+      repositoryRoot: root,
+      slug: "fixture-plan",
+      dependencies: { now: () => new Date("2027-01-02T00:00:00.125Z") },
+    });
+
+    assert.equal(existsSync(source), false);
+    assert.equal(existsSync(result.destination), true);
+    assert.deepEqual(porcelain(root).sort(), [
+      "?? other.txt",
+      "A  plans/completed/2027-01-02-fixture-plan/tasks.md",
+      "D  plans/fixture-plan/tasks.md",
+      "R  plans/fixture-plan/plan.md -> plans/completed/2027-01-02-fixture-plan/plan.md",
+    ]);
+  });
+});
+
+test("completion with stage disabled leaves the archived planlet unstaged", () => {
+  withRepository(COMPLETE_TASKS, (root, source) => {
+    commitAll(root, "base");
+
+    const result = completePlanlet({
+      repositoryRoot: root,
+      slug: "fixture-plan",
+      stage: false,
+      dependencies: { now: () => new Date("2027-01-02T00:00:00.125Z") },
+    });
+
+    assert.equal(existsSync(source), false);
+    assert.equal(existsSync(result.destination), true);
+    assert.deepEqual(porcelain(root).sort(), [
+      " D plans/fixture-plan/plan.md",
+      " D plans/fixture-plan/tasks.md",
+      "?? plans/completed/",
+    ]);
+  });
+});
+
+test("completion makes no git call in a non-git root", () => {
+  const root = mkdtempSync(join(tmpdir(), "planlet-completion-nongit-"));
+  const source = join(root, "plans", "fixture-plan");
+  mkdirSync(source, { recursive: true });
+  writeFileSync(join(source, "plan.md"), PLAN);
+  writeFileSync(join(source, "tasks.md"), COMPLETE_TASKS);
+  try {
+    const result = completePlanlet({
+      repositoryRoot: root,
+      slug: "fixture-plan",
+      dependencies: { now: () => new Date("2027-01-02T00:00:00.125Z") },
+    });
+
+    assert.equal(existsSync(result.destination), true);
+    assert.equal(
+      result.summary.warnings.some((warning) =>
+        warning.startsWith("Could not stage"),
+      ),
+      false,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a completion git failure becomes a warning and completion still succeeds", () => {
+  const root = mkdtempSync(join(tmpdir(), "planlet-completion-gitfail-"));
+  const source = join(root, "plans", "fixture-plan");
+  writeFileSync(join(root, ".git"), "gitdir: /nonexistent\n");
+  mkdirSync(source, { recursive: true });
+  writeFileSync(join(source, "plan.md"), PLAN);
+  writeFileSync(join(source, "tasks.md"), COMPLETE_TASKS);
+  try {
+    const result = completePlanlet({
+      repositoryRoot: root,
+      slug: "fixture-plan",
+      dependencies: { now: () => new Date("2027-01-02T00:00:00.125Z") },
+    });
+
+    assert.equal(existsSync(result.destination), true);
+    assert.equal(
+      result.summary.warnings.some((warning) =>
+        warning.startsWith("Could not stage completed planlet"),
+      ),
+      true,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });

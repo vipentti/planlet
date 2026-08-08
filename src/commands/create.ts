@@ -5,6 +5,7 @@ import { compactSummary, emit, type ExecutionContext } from "./shared.js";
 export interface CreateCommandArguments {
   readonly slug: string;
   readonly title?: string | undefined;
+  readonly stage?: boolean | undefined;
 }
 
 export function handleCreate(
