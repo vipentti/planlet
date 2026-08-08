@@ -6,6 +6,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and thi
 
 ## [Unreleased]
 
+### Changed
+
+- `planlet-implement` now requires a `[Unreleased]` changelog entry for
+  user-visible changes in the same change set, with an explicit skip note for
+  internal-only work.
+
 ## [0.4.0] - 2026-08-08
 
 ### Added
