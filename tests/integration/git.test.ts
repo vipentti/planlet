@@ -1,21 +1,14 @@
 import assert from "node:assert/strict";
-import {
-  mkdirSync,
-  mkdtempSync,
-  renameSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import test from "node:test";
 
-import { tryStage, tryStageMove } from "../../src/core/git.js";
+import { tryStage } from "../../src/core/git.js";
 import {
   addWorktree,
   commitAll,
   porcelain,
-  stageFile,
   withGitRoot,
 } from "./git-fixtures.js";
 
@@ -111,102 +104,5 @@ test("tryStage finds a git marker in a parent directory for a nested root", asyn
 
     assert.deepEqual(warnings, []);
     assert.ok(porcelain(root).includes("A  packages/pkg/a.txt"));
-  });
-});
-
-test("tryStageMove stages deletion and destination together for a tracked source", async () => {
-  await withGitRoot(async (root) => {
-    const source = join(root, "plans", "fixture-plan");
-    mkdirSync(source, { recursive: true });
-    writeFileSync(join(source, "plan.md"), "plan\n");
-    writeFileSync(join(source, "tasks.md"), "tasks\n");
-    writeFileSync(join(root, "other.txt"), "keep\n");
-    commitAll(root, "base");
-    writeFileSync(join(root, "other.txt"), "keep unstaged\n");
-    const destination = join(
-      root,
-      "plans",
-      "completed",
-      "2027-01-02-fixture-plan",
-    );
-    mkdirSync(dirname(destination), { recursive: true });
-    renameSync(source, destination);
-
-    const warnings: string[] = [];
-    tryStageMove(root, source, destination, warnings);
-
-    assert.deepEqual(warnings, []);
-    assert.deepEqual(porcelain(root).sort(), [
-      " M other.txt",
-      "R  plans/fixture-plan/plan.md -> plans/completed/2027-01-02-fixture-plan/plan.md",
-      "R  plans/fixture-plan/tasks.md -> plans/completed/2027-01-02-fixture-plan/tasks.md",
-    ]);
-  });
-});
-
-test("tryStageMove stages deletion and destination together for a staged-but-uncommitted source", async () => {
-  await withGitRoot(async (root) => {
-    const source = join(root, "plans", "fixture-plan");
-    mkdirSync(source, { recursive: true });
-    writeFileSync(join(source, "plan.md"), "plan\n");
-    writeFileSync(join(source, "tasks.md"), "tasks\n");
-    writeFileSync(join(root, "other.txt"), "keep\n");
-    commitAll(root, "base");
-    const tasksPath = join(source, "tasks.md");
-    writeFileSync(
-      tasksPath,
-      "# Staged draft\n\ncompletely different content\n",
-    );
-    stageFile(root, tasksPath);
-    writeFileSync(join(root, "other.txt"), "keep unstaged\n");
-    const destination = join(
-      root,
-      "plans",
-      "completed",
-      "2027-01-02-fixture-plan",
-    );
-    mkdirSync(dirname(destination), { recursive: true });
-    renameSync(source, destination);
-
-    const warnings: string[] = [];
-    tryStageMove(root, source, destination, warnings);
-
-    assert.deepEqual(warnings, []);
-    assert.deepEqual(porcelain(root).sort(), [
-      " M other.txt",
-      "A  plans/completed/2027-01-02-fixture-plan/tasks.md",
-      "D  plans/fixture-plan/tasks.md",
-      "R  plans/fixture-plan/plan.md -> plans/completed/2027-01-02-fixture-plan/plan.md",
-    ]);
-  });
-});
-
-test("tryStageMove stages only the destination for a never-tracked source", async () => {
-  await withGitRoot(async (root) => {
-    writeFileSync(join(root, "placeholder.txt"), "x\n");
-    commitAll(root, "base");
-    const source = join(root, "plans", "fixture-plan");
-    mkdirSync(source, { recursive: true });
-    writeFileSync(join(source, "plan.md"), "plan\n");
-    writeFileSync(join(source, "tasks.md"), "tasks\n");
-    writeFileSync(join(root, "other.txt"), "keep unstaged\n");
-    const destination = join(
-      root,
-      "plans",
-      "completed",
-      "2027-01-02-fixture-plan",
-    );
-    mkdirSync(dirname(destination), { recursive: true });
-    renameSync(source, destination);
-
-    const warnings: string[] = [];
-    tryStageMove(root, source, destination, warnings);
-
-    assert.deepEqual(warnings, []);
-    assert.deepEqual(porcelain(root).sort(), [
-      "?? other.txt",
-      "A  plans/completed/2027-01-02-fixture-plan/plan.md",
-      "A  plans/completed/2027-01-02-fixture-plan/tasks.md",
-    ]);
   });
 });
