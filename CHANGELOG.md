@@ -9,9 +9,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and thi
 ### Added
 
 - `planlet task check` / `task uncheck` and `complete` now stage the planlet
-  files they write or move with explicit-path `git add` when the repository
-  uses git, scoped to exactly those paths. A git failure is a warning, never a
-  failed command.
+  files they write or move with explicit pathspecs when the repository uses
+  git, scoped to exactly those paths. A completion move stages its deletion
+  and destination in one path-scoped `git add -A` when the planlet was
+  already tracked or staged, so the index can never be left half-applied; a
+  never-tracked planlet stages only its destination. A git failure is a
+  warning, never a failed command.
 
 ## [0.3.2] - 2026-08-07
 

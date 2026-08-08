@@ -135,11 +135,14 @@ planlet complete my-feature  # archive to plans/completed/<date>-my-feature/
 Running `planlet` with no command displays the active-plan dashboard.
 
 When the repository uses git, `task check` / `task uncheck` and `complete`
-stage the planlet files they write or move with explicit-path `git add`,
-scoped to exactly those paths. Staging is unconditional in git roots — there
-is no `--no-stage` escape hatch. A git failure becomes a warning, never a
-failed command; repositories without git are never touched. `planlet create`
-writes scaffold stubs and does not stage them.
+stage the planlet files they write or move with explicit pathspecs, scoped to
+exactly those paths. A completion move is staged as a single index mutation:
+path-scoped `git add -A` when the moved planlet was already tracked or staged
+(source deletion and destination staged together), plain `git add` when it was
+never tracked. Staging is unconditional in git roots — there is no
+`--no-stage` escape hatch. A git failure becomes a warning, never a failed
+command; repositories without git are never touched. `planlet create` writes
+scaffold stubs and does not stage them.
 
 ## Commands
 

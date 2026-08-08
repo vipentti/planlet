@@ -3,22 +3,33 @@ import { dirname, join, resolve } from "node:path";
 
 import { tryLstat } from "./paths.js";
 
-function runGit(
+function runGitOutput(
   repositoryRoot: string,
   args: readonly string[],
-): string | undefined {
+): { stdout: string; failure: string | undefined } {
   const result = spawnSync("git", args, {
     cwd: repositoryRoot,
     encoding: "utf8",
   });
-  if (result.error !== undefined) return result.error.message;
-  if (result.status !== 0) {
-    return (
-      result.stderr.trim() ||
-      `git ${args[0]} exited with status ${result.status}`
-    );
+  if (result.error !== undefined) {
+    return { stdout: "", failure: result.error.message };
   }
-  return undefined;
+  if (result.status !== 0) {
+    return {
+      stdout: "",
+      failure:
+        result.stderr.trim() ||
+        `git ${args[0]} exited with status ${result.status}`,
+    };
+  }
+  return { stdout: result.stdout.trim(), failure: undefined };
+}
+
+function runGit(
+  repositoryRoot: string,
+  args: readonly string[],
+): string | undefined {
+  return runGitOutput(repositoryRoot, args).failure;
 }
 
 interface GitMarker {
@@ -87,10 +98,13 @@ export function tryStage(
 }
 
 /**
- * Stages a planlet move with index-only operations: explicitly adds the
- * destination and removes any source entries from the index. `--ignore-unmatch`
- * keeps a never-tracked source a success rather than a warning. Appends a
- * warning to `warnings` on real git failure, never failing the command.
+ * Stages a planlet move with exactly one index mutation. Inspects the source
+ * with `git ls-files` first: when the source has index entries (tracked, or
+ * staged but uncommitted), a single path-scoped `git add -A -- <source>
+ * <destination>` stages the source deletion and the destination together, so
+ * the index can never be left half-applied. A never-tracked source only gets
+ * the destination added. Appends a warning to `warnings` on real git failure,
+ * never failing the command.
  */
 export function tryStageMove(
   repositoryRoot: string,
@@ -100,21 +114,18 @@ export function tryStageMove(
 ): void {
   const label = `${source} ${destination}`;
   withGitMarker(repositoryRoot, warnings, label, (repo) => {
-    const add = runGit(repo, ["add", "--", destination]);
-    if (add !== undefined) {
-      warnings.push(`Could not stage ${label}: ${add}`);
+    const inspected = runGitOutput(repo, ["ls-files", "--", source]);
+    if (inspected.failure !== undefined) {
+      warnings.push(`Could not stage ${label}: ${inspected.failure}`);
       return;
     }
-    const remove = runGit(repo, [
-      "rm",
-      "--cached",
-      "--ignore-unmatch",
-      "-r",
-      "--",
-      source,
-    ]);
-    if (remove !== undefined) {
-      warnings.push(`Could not stage ${label}: ${remove}`);
+    const args =
+      inspected.stdout === ""
+        ? ["add", "--", destination]
+        : ["add", "-A", "--", source, destination];
+    const failure = runGit(repo, args);
+    if (failure !== undefined) {
+      warnings.push(`Could not stage ${label}: ${failure}`);
     }
   });
 }
