@@ -17,6 +17,7 @@ import {
 } from "../planlet-lock.js";
 import { assertActivePlanletDirectory, readMarkdown } from "./planlet-files.js";
 import { atomicPublish, resolveSafePath, tryLstat } from "../paths.js";
+import { tryStageMove } from "../git.js";
 import {
   assertValidSlug,
   createArchiveName,
@@ -194,6 +195,8 @@ function resumeRecordedCompletion(
   }
 
   const completedTasks = active.tasks.length - remainingTaskIds.length;
+  const warnings = [...completedValidation.warnings];
+  tryStageMove(options.repositoryRoot, source, destination, warnings);
   return {
     slug,
     archiveName,
@@ -210,7 +213,7 @@ function resumeRecordedCompletion(
       completedTasks,
       totalTasks: active.tasks.length,
       path: destination,
-      warnings: completedValidation.warnings,
+      warnings,
     },
   };
 }
@@ -402,6 +405,11 @@ function completePlanletLocked(
 
   const completedTasks = validated.tasks.length - remainingTaskIds.length;
   const mode = reason === undefined ? "normal" : "incomplete override";
+  const warnings = [...validated.warnings];
+  if (mode === "incomplete override") {
+    warnings.push("Completed planlet contains an incomplete-task override");
+  }
+  tryStageMove(options.repositoryRoot, source, destination, warnings);
   return {
     slug,
     archiveName,
@@ -418,12 +426,7 @@ function completePlanletLocked(
       completedTasks,
       totalTasks: validated.tasks.length,
       path: destination,
-      warnings: [
-        ...validated.warnings,
-        ...(mode === "incomplete override"
-          ? ["Completed planlet contains an incomplete-task override"]
-          : []),
-      ],
+      warnings,
     },
   };
 }

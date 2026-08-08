@@ -16,6 +16,12 @@ import test from "node:test";
 import { completePlanlet } from "../../src/core/plan/planlet-completion.js";
 import { validatePlanletStructure } from "../../src/core/plan/validation.js";
 import { PlanletError } from "../../src/errors/planlet-error.js";
+import {
+  commitAll,
+  porcelain,
+  stageFile,
+  withGitRoot,
+} from "./git-fixtures.js";
 
 const PLAN =
   "# Fixture Plan\n\n## Summary\nFixture.\n\n## Scope\nFixture.\n\n## Approach\nFixture.\n\n## Acceptance Criteria\n- Works.\n\n## Verification\nTests.\n";
@@ -26,7 +32,6 @@ function withRepository(
 ): void {
   const root = mkdtempSync(join(tmpdir(), "planlet-completion-"));
   const source = join(root, "plans", "fixture-plan");
-  mkdirSync(join(root, ".git"));
   mkdirSync(source, { recursive: true });
   writeFileSync(join(source, "plan.md"), PLAN);
   writeFileSync(join(source, "tasks.md"), tasksMarkdown);
@@ -35,6 +40,19 @@ function withRepository(
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+}
+
+async function withGitRepository(
+  tasksMarkdown: string,
+  run: (root: string, source: string) => void,
+): Promise<void> {
+  await withGitRoot(async (root) => {
+    const source = join(root, "plans", "fixture-plan");
+    mkdirSync(source, { recursive: true });
+    writeFileSync(join(source, "plan.md"), PLAN);
+    writeFileSync(join(source, "tasks.md"), tasksMarkdown);
+    run(root, source);
+  });
 }
 
 const COMPLETE_TASKS =
@@ -87,8 +105,9 @@ test("normal completion uses one UTC instant for its audit and archive date", ()
   });
 });
 
-test("incomplete override records remaining IDs and the approved reason", () => {
-  withRepository(INCOMPLETE_TASKS, (root, source) => {
+test("incomplete override records remaining IDs and the approved reason", async () => {
+  await withGitRepository(INCOMPLETE_TASKS, (root, source) => {
+    commitAll(root, "base");
     const result = completePlanlet({
       repositoryRoot: root,
       slug: "fixture-plan",
@@ -352,5 +371,83 @@ test("completion resumes a valid audit left by process interruption", () => {
       readFileSync(join(result.destination, "tasks.md"), "utf8"),
       interrupted,
     );
+  });
+});
+
+test("completion stages the moved planlet and git reports the rename", async () => {
+  await withGitRepository(COMPLETE_TASKS, (root, source) => {
+    commitAll(root, "base");
+    writeFileSync(join(root, "other.txt"), "keep unstaged\n");
+
+    const result = completePlanlet({
+      repositoryRoot: root,
+      slug: "fixture-plan",
+      dependencies: { now: () => new Date("2027-01-02T00:00:00.125Z") },
+    });
+
+    assert.equal(existsSync(source), false);
+    assert.equal(existsSync(result.destination), true);
+    assert.deepEqual(porcelain(root).sort(), [
+      "?? other.txt",
+      "A  plans/completed/2027-01-02-fixture-plan/tasks.md",
+      "D  plans/fixture-plan/tasks.md",
+      "R  plans/fixture-plan/plan.md -> plans/completed/2027-01-02-fixture-plan/plan.md",
+    ]);
+  });
+});
+
+test("completion stages the move for a staged-but-uncommitted planlet", async () => {
+  await withGitRepository(COMPLETE_TASKS, (root, source) => {
+    commitAll(root, "base");
+    writeFileSync(join(root, "other.txt"), "keep unstaged\n");
+    const tasksPath = join(source, "tasks.md");
+    writeFileSync(tasksPath, `${COMPLETE_TASKS}# Staged draft\n`);
+    stageFile(root, tasksPath);
+
+    const result = completePlanlet({
+      repositoryRoot: root,
+      slug: "fixture-plan",
+      dependencies: { now: () => new Date("2027-01-02T00:00:00.125Z") },
+    });
+
+    assert.equal(existsSync(source), false);
+    assert.equal(existsSync(result.destination), true);
+    const lines = porcelain(root);
+    assert.ok(lines.includes("?? other.txt"));
+    assert.ok(
+      lines.includes("A  plans/completed/2027-01-02-fixture-plan/tasks.md"),
+    );
+    assert.ok(lines.includes("D  plans/fixture-plan/tasks.md"));
+    assert.ok(
+      lines.includes(
+        "R  plans/fixture-plan/plan.md -> plans/completed/2027-01-02-fixture-plan/plan.md",
+      ),
+    );
+  });
+});
+
+test("completion stages the destination for a never-tracked planlet", async () => {
+  await withGitRoot(async (root) => {
+    writeFileSync(join(root, "placeholder.txt"), "x\n");
+    commitAll(root, "base");
+    const source = join(root, "plans", "fixture-plan");
+    mkdirSync(source, { recursive: true });
+    writeFileSync(join(source, "plan.md"), PLAN);
+    writeFileSync(join(source, "tasks.md"), COMPLETE_TASKS);
+    writeFileSync(join(root, "other.txt"), "keep unstaged\n");
+
+    const result = completePlanlet({
+      repositoryRoot: root,
+      slug: "fixture-plan",
+      dependencies: { now: () => new Date("2027-01-02T00:00:00.125Z") },
+    });
+
+    assert.equal(existsSync(result.destination), true);
+    assert.deepEqual(result.summary.warnings, []);
+    assert.deepEqual(porcelain(root).sort(), [
+      "?? other.txt",
+      "A  plans/completed/2027-01-02-fixture-plan/plan.md",
+      "A  plans/completed/2027-01-02-fixture-plan/tasks.md",
+    ]);
   });
 });

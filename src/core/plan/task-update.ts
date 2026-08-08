@@ -10,6 +10,7 @@ import {
 } from "../planlet-lock.js";
 import { assertActivePlanletDirectory, readMarkdown } from "./planlet-files.js";
 import { atomicPublish, resolveSafePath } from "../paths.js";
+import { tryStage } from "../git.js";
 import { assertValidSlug } from "./slugs.js";
 import { parseTaskLine } from "./task-parser.js";
 import { validatePlanletStructure } from "./validation.js";
@@ -217,11 +218,14 @@ function updateTaskLocked(
     },
   });
 
+  const warnings = [...validated.warnings];
+  tryStage(options.repositoryRoot, [tasksPath], warnings);
+
   return {
     slug,
     task: { ...task, completed },
     changed: true,
     ...summarize(slug, revalidated.tasks),
-    warnings: validated.warnings,
+    warnings,
   };
 }

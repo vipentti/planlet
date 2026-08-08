@@ -1,8 +1,8 @@
-import { spawnSync } from "node:child_process";
 import { readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { asWriteConflict } from "../../errors/planlet-error.js";
+import { tryStage } from "../git.js";
 import { tryLstat } from "../paths.js";
 import { sha256 } from "./skill-source.js";
 
@@ -194,24 +194,6 @@ function updateAgentFile(
   return { state: outcome.state };
 }
 
-function hasGitMarker(repositoryRoot: string): boolean {
-  return tryLstat(join(repositoryRoot, ".git")) !== null;
-}
-
-function stageFile(repositoryRoot: string, file: string): string | undefined {
-  const result = spawnSync("git", ["add", file], {
-    cwd: repositoryRoot,
-    encoding: "utf8",
-  });
-  if (result.error !== undefined) return result.error.message;
-  if (result.status !== 0) {
-    return (
-      result.stderr.trim() || `git add exited with status ${result.status}`
-    );
-  }
-  return undefined;
-}
-
 /**
  * Applies the agents-file side of init/update. Init writes AGENTS.md by
  * default and CLAUDE.md when that file is a real regular file that does not
@@ -249,12 +231,12 @@ export function updateAgentFiles(options: {
     if (outcome.warning !== undefined) warnings.push(outcome.warning);
     if (outcome.state === "added" || outcome.state === "updated") {
       changed = true;
-      if (hasGitMarker(options.repositoryRoot)) {
-        const failure = stageFile(options.repositoryRoot, file);
-        if (failure !== undefined) {
-          warnings.push(`Could not stage ${file}: ${failure}`);
-        }
-      }
+      tryStage(
+        options.repositoryRoot,
+        [join(options.repositoryRoot, file)],
+        warnings,
+        file,
+      );
     }
   }
 

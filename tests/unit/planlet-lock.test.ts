@@ -33,7 +33,6 @@ const TASKS =
 function withRepo(run: (root: string, tasksPath: string) => void): void {
   const root = mkdtempSync(join(tmpdir(), "planlet-lock-"));
   const planletPath = join(root, "plans", "fixture-plan");
-  mkdirSync(join(root, ".git"));
   mkdirSync(planletPath, { recursive: true });
   writeFileSync(join(planletPath, "plan.md"), PLAN);
   writeFileSync(join(planletPath, "tasks.md"), TASKS);
@@ -596,7 +595,6 @@ test("successful operation with failed release returns a release warning", () =>
 test("missing planlet still reports plan_not_found and leaves no lock behind", () => {
   const root = mkdtempSync(join(tmpdir(), "planlet-lock-missing-"));
   try {
-    mkdirSync(join(root, ".git"));
     mkdirSync(join(root, "plans"), { recursive: true });
     assert.throws(
       () =>

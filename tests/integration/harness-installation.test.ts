@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
 import {
   existsSync,
   mkdirSync,
@@ -17,6 +16,7 @@ import test from "node:test";
 import { decode } from "@toon-format/toon";
 
 import { renderAgentsSection } from "../../src/core/harness/agent-snippet.js";
+import { stagedFiles, withGitRoot } from "./git-fixtures.js";
 import {
   buildToolChoices,
   main,
@@ -72,37 +72,11 @@ function decodedRecord(output: string): Record<string, unknown> {
 
 async function withRoot(run: (root: string) => Promise<void>): Promise<void> {
   const root = mkdtempSync(join(tmpdir(), "planlet-install-command-"));
-  mkdirSync(join(root, ".git"));
   try {
     await run(root);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
-}
-
-async function withGitRoot(
-  run: (root: string) => Promise<void>,
-): Promise<void> {
-  const root = mkdtempSync(join(tmpdir(), "planlet-install-git-"));
-  const init = spawnSync("git", ["init", "-q", root], { encoding: "utf8" });
-  assert.equal(init.status, 0, init.stderr);
-  try {
-    await run(root);
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
-}
-
-function stagedFiles(root: string): string[] {
-  const result = spawnSync("git", ["status", "--porcelain"], {
-    cwd: root,
-    encoding: "utf8",
-  });
-  assert.equal(result.status, 0, result.stderr);
-  return result.stdout
-    .split("\n")
-    .filter((line) => line.startsWith("A "))
-    .map((line) => line.slice(3));
 }
 
 test("init parses selectors, preserves unrelated skills, and installs canonical bytes once", async () => {

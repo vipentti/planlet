@@ -18,10 +18,10 @@ import {
 } from "../../src/core/plan/creation.js";
 import { validatePlanletStructure } from "../../src/core/plan/validation.js";
 import { PlanletError } from "../../src/errors/planlet-error.js";
+import { porcelain, withGitRoot } from "./git-fixtures.js";
 
 function withRepository(run: (root: string) => void): void {
   const root = mkdtempSync(join(tmpdir(), "planlet-creation-"));
-  mkdirSync(join(root, ".git"));
   try {
     run(root);
   } finally {
@@ -193,5 +193,16 @@ test("creation translates cleanup failures without masking the creation failure"
     );
 
     assert.deepEqual(readdirSync(join(root, "plans")), [temporaryName]);
+  });
+});
+
+test("creation leaves the new planlet unstaged in a git repository", async () => {
+  await withGitRoot(async (root) => {
+    createPlanlet({
+      repositoryRoot: root,
+      slug: "api-v2-core",
+    });
+
+    assert.deepEqual(porcelain(root), ["?? plans/"]);
   });
 });

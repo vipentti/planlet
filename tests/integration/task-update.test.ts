@@ -14,6 +14,7 @@ import test from "node:test";
 
 import { updateTask } from "../../src/core/plan/task-update.js";
 import { PlanletError } from "../../src/errors/planlet-error.js";
+import { commitAll, porcelain, withGitRoot } from "./git-fixtures.js";
 
 function withPlanlet(
   tasksMarkdown: string,
@@ -22,7 +23,6 @@ function withPlanlet(
   const root = mkdtempSync(join(tmpdir(), "planlet-task-update-"));
   const planletPath = join(root, "plans", "fixture-plan");
   const tasksPath = join(planletPath, "tasks.md");
-  mkdirSync(join(root, ".git"));
   mkdirSync(planletPath, { recursive: true });
   writeFileSync(join(planletPath, "plan.md"), "# Fixture Plan\n");
   writeFileSync(tasksPath, tasksMarkdown);
@@ -31,6 +31,20 @@ function withPlanlet(
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+}
+
+async function withGitPlanlet(
+  tasksMarkdown: string,
+  run: (root: string, tasksPath: string) => void,
+): Promise<void> {
+  await withGitRoot(async (root) => {
+    const planletPath = join(root, "plans", "fixture-plan");
+    const tasksPath = join(planletPath, "tasks.md");
+    mkdirSync(planletPath, { recursive: true });
+    writeFileSync(join(planletPath, "plan.md"), "# Fixture Plan\n");
+    writeFileSync(tasksPath, tasksMarkdown);
+    run(root, tasksPath);
+  });
 }
 
 const MARKDOWN =
@@ -261,7 +275,6 @@ test("missing tasks and malformed planlets fail without modifying Markdown", () 
 test("task updates refuse planlet directory symlinks", () => {
   const root = mkdtempSync(join(tmpdir(), "planlet-task-symlink-"));
   const target = join(root, "target");
-  mkdirSync(join(root, ".git"));
   mkdirSync(join(root, "plans"));
   mkdirSync(target);
   writeFileSync(join(target, "plan.md"), "# Fixture Plan\n");
@@ -321,5 +334,73 @@ test("task mutations cannot diverge from an active completion record", () => {
       (error) => error instanceof PlanletError && error.code === "invalid_plan",
     );
     assert.equal(readFileSync(tasksPath, "utf8"), normal);
+  });
+});
+
+test("task check stages only tasks.md in a git repository", async () => {
+  await withGitPlanlet(MARKDOWN, (root, tasksPath) => {
+    commitAll(root, "base");
+    writeFileSync(join(root, "unrelated.txt"), "keep unstaged\n");
+
+    const result = updateTask({
+      operation: "check",
+      repositoryRoot: root,
+      slug: "fixture-plan",
+      taskId: "T1",
+    });
+
+    assert.equal(result.changed, true);
+    assert.deepEqual(porcelain(root).sort(), [
+      "?? unrelated.txt",
+      "M  plans/fixture-plan/tasks.md",
+    ]);
+    assert.equal(
+      readFileSync(tasksPath, "utf8").includes("- [x] T1 First task"),
+      true,
+    );
+  });
+});
+
+test("task check stages through a nested root inside a parent worktree", async () => {
+  await withGitRoot(async (root) => {
+    const pkg = join(root, "packages", "pkg");
+    mkdirSync(join(pkg, "plans", "fixture-plan"), { recursive: true });
+    writeFileSync(
+      join(pkg, "plans", "fixture-plan", "plan.md"),
+      "# Fixture Plan\n",
+    );
+    writeFileSync(join(pkg, "plans", "fixture-plan", "tasks.md"), MARKDOWN);
+    commitAll(root, "base");
+    writeFileSync(join(root, "unrelated.txt"), "keep unstaged\n");
+    writeFileSync(join(pkg, "unrelated.txt"), "keep unstaged\n");
+
+    const result = updateTask({
+      operation: "check",
+      repositoryRoot: pkg,
+      slug: "fixture-plan",
+      taskId: "T1",
+    });
+
+    assert.equal(result.changed, true);
+    const lines = porcelain(root);
+    assert.ok(lines.includes("M  packages/pkg/plans/fixture-plan/tasks.md"));
+    assert.ok(lines.includes("?? unrelated.txt"));
+    assert.ok(lines.includes("?? packages/pkg/unrelated.txt"));
+  });
+});
+
+test("an unchanged task update stages nothing", async () => {
+  await withGitPlanlet(MARKDOWN, (root) => {
+    commitAll(root, "base");
+
+    const result = updateTask({
+      operation: "check",
+      repositoryRoot: root,
+      slug: "fixture-plan",
+      taskId: "T2",
+    });
+
+    assert.equal(result.changed, false);
+    assert.deepEqual(porcelain(root), []);
   });
 });

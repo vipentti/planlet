@@ -991,7 +991,7 @@ interface PlanSummary {
 - Treat symlinks that escape the root as unsafe.
 - Use atomic writes for `tasks.md` updates.
 - Make whole-planlet creation atomic (see §10.5): prepare both new files and become visible as a single operation, so a crash or error mid-creation cannot leave a directory containing only one of `plan.md` or `tasks.md`.
-- Do not shell out for ordinary file operations.
+- Do not shell out for ordinary file operations; the sole exception is scoped git index operations that stage files the CLI wrote or moved (see the staging rule below).
 - Never overwrite an existing active or completed planlet silently.
 - Capture the completion timestamp once, derive the UTC archive date from that same value, and use both consistently in the completion record and destination path.
 - Fail completion when the logical slug already exists in completed storage or when the computed date-prefixed destination directory already exists.
@@ -1001,7 +1001,7 @@ interface PlanSummary {
 - Make task checking idempotent: checking an already checked task succeeds without duplicating changes.
 - Per-planlet CLI write locks cover concurrent `task check` / `task uncheck` / `complete` in one repository working tree on one machine, for one user. Because the lock root lives in the OS temp directory, a single checkout mounted into separate machines, containers, or user accounts gets separate lock namespaces. Cross-branch edits of `tasks.md` still surface as ordinary git merge conflicts on checkbox lines.
 - Optional precondition hashes remain a possible future hardening for non-CLI writers.
-- When completing a planlet, use a plain filesystem move even inside a git working tree. Git can detect the rename from the resulting delete-plus-add, while index management remains the user's responsibility. The CLI must not inspect working-tree cleanliness, stage, or commit on its own.
+- When a command writes plan files inside a git working tree, it stages exactly those paths with explicit pathspecs, gated on a git marker so non-git roots never invoke git. Completion stages a move with exactly one index mutation: it first inspects the moved source with `git ls-files`, and only when the source has index entries (tracked, or staged but uncommitted) runs a single path-scoped `git add -A -- <source> <destination>` that stages the source deletion and the destination together, so the index can never be left half-applied; a never-tracked source gets only its destination added. The git-marker check walks from the selected root toward the filesystem root, recognizing explicit package subdirectories inside a parent worktree. Git failures become warnings, never command failures. The CLI never stages with unscoped or broad `git add -A` — every index mutation carries explicit Planlet-owned pathspecs — and never commits or inspects working-tree cleanliness; index management otherwise remains the user's responsibility. Completion still uses a plain filesystem move; git detects the rename from the resulting delete-plus-add. Staging is unconditional in git roots: the `--no-stage` escape hatch was deliberately dropped by captain decision (2026-08-08), so it is not re-requested, and `create` never stages its transient H1 stubs.
 
 ## 19. Validation Rules
 
