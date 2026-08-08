@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { renameSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { relative, resolve } from "node:path";
+import { resolve } from "node:path";
 
 import type { PlanletState, PlanletTask } from "./models.js";
 import { deriveLifecycleState } from "./status.js";
@@ -219,12 +219,7 @@ function updateTaskLocked(
   });
 
   const warnings = [...validated.warnings];
-  tryStage(
-    options.repositoryRoot,
-    [relative(options.repositoryRoot, tasksPath)],
-    warnings,
-    "tasks.md",
-  );
+  tryStage(options.repositoryRoot, [tasksPath], warnings, "tasks.md");
 
   return {
     slug,

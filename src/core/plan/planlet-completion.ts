@@ -8,7 +8,7 @@ import {
   writeFileSync,
 } from "node:fs";
 
-import { relative, resolve } from "node:path";
+import { resolve } from "node:path";
 
 import type { PlanSummary } from "./models.js";
 import {
@@ -198,10 +198,7 @@ function resumeRecordedCompletion(
   const warnings = [...completedValidation.warnings];
   tryStage(
     options.repositoryRoot,
-    [
-      relative(options.repositoryRoot, source),
-      relative(options.repositoryRoot, destination),
-    ],
+    [source, destination],
     warnings,
     "completed planlet",
   );
@@ -419,10 +416,7 @@ function completePlanletLocked(
   }
   tryStage(
     options.repositoryRoot,
-    [
-      relative(options.repositoryRoot, source),
-      relative(options.repositoryRoot, destination),
-    ],
+    [source, destination],
     warnings,
     "completed planlet",
   );

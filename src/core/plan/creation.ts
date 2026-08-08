@@ -6,7 +6,6 @@ import {
   writeFileSync,
 } from "node:fs";
 import { randomUUID } from "node:crypto";
-import { relative } from "node:path";
 
 import type { PlanSummary } from "./models.js";
 import { atomicPublish, resolveSafePath, tryLstat } from "../paths.js";
@@ -151,12 +150,7 @@ export function createPlanlet(options: CreatePlanletOptions): PlanSummary {
   });
 
   const warnings: string[] = [];
-  tryStage(
-    options.repositoryRoot,
-    [relative(options.repositoryRoot, targetPath)],
-    warnings,
-    "new planlet",
-  );
+  tryStage(options.repositoryRoot, [targetPath], warnings, "new planlet");
 
   return {
     slug,
