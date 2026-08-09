@@ -6,6 +6,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and thi
 
 ## [Unreleased]
 
+### Changed
+
+- The agent-onboarding snippet written by `planlet init` and printed by
+  `planlet onboard` now distinguishes CLI-owned lifecycle operations
+  (checkbox flips, completion record, archive) from plan and task content,
+  which the agent edits directly.
+
 ## [0.4.1] - 2026-08-08
 
 ### Fixed
