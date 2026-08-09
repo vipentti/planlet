@@ -3,6 +3,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import test from "node:test";
 
+import { AGENT_SNIPPET } from "../../src/core/harness/agent-snippet.js";
 import { validatePlanletStructure } from "../../src/core/plan/validation.js";
 
 const ROOT = resolve(import.meta.dirname, "../..");
@@ -23,6 +24,18 @@ function filesUnder(path: string): string[] {
     return entry.isDirectory() ? filesUnder(child) : [child];
   });
 }
+
+function normalizedWhitespace(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Canonical CLI availability policy: the generated agent-onboarding snippet
+ * and every bundled skill must carry this exact wording, whitespace aside.
+ * Keep in sync with `AGENT_SNIPPET` and the three canonical `SKILL.md` files.
+ */
+const CLI_POLICY =
+  "The `planlet` CLI is required. If no executable is available, install it (`npm install -g @vipentti/planlet`) or invoke it through `npx @vipentti/planlet`. If it still cannot run, stop and report that, naming the missing executable. Do not reimplement CLI operations by editing planlet files.";
 
 test("canonical skills expose valid metadata and resolvable local resources", () => {
   for (const name of SKILL_NAMES) {
@@ -84,16 +97,22 @@ test("skills use supported rooted CLI forms and require the planlet CLI", () => 
   for (const markdown of [plan, implement, complete]) {
     assert.match(markdown, /shell-specific escaping/);
     assert.doesNotMatch(markdown, /--root <repository-root>/);
-    assert.match(markdown, /The `planlet` CLI is required\./);
-    assert.match(markdown, /npm install -g @vipentti\/planlet/);
-    assert.match(markdown, /npx @vipentti\/planlet/);
-    assert.match(
-      markdown,
-      /Do not reimplement CLI\s+operations by editing planlet files/,
+    assert.ok(
+      normalizedWhitespace(markdown).includes(CLI_POLICY),
+      "skill must carry the canonical CLI policy verbatim",
     );
     assert.doesNotMatch(markdown, /fallback/i);
     assert.doesNotMatch(markdown, /planlet (?:init|update|tools|archive)\b/);
+    assert.doesNotMatch(markdown, /stop and say so/);
   }
+
+  // The generated onboarding snippet expresses the same policy as the skills.
+  assert.ok(
+    normalizedWhitespace(AGENT_SNIPPET).includes(CLI_POLICY),
+    "agent snippet must carry the canonical CLI policy verbatim",
+  );
+  // The retired immediate-stop wording must not return in either surface.
+  assert.doesNotMatch(normalizedWhitespace(AGENT_SNIPPET), /stop and say so/);
 });
 
 test("skills keep evidence exceptional, write-once, and separate from the audit", () => {

@@ -30,7 +30,9 @@ function withRoot(run: (root: string) => void): void {
 
 test("snippet source is shared and section rendering is deterministic", () => {
   assert.match(AGENT_SNIPPET, /^## Planning with Planlet\n/);
-  assert.match(AGENT_SNIPPET, /stop and say so\. Do not hand-create\n/);
+  // CLI-required policy signal only; the full cross-surface wording contract
+  // lives in tests/skills/skill-contract.test.ts.
+  assert.match(AGENT_SNIPPET, /The `planlet` CLI is required\./);
 
   const section = renderAgentsSection();
   assert.match(
