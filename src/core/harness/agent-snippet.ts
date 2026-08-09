@@ -18,7 +18,8 @@ This repository uses Planlet for focused implementation plans. A planlet is
 \`plans/<slug>/plan.md\` + \`tasks.md\`; Markdown is the source of truth.
 
 - Propose a planlet before multi-step work; skip it for one-file changes.
-- Drive lifecycle with the \`planlet\` CLI; edit plan and task content directly.
+- Use the \`planlet\` CLI for lifecycle state, including task checkboxes and
+  completion/archive. Edit plan and task body content directly.
   Commands: \`planlet create|show|tasks|status|validate <slug>\`,
   \`planlet task check <slug> <task-id>\`, \`planlet complete <slug>\`.
 - Check each task off only after its verification passes. When the last task is
