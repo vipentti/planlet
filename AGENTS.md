@@ -186,7 +186,7 @@ captain decisions required by that plan.
 
 Update `AGENTS.md` when the repository gains stable commands, important top-level structure, or agent-specific constraints. Prefer links to authoritative files over duplicating material that can drift.
 
-<!-- BEGIN PLANLET AGENTS v:1 hash:033327ff -->
+<!-- BEGIN PLANLET AGENTS v:1 hash:0246f0e7 -->
 ## Planning with Planlet
 
 This repository uses Planlet for focused implementation plans. A planlet is
@@ -200,6 +200,9 @@ This repository uses Planlet for focused implementation plans. A planlet is
 - Check each task off only after its verification passes. When the last task is
   checked, run `planlet complete <slug>` to archive it.
 - Run `planlet help [command]` before using a command you have not used here.
-- If no `planlet` executable is available, stop and say so. Do not hand-create
+- The `planlet` CLI is required. If no executable is available, install it
+  (`npm install -g @vipentti/planlet`) or invoke it through
+  `npx @vipentti/planlet`. If it still cannot run, stop and report that,
+  naming the missing executable. Do not reimplement CLI operations by editing
   planlet files.
 <!-- END PLANLET AGENTS -->

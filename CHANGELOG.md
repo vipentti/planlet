@@ -6,6 +6,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and thi
 
 ## [Unreleased]
 
+### Fixed
+
+- Generated agent onboarding now follows the same CLI availability policy as
+  the bundled Planlet skills, trying install or `npx` before stopping and
+  never hand-managing CLI-owned lifecycle state.
+
 ## [0.4.2] - 2026-08-09
 
 ### Changed
