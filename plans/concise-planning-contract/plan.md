@@ -396,8 +396,11 @@ implementation skill explicitly knows not to interpret them in isolation.
 - Every verification command exits 0, with `npm test` permitted to reproduce
   exactly the two known `package-artifact.test.ts` failures under npm 12.0.2
   and nothing else.
-- `planlet --root . validate concise-planning-contract` passes and reports
-  `ready_to_complete` once all tasks are checked.
+- After all tasks are checked, `planlet --root . validate
+  concise-planning-contract` succeeds and its single entry reports
+  `summary.state: ready_to_complete`, read from the existing
+  `entries[].summary.state` output contract: no new top-level state, no
+  separate `status` command, and no CLI changes.
 
 ## Verification
 
@@ -409,6 +412,12 @@ formatting gate applies to the replaced files. Every verification command
 must exit 0, except `npm test`, which may reproduce exactly the two known
 `package-artifact.test.ts` failures under npm 12.0.2, as constrained in
 Acceptance Criteria.
+
+After all tasks are checked, run `planlet --root . validate
+concise-planning-contract` and inspect the existing output contract: exactly
+one entry, and `entries[0].summary.state` equal to `ready_to_complete`. The
+plan adds no new CLI surface and requires no `status` command, because
+`validate` already reports the lifecycle state per entry.
 
 ## Risks and Considerations
 
