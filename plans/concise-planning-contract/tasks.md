@@ -1,6 +1,6 @@
 # Tasks: Concise planning contract
 
-- [ ] T1 Replace `## Develop the proposal` steps 3, 5, and 6 in `skills/planlet-plan/SKILL.md` with the draft content from the plan's Verbatim draft section, writing the declined-confirmation sentence on one line; keep steps 1, 2, and 4 and all other sections unchanged.
+- [x] T1 Replace `## Develop the proposal` steps 3, 5, and 6 in `skills/planlet-plan/SKILL.md` with the draft content from the plan's Verbatim draft section, writing the declined-confirmation sentence on one line; keep steps 1, 2, and 4 and all other sections unchanged.
 - [ ] T2 Replace `skills/planlet-plan/references/planning-guidance.md` with the draft's section 2 content from the plan's Verbatim draft section verbatim, preserving the pinned evidence phrases such as the 2–4 decision batch guidance.
 - [ ] T3 Replace `skills/planlet-plan/assets/plan-template.md` with the draft's section 3 content from the plan's Verbatim draft section, keeping the five required headings Summary, Scope, Approach, Acceptance Criteria, and Verification.
 - [ ] T4 Replace `skills/planlet-plan/assets/tasks-template.md` with the draft's section 4 fenced content from the plan's Verbatim draft section only; the trailing terse-template note is draft commentary and stays out of the file.
