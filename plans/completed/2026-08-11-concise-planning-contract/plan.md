@@ -34,6 +34,11 @@ an exceptional wording-preservation case: the exact skill wording is itself
 the target artifact, and the source exists only outside the repository; it is
 not an example of default desired planlet verbosity.
 
+The guidance file is implemented as a condensed version of the draft's
+section 2 per review feedback: pinned evidence phrases preserved, duplicated
+ownership restatements and numeric word thresholds removed. The Verbatim
+draft remains the planning-time source of truth.
+
 ## Verbatim draft
 
 ````markdown

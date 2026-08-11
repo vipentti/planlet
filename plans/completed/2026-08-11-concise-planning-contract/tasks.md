@@ -8,3 +8,8 @@
 - [x] T6 Regenerate installed skill copies with `node dist/planlet.mjs update` and confirm `planlet --root . tools` reports every destination installed.
 - [x] T7 Add a `CHANGELOG.md` entry under `[Unreleased]` describing the concise planning contract: plan.md owns each requirement once and tasks.md is an execution index, with the implementation skill's companion statement.
 - [x] T8 Run the full verification suite. Every command must exit 0 except `npm test` may reproduce exactly the two known `package-artifact.test.ts` failures under npm 12.0.2; no other test failure is permitted.
+
+## Completion
+
+- Completed at: 2026-08-11T10:17:25.425Z
+- Mode: normal
