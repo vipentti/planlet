@@ -1,5 +1,5 @@
 # Tasks: Plan Title
 
-- [ ] T1 Deliver first verifiable implementation outcome
-- [ ] T2 Integrate and verify next outcome
-- [ ] T3 Run relevant end-to-end verification
+- [ ] T1 Deliver first implementation outcome in the relevant component.
+- [ ] T2 Integrate the next outcome. Verify: run the targeted check that proves it.
+- [ ] T3 Run the broader completion verification defined in `plan.md`.
