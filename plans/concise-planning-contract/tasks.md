@@ -6,5 +6,5 @@
 - [x] T4 Replace `skills/planlet-plan/assets/tasks-template.md` with the draft's section 4 fenced content from the plan's Verbatim draft section only; the trailing terse-template note is draft commentary and stays out of the file.
 - [x] T5 Add the companion paragraph stating plan.md is the authoritative change-specific design and acceptance contract and tasks.md its execution index to `skills/planlet-implement/SKILL.md` immediately after Start workflow step 5.
 - [x] T6 Regenerate installed skill copies with `node dist/planlet.mjs update` and confirm `planlet --root . tools` reports every destination installed.
-- [ ] T7 Add a `CHANGELOG.md` entry under `[Unreleased]` describing the concise planning contract: plan.md owns each requirement once and tasks.md is an execution index, with the implementation skill's companion statement.
+- [x] T7 Add a `CHANGELOG.md` entry under `[Unreleased]` describing the concise planning contract: plan.md owns each requirement once and tasks.md is an execution index, with the implementation skill's companion statement.
 - [ ] T8 Run the full verification suite. Every command must exit 0 except `npm test` may reproduce exactly the two known `package-artifact.test.ts` failures under npm 12.0.2; no other test failure is permitted.

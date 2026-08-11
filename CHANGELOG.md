@@ -6,6 +6,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and thi
 
 ## [Unreleased]
 
+### Changed
+
+- The planlet-plan skill now teaches a concise planning contract: `plan.md`
+  states each material requirement once and `tasks.md` is a compact execution
+  index that does not duplicate detailed plan requirements, with a companion
+  statement in the planlet-implement skill making the layering explicit.
+
 ## [0.4.3] - 2026-08-09
 
 ### Fixed
