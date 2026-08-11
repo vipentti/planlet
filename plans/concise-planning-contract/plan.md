@@ -24,7 +24,7 @@ explicit. Wording-only change across five skill files.
 ## Approach
 
 The verbatim draft in the Verbatim draft section below is the content source
-of truth; apply each replacement verbatim. Deviations, per captain
+of truth; apply each replacement verbatim. Deviations, per approved
 decisions: write the declined-confirmation sentence on one line because
 `tests/skills/skill-contract.test.ts` asserts it as a raw-content substring;
 keep step 4 unchanged because the draft's step 4 is byte-identical to the
@@ -37,7 +37,7 @@ not an example of default desired planlet verbosity.
 ## Verbatim draft
 
 ````markdown
-# Draft: concise Planlet planning contract (captain's source of truth, 2026-08-10)
+# Draft: concise Planlet planning contract (source of truth, 2026-08-10)
 
 ## 1. `skills/planlet-plan/SKILL.md`
 
