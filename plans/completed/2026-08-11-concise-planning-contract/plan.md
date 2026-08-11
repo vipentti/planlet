@@ -23,23 +23,21 @@ explicit. Wording-only change across five skill files.
 
 ## Approach
 
-The verbatim draft in the Verbatim draft section below is the content source
-of truth; apply each replacement verbatim. Deviations, per approved
+The draft in the Draft section below is the content starting point; this
+plan applies it with the approved amendments below. Deviations, per approved
 decisions: write the declined-confirmation sentence on one line because
 `tests/skills/skill-contract.test.ts` asserts it as a raw-content substring;
 keep step 4 unchanged because the draft's step 4 is byte-identical to the
 current one; treat the terse-template sentence after the draft's section 4
-fence as commentary, not file content. This plan embeds the verbatim draft as
-an exceptional wording-preservation case: the exact skill wording is itself
-the target artifact, and the source exists only outside the repository; it is
-not an example of default desired planlet verbosity.
+fence as commentary, not file content. The draft is embedded because the
+exact skill wording is the target artifact and the source exists only outside
+the repository.
 
-The guidance file is implemented as a condensed version of the draft's
-section 2 per review feedback: pinned evidence phrases preserved, duplicated
-ownership restatements and numeric word thresholds removed. The Verbatim
-draft remains the planning-time source of truth.
+The guidance file is a condensed implementation of the draft's section 2 per
+review: pinned evidence phrases preserved, duplicated ownership restatements
+and numeric word thresholds removed.
 
-## Verbatim draft
+## Draft
 
 ````markdown
 # Draft: concise Planlet planning contract (source of truth, 2026-08-10)
