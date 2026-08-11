@@ -17,6 +17,14 @@ Implement one persisted planlet and keep its progress truthful.
 3. Resolve exactly one active planlet with `planlet --root "<repository-root>" list`. Accept one valid explicit active slug. With no slug, select and announce sole active planlet; report none; or ask user to choose when several exist. Never select by recency or output order.
 4. Run `planlet --root "<repository-root>" validate <slug>`. Stop on non-zero exit.
 5. Re-read both files completely with `planlet --root "<repository-root>" --full show <slug> --part plan` and `planlet --root "<repository-root>" --full show <slug> --part tasks`; use `planlet --root "<repository-root>" tasks <slug>` and `planlet --root "<repository-root>" status <slug>` for canonical progress. When the harness exposes a dedicated file-reading capability, also read each file with it before editing that file directly, because such a harness can reject an edit to a file it has not read and may not count a shell read.
+
+Treat `plan.md` as the authoritative change-specific design and acceptance
+contract for this planlet and `tasks.md` as its execution index. A concise task
+inherits every applicable scope, approach, acceptance, and verification
+requirement from `plan.md`; absence of repeated detail in the task does not make
+that requirement optional. Applicable repository instructions and higher-level
+design contracts still take precedence when they explicitly constrain the plan.
+
 6. The `planlet` CLI is required. If no executable is available, install it
    (`npm install -g @vipentti/planlet`) or invoke it through `npx @vipentti/planlet`. If it still
    cannot run, stop and report that, naming the missing executable. Do not reimplement CLI
