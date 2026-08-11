@@ -34,6 +34,8 @@ an exceptional wording-preservation case: the exact skill wording is itself
 the target artifact, and the source exists only outside the repository; it is
 not an example of default desired planlet verbosity.
 
+## Verbatim draft
+
 ````markdown
 # Draft: concise Planlet planning contract (captain's source of truth, 2026-08-10)
 
@@ -374,71 +376,11 @@ After Start workflow step 5, add:
 
 ```markdown
 Treat `plan.md` as the authoritative change-specific design and acceptance
-contract for this planlet, subject to applicable repository instructions and
-higher-level design documents. Treat `tasks.md` as its execution index. A
-concise task inherits every applicable requirement from the planlet's
-`plan.md`; absence of repeated detail in the task does not make that
-requirement optional. Repository instructions and higher-level design
-contracts still take precedence when they explicitly constrain the plan.
-```
-
-This closes the loop. Planning skill can safely produce concise tasks because
-implementation skill explicitly knows not to interpret them in isolation.
-````
-
-## Acceptance Criteria
-
-- State an observable, verifiable finished outcome.
-- State another material behavior, negative case, or compatibility expectation.
-
-## Verification
-
-Describe the broad automated and manual checks that establish success: stable
-commands or check categories, expected outcomes, external gates, and known
-limitations. Group related edge cases instead of duplicating detailed test
-matrices in both this file and `tasks.md`.
-
-Strategy only: routine check results stay in the test, review, and CI systems
-that already hold them, never in this file or `tasks.md`.
-
-## Risks and Considerations
-
-Include this section only for material compatibility, migration, security, or
-delivery risks. Remove it when no such risk needs explicit treatment.
-```
-
----
-
-## 4. `skills/planlet-plan/assets/tasks-template.md`
-
-Replace file with:
-
-```markdown
-# Tasks: Plan Title
-
-- [ ] T1 Deliver first implementation outcome in the relevant component.
-- [ ] T2 Integrate the next outcome. Verify: run the targeted check that proves it.
-- [ ] T3 Run the broader completion verification defined in `plan.md`.
-```
-
-The template is intentionally terse. `tasks.md` should read like an execution
-index, not a second copy of `plan.md`.
-
----
-
-## Optional companion change
-
-I would also make one small change to
-`skills/planlet-implement/SKILL.md`, even though it is outside the four planning
-files above.
-
-After Start workflow step 5, add:
-
-```markdown
-Treat `plan.md` as the authoritative design and acceptance contract and
-`tasks.md` as its execution index. A concise task inherits every applicable
-scope, approach, acceptance, and verification requirement from `plan.md`;
-absence of repeated detail in the task does not make that requirement optional.
+contract for this planlet and `tasks.md` as its execution index. A concise task
+inherits every applicable scope, approach, acceptance, and verification
+requirement from `plan.md`; absence of repeated detail in the task does not make
+that requirement optional. Applicable repository instructions and higher-level
+design contracts still take precedence when they explicitly constrain the plan.
 ```
 
 This closes the loop. Planning skill can safely produce concise tasks because
@@ -451,10 +393,9 @@ implementation skill explicitly knows not to interpret them in isolation.
   one line.
 - `planlet --root . tools` reports every destination installed; the CI
   skill-drift step passes.
-- `npm test` passes with no new failures: the only permitted failures are the
-  two pre-existing `package-artifact.test.ts` failures under npm 12.0.2, where
-  `npm pack --json` returns a name-keyed object while the release-workflow
-  block asserts an array.
+- Every verification command exits 0, with `npm test` permitted to reproduce
+  exactly the two known `package-artifact.test.ts` failures under npm 12.0.2
+  and nothing else.
 - `planlet --root . validate concise-planning-contract` passes and reports
   `ready_to_complete` once all tasks are checked.
 
@@ -464,10 +405,10 @@ Run the full suite: `npm run format:check`, `npm run lint`, `npm run knip`,
 `npm run type-check`, `npm run build`, `npm test`, `git diff --check`.
 Regenerate copies with `node dist/planlet.mjs update` and re-run
 `planlet tools` after the edits. Prettier does not cover `skills/`, so no
-formatting gate applies to the replaced files. The full suite must pass
-except the two reproduced pre-existing `package-artifact.test.ts` failures
-under npm 12.0.2, as constrained in Acceptance Criteria; no new failures are
-allowed.
+formatting gate applies to the replaced files. Every verification command
+must exit 0, except `npm test`, which may reproduce exactly the two known
+`package-artifact.test.ts` failures under npm 12.0.2, as constrained in
+Acceptance Criteria.
 
 ## Risks and Considerations
 
