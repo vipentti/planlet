@@ -8,7 +8,8 @@ broad verification strategy, and material risks. `tasks.md` names ordered
 delivered outcomes: one outcome per task, prerequisites before their
 consumers, unique T-IDs, and a short task-specific `Verify:` clause only when
 useful. State each material requirement once in its owning file; a task is
-understandable after reading `plan.md` and must not repeat the plan. An
+understandable after reading `plan.md` and must not duplicate detailed plan
+requirements. An
 implementer reads both files completely before starting.
 
 When several tasks are governed by one safety, compatibility, migration, or
@@ -61,3 +62,15 @@ on field order, whitespace, or incidental TOON formatting. Stop on unsafe path,
 invalid slug, collision, write conflict, or invalid-plan errors; report code
 and suggested next action without bypassing CLI. Warnings require review but do
 not automatically invalidate a structurally valid planlet.
+
+## Keep the handoff concise
+
+Write the smallest plan that preserves consequential decisions. Avoid exhaustive
+implementation walkthroughs, test-case matrices, historical reasoning, and
+incidental edit sequences unless they remove material ambiguity.
+
+Tasks must not duplicate detailed plan requirements, but may repeat a small
+constraint when needed for task clarity. Prefer one concise sentence; most tasks
+should fit within about 60 words, with no minimum. A task approaching 100 words
+should trigger moving shared detail into `plan.md` or splitting independent
+outcomes.
