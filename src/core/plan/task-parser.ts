@@ -47,8 +47,10 @@ export function parseTaskLine(line: string): PlanletTask | null {
 export function parseTasks(markdown: string): ParsedTasks {
   const tasks: PlanletTask[] = [];
   const taskIds = new Set<string>();
+  const lines = markdown.split(/\r?\n/);
 
-  for (const [index, line] of markdown.split(/\r?\n/).entries()) {
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index] ?? "";
     const task = parseTaskLine(line);
     if (task === null) {
       if (TASK_LIKE_LINE_PATTERN.test(line)) {
@@ -61,16 +63,49 @@ export function parseTasks(markdown: string): ParsedTasks {
       continue;
     }
 
-    if (taskIds.has(task.id)) {
+    let description = task.description;
+    while (index + 1 < lines.length) {
+      const nextLine = lines[index + 1] ?? "";
+      if (parseTaskLine(nextLine) !== null) {
+        break;
+      }
+      if (TASK_LIKE_LINE_PATTERN.test(nextLine)) {
+        throw new PlanletError(
+          "invalid_plan",
+          `Malformed task line at line ${index + 2}`,
+          { details: { line: index + 2, content: nextLine } },
+        );
+      }
+      if (/^[ \t]*$/.test(nextLine)) {
+        break;
+      }
+      if (/^[ \t]*(?:#{1,6}\s|[-*+]\s|\d+\.\s|>\s)/.test(nextLine)) {
+        break;
+      }
+      if (/^(?: {2}|\t)[ \t]*\S/.test(nextLine)) {
+        const trimmed = nextLine.trim();
+        description = `${description} ${trimmed}`;
+        index += 1;
+        continue;
+      }
+      break;
+    }
+
+    const normalizedTask =
+      description === task.description
+        ? task
+        : Object.freeze({ ...task, description });
+
+    if (taskIds.has(normalizedTask.id)) {
       throw new PlanletError(
         "duplicate_task_id",
-        `Duplicate task ID: ${task.id}`,
-        { details: { taskId: task.id, line: index + 1 } },
+        `Duplicate task ID: ${normalizedTask.id}`,
+        { details: { taskId: normalizedTask.id, line: index + 1 } },
       );
     }
 
-    taskIds.add(task.id);
-    tasks.push(task);
+    taskIds.add(normalizedTask.id);
+    tasks.push(normalizedTask);
   }
 
   const frozenTasks = Object.freeze(tasks);
