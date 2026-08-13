@@ -338,6 +338,47 @@ test("task mutations cannot diverge from an active completion record", () => {
   });
 });
 
+test("wrapped task check and uncheck preserve continuation bytes", () => {
+  const wrapped =
+    "# Tasks: Fixture Plan\r\n" +
+    "\r\n" +
+    "- [ ] T1 First line\r\n" +
+    "  continuation stays untouched\r\n" +
+    "- [ ] T2 Second task\r\n";
+  withPlanlet(wrapped, (root, tasksPath) => {
+    const before = readFileSync(tasksPath, "utf8");
+    const checked = updateTask({
+      operation: "check",
+      repositoryRoot: root,
+      slug: "fixture-plan",
+      taskId: "T1",
+    });
+    assert.equal(
+      checked.task.description,
+      "First line continuation stays untouched",
+    );
+    const afterCheck = readFileSync(tasksPath, "utf8");
+    assert.equal(
+      afterCheck,
+      before.replace("- [ ] T1 First line", "- [x] T1 First line"),
+    );
+    assert.match(afterCheck, /  continuation stays untouched/);
+
+    const unchecked = updateTask({
+      operation: "uncheck",
+      repositoryRoot: root,
+      slug: "fixture-plan",
+      taskId: "T1",
+    });
+    assert.equal(
+      unchecked.task.description,
+      "First line continuation stays untouched",
+    );
+    const afterUncheck = readFileSync(tasksPath, "utf8");
+    assert.equal(afterUncheck, before);
+  });
+});
+
 test("task check stages only tasks.md in a git repository", async () => {
   await withGitPlanlet(MARKDOWN, (root, tasksPath) => {
     commitAll(root, "base");

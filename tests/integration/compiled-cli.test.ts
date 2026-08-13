@@ -400,50 +400,81 @@ test("compiled validate treats completed normal+unchecked as invalid_plan", () =
   });
 });
 
-test("compiled validate rejects adjacent indented continuation with taskId exit 3", () => {
+test("compiled validate consumes soft-wrapped indented continuation", () => {
   withRepository((root) => {
     writePlanlet(
       root,
       "continuation-active",
       "# Tasks: Continuation Active\n\n- [ ] T1 First line\n  indented continuation\n",
     );
-    const result = runCli(["validate", "continuation-active"], root);
-    assert.equal(result.exitCode, EXIT_CODES.invalidPlan);
-    const decodedResult = decode(result.stdout.trimEnd()) as {
-      valid: boolean;
-      entries: Array<{
-        error?: { code: string; details?: Record<string, unknown> };
-      }>;
+    const validated = runCli(["validate", "continuation-active"], root);
+    assert.equal(validated.exitCode, EXIT_CODES.success);
+    const tasks = runCli(["tasks", "continuation-active"], root);
+    assert.equal(tasks.exitCode, EXIT_CODES.success);
+    const decodedTasks = decode(tasks.stdout.trimEnd()) as {
+      tasks: Array<{ id: string; description: string }>;
     };
-    assert.equal(decodedResult.valid, false);
-    assert.equal(decodedResult.entries[0]?.error?.code, "invalid_plan");
-    assert.equal(decodedResult.entries[0]?.error?.details?.taskId, "T1");
-    assert.equal(decodedResult.entries[0]?.error?.details?.line, 4);
+    assert.equal(decodedTasks.tasks.length, 1);
     assert.equal(
-      decodedResult.entries[0]?.error?.details?.content,
-      "  indented continuation",
+      decodedTasks.tasks[0]?.description,
+      "First line indented continuation",
     );
-    assert.match(result.stdout, /Invalid task continuation at line 4 for T1/);
 
     writePlanlet(
       root,
       "continuation-tab",
       "# Tasks: Continuation Tab\n\n- [ ] T1 First\n\tindented continuation\n",
     );
-    const tab = runCli(["validate", "continuation-tab"], root);
-    assert.equal(tab.exitCode, EXIT_CODES.invalidPlan);
-    const tabDecoded = decode(tab.stdout.trimEnd()) as {
-      entries: Array<{
-        error?: { code: string; details?: Record<string, unknown> };
-      }>;
+    const tabValidated = runCli(["validate", "continuation-tab"], root);
+    assert.equal(tabValidated.exitCode, EXIT_CODES.success);
+    const tabTasks = runCli(["tasks", "continuation-tab"], root);
+    assert.equal(tabTasks.exitCode, EXIT_CODES.success);
+    const tabDecoded = decode(tabTasks.stdout.trimEnd()) as {
+      tasks: Array<{ id: string; description: string }>;
     };
-    assert.equal(tabDecoded.entries[0]?.error?.code, "invalid_plan");
-    assert.equal(tabDecoded.entries[0]?.error?.details?.taskId, "T1");
-    assert.equal(tabDecoded.entries[0]?.error?.details?.line, 4);
     assert.equal(
-      tabDecoded.entries[0]?.error?.details?.content,
-      "\tindented continuation",
+      tabDecoded.tasks[0]?.description,
+      "First indented continuation",
     );
+
+    const long =
+      "This is a very long task description that definitely exceeds the default print width of eighty characters and should be wrapped by Prettier with proseWrap always";
+    writePlanlet(
+      root,
+      "prettier-wrapped",
+      `# Tasks: Prettier Wrapped\n\n- [ ] T1 ${long}\n`,
+    );
+    const prettierInput = runCli(["tasks", "prettier-wrapped"], root);
+    assert.equal(prettierInput.exitCode, EXIT_CODES.success);
+  });
+});
+
+test("compiled validate for Prettier wrapped task is valid and returns complete description", async () => {
+  const prettier = await import("prettier");
+  const long =
+    "This is a very long task description that definitely exceeds the default print width of eighty characters and should be wrapped by Prettier with proseWrap always";
+  const singleLine = `# Tasks: Fixture\n\n- [ ] T1 ${long}\n`;
+  const wrapped = await (
+    prettier as unknown as {
+      format: (s: string, o: unknown) => Promise<string>;
+    }
+  ).format(singleLine, {
+    parser: "markdown",
+    proseWrap: "always",
+    printWidth: 80,
+  } as unknown as Record<string, unknown>);
+  assert.match(wrapped, / {2,}\S/);
+  withRepository((root) => {
+    writePlanlet(root, "prettier-wrapped", wrapped);
+    const validated = runCli(["validate", "prettier-wrapped"], root);
+    assert.equal(validated.exitCode, EXIT_CODES.success);
+    const tasks = runCli(["tasks", "prettier-wrapped"], root);
+    assert.equal(tasks.exitCode, EXIT_CODES.success);
+    const decoded = decode(tasks.stdout.trimEnd()) as {
+      tasks: Array<{ id: string; description: string }>;
+    };
+    assert.equal(decoded.tasks.length, 1);
+    assert.equal(decoded.tasks[0]?.description, long);
   });
 });
 
