@@ -6,6 +6,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and thi
 
 ## [Unreleased]
 
+### Changed
+
+- `tasks.md` task descriptions may soft-wrap across following indented lines belonging to the same list item, including nested valid Markdown lists (unordered `- ` `* ` `+ ` and ordered `1. `) and indented paragraph continuations (for example 6-space wrapped prose). `parseTasks` consumes those lines and normalizes whitespace so `planlet tasks` returns the complete description. This makes formatting with Prettier `proseWrap: "always"` safe. Blank lines or new Markdown block constructs (heading `#{1,6} `, blockquote `> `) end the description. Nested checkbox syntax (`  - [ ] T2 Nested`) stays invalid with the same parser diagnostic.
+
 ## [0.5.0] - 2026-08-11
 
 ### Changed
@@ -132,6 +136,17 @@ First release. Everything below is new, so these notes describe what Planlet is 
 - Unexpected failures surface as a structured `internal_error` with no stack or path leakage; set `PLANLET_DEBUG=1` for diagnostic detail.
 - Planlet and repository paths reject directory traversal and symlink escape, and file writes are atomic or recoverable.
 
+[Unreleased]: https://github.com/vipentti/planlet/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/vipentti/planlet/compare/v0.4.3...v0.5.0
+[0.4.3]: https://github.com/vipentti/planlet/compare/v0.4.2...v0.4.3
+[0.4.2]: https://github.com/vipentti/planlet/compare/v0.4.1...v0.4.2
+[0.4.1]: https://github.com/vipentti/planlet/compare/v0.4.0...v0.4.1
+[0.4.0]: https://github.com/vipentti/planlet/compare/v0.3.2...v0.4.0
+[0.3.2]: https://github.com/vipentti/planlet/compare/v0.2.0...v0.3.2
+[0.2.0]: https://github.com/vipentti/planlet/compare/v0.1.2...v0.2.0
+[0.1.2]: https://github.com/vipentti/planlet/compare/v0.1.1...v0.1.2
+[0.1.1]: https://github.com/vipentti/planlet/compare/v0.1.0...v0.1.1
+[0.1.0]: https://github.com/vipentti/planlet/releases/tag/v0.1.0
 [Unreleased]: https://github.com/vipentti/planlet/compare/v0.5.0...HEAD
 [0.5.0]: https://github.com/vipentti/planlet/compare/v0.4.3...v0.5.0
 [0.4.3]: https://github.com/vipentti/planlet/compare/v0.4.2...v0.4.3

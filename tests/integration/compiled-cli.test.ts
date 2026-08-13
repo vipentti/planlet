@@ -73,7 +73,23 @@ function writePlanlet(
   root: string,
   slug: string,
   tasks: string,
-  plan = `# ${slug}\n\n## Summary\nFixture.\n\n## Scope\nFixture.\n\n## Approach\nFixture.\n\n## Acceptance Criteria\n- Works.\n\n## Verification\nTests.\n`,
+  plan = `# ${slug}
+
+## Summary
+Fixture.
+
+## Scope
+Fixture.
+
+## Approach
+Fixture.
+
+## Acceptance Criteria
+- Works.
+
+## Verification
+Tests.
+`,
 ): void {
   const directory = join(root, "plans", slug);
   mkdirSync(directory, { recursive: true });
@@ -160,8 +176,27 @@ test("--root selects the repository when invoked from an unrelated directory", (
 test("show --part plan|tasks compacts large content with the exact schema", () => {
   withRepository((root) => {
     const body = "x".repeat(5_000);
-    const plan = `# Large\n\n## Summary\n${body}\n\n## Scope\nFixture.\n\n## Approach\nFixture.\n\n## Acceptance Criteria\n- Works.\n\n## Verification\nTests.\n`;
-    const tasks = `# Tasks: Large\n\n- [ ] T1 ${body}\n`;
+    const plan = `# Large
+
+## Summary
+${body}
+
+## Scope
+Fixture.
+
+## Approach
+Fixture.
+
+## Acceptance Criteria
+- Works.
+
+## Verification
+Tests.
+`;
+    const tasks = `# Tasks: Large
+
+- [ ] T1 ${body}
+`;
     writePlanlet(root, "large", tasks, plan);
 
     const compacted = (content: string) => ({
@@ -200,8 +235,27 @@ test("show --part summary is emitted unchanged", () => {
     writePlanlet(
       root,
       "large",
-      "# Tasks: Large\n\n- [ ] T1 Pending\n",
-      `# Large\n\n## Summary\n${body}\n\n## Scope\nFixture.\n\n## Approach\nFixture.\n\n## Acceptance Criteria\n- Works.\n\n## Verification\nTests.\n`,
+      `# Tasks: Large
+
+- [ ] T1 Pending
+`,
+      `# Large
+
+## Summary
+${body}
+
+## Scope
+Fixture.
+
+## Approach
+Fixture.
+
+## Acceptance Criteria
+- Works.
+
+## Verification
+Tests.
+`,
     );
 
     const result = runCli(["show", "large", "--part", "summary"], root);
@@ -226,7 +280,14 @@ test("show --part summary is emitted unchanged", () => {
 test("non-show payloads are emitted completely", () => {
   withRepository((root) => {
     const body = "y".repeat(5_000);
-    writePlanlet(root, "large", `# Tasks: Large\n\n- [ ] T1 ${body}\n`);
+    writePlanlet(
+      root,
+      "large",
+      `# Tasks: Large
+
+- [ ] T1 ${body}
+`,
+    );
 
     const result = runCli(["tasks", "large"], root);
     assert.equal(result.exitCode, EXIT_CODES.success);
@@ -386,7 +447,16 @@ test("compiled validate treats completed normal+unchecked as invalid_plan", () =
     writeFileSync(join(archive, "plan.md"), "# Bad Complete\n");
     writeFileSync(
       join(archive, "tasks.md"),
-      "# Tasks: Bad Complete\n\n- [x] T1 Done\n- [ ] T2 Left\n\n## Completion\n\n- Completed at: 2026-07-22T12:00:00.000Z\n- Mode: normal\n",
+      `# Tasks: Bad Complete
+
+- [x] T1 Done
+- [ ] T2 Left
+
+## Completion
+
+- Completed at: 2026-07-22T12:00:00.000Z
+- Mode: normal
+`,
     );
 
     const targeted = runCli(["validate", "bad-complete"], root);
@@ -397,6 +467,38 @@ test("compiled validate treats completed normal+unchecked as invalid_plan", () =
     const all = runCli(["validate", "--all"], root);
     assert.equal(all.exitCode, EXIT_CODES.invalidPlan);
     assert.match(all.stdout, /invalid_plan/);
+  });
+});
+
+test("compiled validate for Prettier wrapped task is valid and returns complete description", async () => {
+  const prettier = await import("prettier");
+  const long =
+    "This is a very long task description that definitely exceeds the default print width of eighty characters and should be wrapped by Prettier with proseWrap always";
+  const singleLine = `# Tasks: Fixture
+
+- [ ] T1 ${long}
+`;
+  const wrapped = await (
+    prettier as unknown as {
+      format: (s: string, o: unknown) => Promise<string>;
+    }
+  ).format(singleLine, {
+    parser: "markdown",
+    proseWrap: "always",
+    printWidth: 80,
+  } as unknown as Record<string, unknown>);
+  assert.match(wrapped, / {2,}\S/);
+  withRepository((root) => {
+    writePlanlet(root, "prettier-wrapped", wrapped);
+    const validated = runCli(["validate", "prettier-wrapped"], root);
+    assert.equal(validated.exitCode, EXIT_CODES.success);
+    const tasks = runCli(["tasks", "prettier-wrapped"], root);
+    assert.equal(tasks.exitCode, EXIT_CODES.success);
+    const decoded = decode(tasks.stdout.trimEnd()) as {
+      tasks: Array<{ id: string; description: string }>;
+    };
+    assert.equal(decoded.tasks.length, 1);
+    assert.equal(decoded.tasks[0]?.description, long);
   });
 });
 

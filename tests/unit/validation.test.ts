@@ -9,7 +9,11 @@ test("active planlet validation accepts a narrow valid structure", () => {
     directoryName: "cli-core",
     location: "active",
     planMarkdown: "# CLI Core\n\n## Summary\nBuild it.\n",
-    tasksMarkdown: "# Tasks: CLI Core\n\n- [x] T1 First\n- [ ] T2 Second\n",
+    tasksMarkdown: `# Tasks: CLI Core
+
+- [x] T1 First
+- [ ] T2 Second
+`,
   });
 
   assert.equal(validated.slug, "cli-core");
@@ -23,8 +27,15 @@ test("completed validation requires matching audit data and archive date", () =>
     directoryName: "2026-07-22-cli-core",
     location: "completed",
     planMarkdown: "# CLI Core\n",
-    tasksMarkdown:
-      "# Tasks: CLI Core\n\n- [x] T1 First\n\n## Completion\n\n- Completed at: 2026-07-22T12:34:56Z\n- Mode: normal\n",
+    tasksMarkdown: `# Tasks: CLI Core
+
+- [x] T1 First
+
+## Completion
+
+- Completed at: 2026-07-22T12:34:56Z
+- Mode: normal
+`,
   });
 
   assert.equal(validated.state, "completed");
@@ -40,8 +51,13 @@ test("completed validation requires matching audit data and archive date", () =>
         directoryName: "2026-07-23-cli-core",
         location: "completed",
         planMarkdown: "# CLI Core\n",
-        tasksMarkdown:
-          "# Tasks\n\n## Completion\n\n- Completed at: 2026-07-22T12:34:56Z\n- Mode: normal\n",
+        tasksMarkdown: `# Tasks
+
+## Completion
+
+- Completed at: 2026-07-22T12:34:56Z
+- Mode: normal
+`,
       }),
     (error) => error instanceof PlanletError && error.code === "invalid_plan",
   );
@@ -52,8 +68,13 @@ test("completed validation requires matching audit data and archive date", () =>
         directoryName: "2026-07-22-empty-archive",
         location: "completed",
         planMarkdown: "# Empty Archive\n",
-        tasksMarkdown:
-          "# Tasks\n\n## Completion\n\n- Completed at: 2026-07-22T12:34:56Z\n- Mode: normal\n",
+        tasksMarkdown: `# Tasks
+
+## Completion
+
+- Completed at: 2026-07-22T12:34:56Z
+- Mode: normal
+`,
       }),
     (error) =>
       error instanceof PlanletError &&
@@ -67,7 +88,10 @@ test("validation warns about every missing recommended plan section", () => {
     directoryName: "cli-core",
     location: "active",
     planMarkdown: "# CLI Core\n\n## Summary\nBuild it.\n",
-    tasksMarkdown: "# Tasks\n\n- [ ] T1 Build it\n",
+    tasksMarkdown: `# Tasks
+
+- [ ] T1 Build it
+`,
   });
 
   assert.deepEqual(validated.warnings, [
@@ -80,8 +104,19 @@ test("incomplete overrides accept reordered remaining task IDs", () => {
     directoryName: "2026-07-22-cli-core",
     location: "completed",
     planMarkdown: "# CLI Core\n",
-    tasksMarkdown:
-      "# Tasks\n\n- [ ] T2 Later\n- [ ] T4 Also later\n- [x] T3 Done\n\n## Completion\n\n- Completed at: 2026-07-22T12:34:56.000Z\n- Mode: incomplete override\n- Remaining tasks: T4, T2\n- Reason: Deferred by approval\n",
+    tasksMarkdown: `# Tasks
+
+- [ ] T2 Later
+- [ ] T4 Also later
+- [x] T3 Done
+
+## Completion
+
+- Completed at: 2026-07-22T12:34:56.000Z
+- Mode: incomplete override
+- Remaining tasks: T4, T2
+- Reason: Deferred by approval
+`,
   });
 
   assert.equal(validated.completion?.mode, "incomplete override");
@@ -92,8 +127,15 @@ test("active planlet carrying a completion record is flagged with a warning", ()
     directoryName: "cli-core",
     location: "active",
     planMarkdown: "# CLI Core\n",
-    tasksMarkdown:
-      "# Tasks\n\n- [x] T1 First\n\n## Completion\n\n- Completed at: 2026-07-22T12:34:56Z\n- Mode: normal\n",
+    tasksMarkdown: `# Tasks
+
+- [x] T1 First
+
+## Completion
+
+- Completed at: 2026-07-22T12:34:56Z
+- Mode: normal
+`,
   });
 
   assert.equal(validated.state, "ready_to_complete");
@@ -111,8 +153,17 @@ test("active incomplete overrides require recorded tasks to remain unchecked", (
         directoryName: "cli-core",
         location: "active",
         planMarkdown: "# CLI Core\n",
-        tasksMarkdown:
-          "# Tasks\n\n- [x] T1 Changed after audit\n\n## Completion\n\n- Completed at: 2026-07-22T12:34:56Z\n- Mode: incomplete override\n- Remaining tasks: T1\n- Reason: Interrupted archive\n",
+        tasksMarkdown: `# Tasks
+
+- [x] T1 Changed after audit
+
+## Completion
+
+- Completed at: 2026-07-22T12:34:56Z
+- Mode: incomplete override
+- Remaining tasks: T1
+- Reason: Interrupted archive
+`,
       }),
     (error) =>
       error instanceof PlanletError &&
@@ -128,8 +179,16 @@ test("completed normal mode with unchecked tasks is invalid_plan", () => {
         directoryName: "2026-07-22-cli-core",
         location: "completed",
         planMarkdown: "# CLI Core\n",
-        tasksMarkdown:
-          "# Tasks: CLI Core\n\n- [x] T1 First\n- [ ] T2 Later\n\n## Completion\n\n- Completed at: 2026-07-22T12:34:56Z\n- Mode: normal\n",
+        tasksMarkdown: `# Tasks: CLI Core
+
+- [x] T1 First
+- [ ] T2 Later
+
+## Completion
+
+- Completed at: 2026-07-22T12:34:56Z
+- Mode: normal
+`,
       }),
     (error) =>
       error instanceof PlanletError &&
@@ -139,8 +198,18 @@ test("completed normal mode with unchecked tasks is invalid_plan", () => {
 });
 
 test("incomplete overrides require exact remaining task IDs and a reason", () => {
-  const tasksMarkdown =
-    "# Tasks\n\n- [ ] T2 Later\n- [x] T3 Done\n\n## Completion\n\n- Completed at: 2026-07-22T12:34:56.000Z\n- Mode: incomplete override\n- Remaining tasks: T2\n- Reason: Deferred by approval\n";
+  const tasksMarkdown = `# Tasks
+
+- [ ] T2 Later
+- [x] T3 Done
+
+## Completion
+
+- Completed at: 2026-07-22T12:34:56.000Z
+- Mode: incomplete override
+- Remaining tasks: T2
+- Reason: Deferred by approval
+`;
 
   const validated = validatePlanletStructure({
     directoryName: "2026-07-22-cli-core",

@@ -430,6 +430,7 @@ Rules:
 - Verification should appear as explicit tasks when it is significant.
 - The MVP need not support nested task trees or dependency syntax.
 - Free-form Markdown notes are allowed outside recognized task lines.
+- Each task has one physical checkbox line (`- [ ] T1 <description>` or `- [x] T1 <description>`). Its description may soft-wrap across following indented lines belonging to the same Markdown list item, including nested valid Markdown lists (unordered `- ` `* ` `+ ` and ordered `1. `) and indented paragraph continuations (for example conndeck-style 6-space wrapped prose). `parseTasks` consumes those following lines and normalizes whitespace (strip leading indent and surrounding whitespace, join with a single space) so `planlet tasks` returns the complete description. Blank lines or new Markdown block constructs (heading `#{1,6} `, blockquote `> `) end the description. Nested checkbox syntax stays invalid via `TASK_LIKE_LINE_PATTERN` precedence (for example `  - [ ] T2 Nested` still fails with `invalid_plan` and details `{ line, content }` and no `taskId`).
 
 Verification records are divided as follows, without any new file, command, or schema:
 
