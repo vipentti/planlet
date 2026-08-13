@@ -79,7 +79,7 @@ export function parseTasks(markdown: string): ParsedTasks {
       if (/^[ \t]*$/.test(nextLine)) {
         break;
       }
-      if (/^[ \t]*(?:#{1,6}\s|[-*+]\s|\d+\.\s|>\s)/.test(nextLine)) {
+      if (/^[ \t]*(?:#{1,6}\s|>\s)/.test(nextLine)) {
         break;
       }
       if (/^(?: {2}|\t)[ \t]*\S/.test(nextLine)) {

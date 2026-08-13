@@ -8,7 +8,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and thi
 
 ### Changed
 
-- `tasks.md` task descriptions may soft-wrap across following indented lines belonging to the same list item. `parseTasks` consumes those lines and normalizes whitespace so `planlet tasks` returns the complete description. This makes formatting with Prettier `proseWrap: "always"` safe. Blank lines or new Markdown block or list constructs end the description. Nested checkbox syntax (`  - [ ] T2 Nested`) stays invalid with the same parser diagnostic.
+- `tasks.md` task descriptions may soft-wrap across following indented lines belonging to the same list item, including nested valid Markdown lists (unordered `- ` `* ` `+ ` and ordered `1. `) and indented paragraph continuations (for example 6-space wrapped prose). `parseTasks` consumes those lines and normalizes whitespace so `planlet tasks` returns the complete description. This makes formatting with Prettier `proseWrap: "always"` safe. Blank lines or new Markdown block constructs (heading `#{1,6} `, blockquote `> `) end the description. Nested checkbox syntax (`  - [ ] T2 Nested`) stays invalid with the same parser diagnostic.
 
 ## [0.5.0] - 2026-08-11
 

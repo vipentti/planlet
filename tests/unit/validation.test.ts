@@ -290,20 +290,63 @@ test("multiple indented continuations are concatenated with single spaces", () =
   assert.equal(validated.tasks[0]?.description, "First second line third line");
 });
 
-test("plain nested bullet after task ends consumption and stays separate", () => {
+test("nested unordered list after task is consumed", () => {
   const validated = validatePlanletStructure({
     directoryName: "continuation-plan",
     location: "active",
     planMarkdown: "# Continuation Plan\n",
     tasksMarkdown: `# Tasks: Continuation Plan
 
-- [ ] T1 First
+- [ ] T1 Something with list
   - Acceptance detail
+  - second item
 `,
   });
 
   assert.equal(validated.tasks.length, 1);
-  assert.equal(validated.tasks[0]?.description, "First");
+  assert.equal(
+    validated.tasks[0]?.description,
+    "Something with list - Acceptance detail - second item",
+  );
+});
+
+test("nested ordered list after task is consumed", () => {
+  const validated = validatePlanletStructure({
+    directoryName: "continuation-plan",
+    location: "active",
+    planMarkdown: "# Continuation Plan\n",
+    tasksMarkdown: `# Tasks: Continuation Plan
+
+- [ ] T1 Something with list
+  1. Step 1
+  2. Step 2
+`,
+  });
+
+  assert.equal(validated.tasks.length, 1);
+  assert.equal(
+    validated.tasks[0]?.description,
+    "Something with list 1. Step 1 2. Step 2",
+  );
+});
+
+test("conndeck prose continuation (6-space wrap) is consumed", () => {
+  const validated = validatePlanletStructure({
+    directoryName: "continuation-plan",
+    location: "active",
+    planMarkdown: "# Continuation Plan\n",
+    tasksMarkdown: `# Tasks: Continuation Plan
+
+- [ ] T1 This is a long task description that exceeds width
+      and continues with six-space indent
+`,
+  });
+
+  assert.equal(validated.tasks.length, 1);
+  assert.equal(
+    validated.tasks[0]?.description,
+    "This is a long task description that exceeds width and continues with six-space indent",
+  );
 });
 
 test("parser precedence preserves task-like line error without taskId", () => {
@@ -413,7 +456,7 @@ Prose before first task.
   assert.equal(nextTask.tasks[1]?.description, "Second");
 });
 
-test("completed archives allow indented acceptance bullet without merging", () => {
+test("completed archives consume nested list as continuation", () => {
   const validated = validatePlanletStructure({
     directoryName: "2026-07-22-continuation-plan",
     location: "completed",
@@ -432,7 +475,7 @@ test("completed archives allow indented acceptance bullet without merging", () =
 
   assert.equal(validated.state, "completed");
   assert.equal(validated.tasks.length, 1);
-  assert.equal(validated.tasks[0]?.description, "First");
+  assert.equal(validated.tasks[0]?.description, "First - Acceptance detail");
 });
 
 test("Prettier proseWrap always wrapped task is normalized", async () => {

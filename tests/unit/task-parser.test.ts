@@ -144,17 +144,53 @@ test("soft-wrapped continuation is consumed and normalized", () => {
   assert.equal(parsed.tasks[1]?.description, "Next");
 });
 
-test("nested bullet after task is not consumed", () => {
+test("nested unordered list is consumed as continuation", () => {
   const parsed = parseTasks(`# Tasks
 
-- [ ] T1 First
-  - plain nested bullet
+- [ ] T1 Something with list
+  - item one
+  - item two
 - [ ] T2 Next
 `);
 
   assert.equal(parsed.tasks.length, 2);
-  assert.equal(parsed.tasks[0]?.description, "First");
+  assert.equal(
+    parsed.tasks[0]?.description,
+    "Something with list - item one - item two",
+  );
   assert.equal(parsed.tasks[1]?.description, "Next");
+});
+
+test("nested ordered list is consumed as continuation", () => {
+  const parsed = parseTasks(`# Tasks
+
+- [ ] T1 Something with list
+  1. Step 1
+  2. Step 2
+- [ ] T2 Next
+`);
+
+  assert.equal(parsed.tasks.length, 2);
+  assert.equal(
+    parsed.tasks[0]?.description,
+    "Something with list 1. Step 1 2. Step 2",
+  );
+  assert.equal(parsed.tasks[1]?.description, "Next");
+});
+
+test("conndeck prose continuation (6-space wrap) is consumed", () => {
+  const parsed = parseTasks(`# Tasks
+
+- [ ] T1 This is a long task description that exceeds width
+      and continues with six-space indent
+- [ ] T2 Next
+`);
+
+  assert.equal(parsed.tasks.length, 2);
+  assert.equal(
+    parsed.tasks[0]?.description,
+    "This is a long task description that exceeds width and continues with six-space indent",
+  );
 });
 
 test("task-like nested line stays invalid", () => {
