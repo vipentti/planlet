@@ -25,9 +25,12 @@ test("task parsing recognizes only exact top-level checklist lines", () => {
 });
 
 test("task parsing preserves order and derives progress", () => {
-  const parsed = parseTasks(
-    `# Tasks\n\n- [x] T8 Done\nnotes\n- [ ] T3 Pending`,
-  );
+  const parsed = parseTasks(`# Tasks
+
+- [x] T8 Done
+notes
+- [ ] T3 Pending
+`);
 
   assert.deepEqual(parsed.tasks, [
     { id: "T8", description: "Done", completed: true },
@@ -49,7 +52,11 @@ test("malformed top-level checklist lines are structural errors", () => {
     "- [] T5 Empty checkbox",
   ]) {
     assert.throws(
-      () => parseTasks(`# Tasks\n\n${line}`),
+      () =>
+        parseTasks(`# Tasks
+
+${line}
+`),
       (error) => error instanceof PlanletError && error.code === "invalid_plan",
       line,
     );
@@ -57,9 +64,12 @@ test("malformed top-level checklist lines are structural errors", () => {
 });
 
 test("free-form bracketed notes are not mistaken for malformed tasks", () => {
-  const parsed = parseTasks(
-    `# Tasks\n\n- [ ] T1 Real task\n- [see the design doc] a note\n- [TODO] follow up later`,
-  );
+  const parsed = parseTasks(`# Tasks
+
+- [ ] T1 Real task
+- [see the design doc] a note
+- [TODO] follow up later
+`);
 
   assert.deepEqual(parsed.tasks, [
     { id: "T1", description: "Real task", completed: false },
@@ -67,14 +77,18 @@ test("free-form bracketed notes are not mistaken for malformed tasks", () => {
 });
 
 test("a free-form verification evidence section stays opaque to the parser", () => {
-  const parsed = parseTasks(
-    "# Tasks\n\n- [x] T1 Shipped outcome\n- [ ] T2 External release\n\n" +
-      "## Verification Evidence\n\n" +
-      "- Published `example-tool` 1.4.0; the registry refuses republishing that version.\n" +
-      "  Tarball digest `sha512-3Qk1n0Ye`.\n" +
-      "- The signing key rotation could not be verified: the previous key was already\n" +
-      "  destroyed, so T2 remains unchecked.\n",
-  );
+  const parsed = parseTasks(`# Tasks
+
+- [x] T1 Shipped outcome
+- [ ] T2 External release
+
+## Verification Evidence
+
+- Published \`example-tool\` 1.4.0; the registry refuses republishing that version.
+  Tarball digest \`sha512-3Qk1n0Ye\`.
+- The signing key rotation could not be verified: the previous key was already
+  destroyed, so T2 remains unchecked.
+`);
 
   assert.deepEqual(parsed.tasks, [
     { id: "T1", description: "Shipped outcome", completed: true },
@@ -87,11 +101,14 @@ test("a free-form verification evidence section stays opaque to the parser", () 
 test("a checkbox-shaped evidence bullet is rejected as a malformed task line", () => {
   assert.throws(
     () =>
-      parseTasks(
-        "# Tasks\n\n- [ ] T1 External release\n\n" +
-          "## Verification Evidence\n\n" +
-          "- [ ] CI release gate pending\n",
-      ),
+      parseTasks(`# Tasks
+
+- [ ] T1 External release
+
+## Verification Evidence
+
+- [ ] CI release gate pending
+`),
     (error) =>
       error instanceof PlanletError &&
       error.code === "invalid_plan" &&
@@ -101,10 +118,57 @@ test("a checkbox-shaped evidence bullet is rejected as a malformed task line", (
 
 test("duplicate task IDs produce the dedicated structured error", () => {
   assert.throws(
-    () => parseTasks("# Tasks\n\n- [ ] T2 First\n- [x] T2 Second"),
+    () =>
+      parseTasks(`# Tasks
+
+- [ ] T2 First
+- [x] T2 Second
+`),
     (error) =>
       error instanceof PlanletError &&
       error.code === "duplicate_task_id" &&
       error.details.taskId === "T2",
+  );
+});
+
+test("soft-wrapped continuation is consumed and normalized", () => {
+  const parsed = parseTasks(`# Tasks
+
+- [ ] T1 First line
+  wrapped continuation
+- [ ] T2 Next
+`);
+
+  assert.equal(parsed.tasks.length, 2);
+  assert.equal(parsed.tasks[0]?.description, "First line wrapped continuation");
+  assert.equal(parsed.tasks[1]?.description, "Next");
+});
+
+test("nested bullet after task is not consumed", () => {
+  const parsed = parseTasks(`# Tasks
+
+- [ ] T1 First
+  - plain nested bullet
+- [ ] T2 Next
+`);
+
+  assert.equal(parsed.tasks.length, 2);
+  assert.equal(parsed.tasks[0]?.description, "First");
+  assert.equal(parsed.tasks[1]?.description, "Next");
+});
+
+test("task-like nested line stays invalid", () => {
+  assert.throws(
+    () =>
+      parseTasks(`# Tasks
+
+- [ ] T1 First
+  - [ ] T2 Nested
+`),
+    (error) =>
+      error instanceof PlanletError &&
+      error.code === "invalid_plan" &&
+      error.details.line === 4 &&
+      error.details.content === "  - [ ] T2 Nested",
   );
 });

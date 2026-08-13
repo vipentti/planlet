@@ -9,7 +9,11 @@ test("active planlet validation accepts a narrow valid structure", () => {
     directoryName: "cli-core",
     location: "active",
     planMarkdown: "# CLI Core\n\n## Summary\nBuild it.\n",
-    tasksMarkdown: "# Tasks: CLI Core\n\n- [x] T1 First\n- [ ] T2 Second\n",
+    tasksMarkdown: `# Tasks: CLI Core
+
+- [x] T1 First
+- [ ] T2 Second
+`,
   });
 
   assert.equal(validated.slug, "cli-core");
@@ -23,8 +27,15 @@ test("completed validation requires matching audit data and archive date", () =>
     directoryName: "2026-07-22-cli-core",
     location: "completed",
     planMarkdown: "# CLI Core\n",
-    tasksMarkdown:
-      "# Tasks: CLI Core\n\n- [x] T1 First\n\n## Completion\n\n- Completed at: 2026-07-22T12:34:56Z\n- Mode: normal\n",
+    tasksMarkdown: `# Tasks: CLI Core
+
+- [x] T1 First
+
+## Completion
+
+- Completed at: 2026-07-22T12:34:56Z
+- Mode: normal
+`,
   });
 
   assert.equal(validated.state, "completed");
@@ -40,8 +51,13 @@ test("completed validation requires matching audit data and archive date", () =>
         directoryName: "2026-07-23-cli-core",
         location: "completed",
         planMarkdown: "# CLI Core\n",
-        tasksMarkdown:
-          "# Tasks\n\n## Completion\n\n- Completed at: 2026-07-22T12:34:56Z\n- Mode: normal\n",
+        tasksMarkdown: `# Tasks
+
+## Completion
+
+- Completed at: 2026-07-22T12:34:56Z
+- Mode: normal
+`,
       }),
     (error) => error instanceof PlanletError && error.code === "invalid_plan",
   );
@@ -52,8 +68,13 @@ test("completed validation requires matching audit data and archive date", () =>
         directoryName: "2026-07-22-empty-archive",
         location: "completed",
         planMarkdown: "# Empty Archive\n",
-        tasksMarkdown:
-          "# Tasks\n\n## Completion\n\n- Completed at: 2026-07-22T12:34:56Z\n- Mode: normal\n",
+        tasksMarkdown: `# Tasks
+
+## Completion
+
+- Completed at: 2026-07-22T12:34:56Z
+- Mode: normal
+`,
       }),
     (error) =>
       error instanceof PlanletError &&
@@ -67,7 +88,10 @@ test("validation warns about every missing recommended plan section", () => {
     directoryName: "cli-core",
     location: "active",
     planMarkdown: "# CLI Core\n\n## Summary\nBuild it.\n",
-    tasksMarkdown: "# Tasks\n\n- [ ] T1 Build it\n",
+    tasksMarkdown: `# Tasks
+
+- [ ] T1 Build it
+`,
   });
 
   assert.deepEqual(validated.warnings, [
@@ -80,8 +104,19 @@ test("incomplete overrides accept reordered remaining task IDs", () => {
     directoryName: "2026-07-22-cli-core",
     location: "completed",
     planMarkdown: "# CLI Core\n",
-    tasksMarkdown:
-      "# Tasks\n\n- [ ] T2 Later\n- [ ] T4 Also later\n- [x] T3 Done\n\n## Completion\n\n- Completed at: 2026-07-22T12:34:56.000Z\n- Mode: incomplete override\n- Remaining tasks: T4, T2\n- Reason: Deferred by approval\n",
+    tasksMarkdown: `# Tasks
+
+- [ ] T2 Later
+- [ ] T4 Also later
+- [x] T3 Done
+
+## Completion
+
+- Completed at: 2026-07-22T12:34:56.000Z
+- Mode: incomplete override
+- Remaining tasks: T4, T2
+- Reason: Deferred by approval
+`,
   });
 
   assert.equal(validated.completion?.mode, "incomplete override");
@@ -92,8 +127,15 @@ test("active planlet carrying a completion record is flagged with a warning", ()
     directoryName: "cli-core",
     location: "active",
     planMarkdown: "# CLI Core\n",
-    tasksMarkdown:
-      "# Tasks\n\n- [x] T1 First\n\n## Completion\n\n- Completed at: 2026-07-22T12:34:56Z\n- Mode: normal\n",
+    tasksMarkdown: `# Tasks
+
+- [x] T1 First
+
+## Completion
+
+- Completed at: 2026-07-22T12:34:56Z
+- Mode: normal
+`,
   });
 
   assert.equal(validated.state, "ready_to_complete");
@@ -111,8 +153,17 @@ test("active incomplete overrides require recorded tasks to remain unchecked", (
         directoryName: "cli-core",
         location: "active",
         planMarkdown: "# CLI Core\n",
-        tasksMarkdown:
-          "# Tasks\n\n- [x] T1 Changed after audit\n\n## Completion\n\n- Completed at: 2026-07-22T12:34:56Z\n- Mode: incomplete override\n- Remaining tasks: T1\n- Reason: Interrupted archive\n",
+        tasksMarkdown: `# Tasks
+
+- [x] T1 Changed after audit
+
+## Completion
+
+- Completed at: 2026-07-22T12:34:56Z
+- Mode: incomplete override
+- Remaining tasks: T1
+- Reason: Interrupted archive
+`,
       }),
     (error) =>
       error instanceof PlanletError &&
@@ -128,8 +179,16 @@ test("completed normal mode with unchecked tasks is invalid_plan", () => {
         directoryName: "2026-07-22-cli-core",
         location: "completed",
         planMarkdown: "# CLI Core\n",
-        tasksMarkdown:
-          "# Tasks: CLI Core\n\n- [x] T1 First\n- [ ] T2 Later\n\n## Completion\n\n- Completed at: 2026-07-22T12:34:56Z\n- Mode: normal\n",
+        tasksMarkdown: `# Tasks: CLI Core
+
+- [x] T1 First
+- [ ] T2 Later
+
+## Completion
+
+- Completed at: 2026-07-22T12:34:56Z
+- Mode: normal
+`,
       }),
     (error) =>
       error instanceof PlanletError &&
@@ -139,8 +198,18 @@ test("completed normal mode with unchecked tasks is invalid_plan", () => {
 });
 
 test("incomplete overrides require exact remaining task IDs and a reason", () => {
-  const tasksMarkdown =
-    "# Tasks\n\n- [ ] T2 Later\n- [x] T3 Done\n\n## Completion\n\n- Completed at: 2026-07-22T12:34:56.000Z\n- Mode: incomplete override\n- Remaining tasks: T2\n- Reason: Deferred by approval\n";
+  const tasksMarkdown = `# Tasks
+
+- [ ] T2 Later
+- [x] T3 Done
+
+## Completion
+
+- Completed at: 2026-07-22T12:34:56.000Z
+- Mode: incomplete override
+- Remaining tasks: T2
+- Reason: Deferred by approval
+`;
 
   const validated = validatePlanletStructure({
     directoryName: "2026-07-22-cli-core",
@@ -174,8 +243,11 @@ test("soft-wrapped indented continuation is consumed into description", () => {
     directoryName: "continuation-plan",
     location: "active",
     planMarkdown: "# Continuation Plan\n",
-    tasksMarkdown:
-      "# Tasks: Continuation Plan\n\n- [ ] T1 First line\n  indented continuation\n",
+    tasksMarkdown: `# Tasks: Continuation Plan
+
+- [ ] T1 First line
+  indented continuation
+`,
   });
 
   assert.equal(validated.tasks.length, 1);
@@ -190,8 +262,11 @@ test("tab-indented continuation is consumed", () => {
     directoryName: "continuation-plan",
     location: "active",
     planMarkdown: "# Continuation Plan\n",
-    tasksMarkdown:
-      "# Tasks: Continuation Plan\n\n- [ ] T1 First\n\tindented continuation\n",
+    tasksMarkdown: `# Tasks: Continuation Plan
+
+- [ ] T1 First
+	indented continuation
+`,
   });
 
   assert.equal(validated.tasks.length, 1);
@@ -203,8 +278,12 @@ test("multiple indented continuations are concatenated with single spaces", () =
     directoryName: "continuation-plan",
     location: "active",
     planMarkdown: "# Continuation Plan\n",
-    tasksMarkdown:
-      "# Tasks: Continuation Plan\n\n- [ ] T1 First\n  second line\n  third line\n",
+    tasksMarkdown: `# Tasks: Continuation Plan
+
+- [ ] T1 First
+  second line
+  third line
+`,
   });
 
   assert.equal(validated.tasks.length, 1);
@@ -216,8 +295,11 @@ test("plain nested bullet after task ends consumption and stays separate", () =>
     directoryName: "continuation-plan",
     location: "active",
     planMarkdown: "# Continuation Plan\n",
-    tasksMarkdown:
-      "# Tasks: Continuation Plan\n\n- [ ] T1 First\n  - Acceptance detail\n",
+    tasksMarkdown: `# Tasks: Continuation Plan
+
+- [ ] T1 First
+  - Acceptance detail
+`,
   });
 
   assert.equal(validated.tasks.length, 1);
@@ -231,8 +313,11 @@ test("parser precedence preserves task-like line error without taskId", () => {
         directoryName: "continuation-plan",
         location: "active",
         planMarkdown: "# Continuation Plan\n",
-        tasksMarkdown:
-          "# Tasks: Continuation Plan\n\n- [ ] T1 First\n  - [ ] T2 Nested\n",
+        tasksMarkdown: `# Tasks: Continuation Plan
+
+- [ ] T1 First
+  - [ ] T2 Nested
+`,
       }),
     (error) =>
       error instanceof PlanletError &&
@@ -248,8 +333,11 @@ test("single-line active tasks remain valid", () => {
     directoryName: "single-line-plan",
     location: "active",
     planMarkdown: "# Single Line Plan\n",
-    tasksMarkdown:
-      "# Tasks: Single Line Plan\n\n- [ ] T1 First\n- [x] T2 Second\n",
+    tasksMarkdown: `# Tasks: Single Line Plan
+
+- [ ] T1 First
+- [x] T2 Second
+`,
   });
 
   assert.equal(validated.tasks.length, 2);
@@ -258,8 +346,11 @@ test("single-line active tasks remain valid", () => {
     directoryName: "single-space-plan",
     location: "active",
     planMarkdown: "# Single Space Plan\n",
-    tasksMarkdown:
-      "# Tasks: Single Space Plan\n\n- [ ] T1 First\n single space not continuation\n",
+    tasksMarkdown: `# Tasks: Single Space Plan
+
+- [ ] T1 First
+ single space not continuation
+`,
   });
 
   assert.equal(withSingleSpace.tasks.length, 1);
@@ -271,8 +362,12 @@ test("ordinary Markdown outside tasks remains allowed when not adjacent", () => 
     directoryName: "prose-before-plan",
     location: "active",
     planMarkdown: "# Prose Before Plan\n",
-    tasksMarkdown:
-      "# Tasks: Prose Before Plan\n\nProse before first task.\n\n- [ ] T1 First\n",
+    tasksMarkdown: `# Tasks: Prose Before Plan
+
+Prose before first task.
+
+- [ ] T1 First
+`,
   });
   assert.equal(beforeFirst.tasks.length, 1);
 
@@ -280,8 +375,12 @@ test("ordinary Markdown outside tasks remains allowed when not adjacent", () => 
     directoryName: "blank-separated-plan",
     location: "active",
     planMarkdown: "# Blank Separated Plan\n",
-    tasksMarkdown:
-      "# Tasks: Blank Separated Plan\n\n- [ ] T1 First\n\n  indented after blank line\n",
+    tasksMarkdown: `# Tasks: Blank Separated Plan
+
+- [ ] T1 First
+
+  indented after blank line
+`,
   });
   assert.equal(blankSeparated.tasks.length, 1);
   assert.equal(blankSeparated.tasks[0]?.description, "First");
@@ -290,8 +389,11 @@ test("ordinary Markdown outside tasks remains allowed when not adjacent", () => 
     directoryName: "heading-after-plan",
     location: "active",
     planMarkdown: "# Heading After Plan\n",
-    tasksMarkdown:
-      "# Tasks: Heading After Plan\n\n- [ ] T1 First\n## Heading\n",
+    tasksMarkdown: `# Tasks: Heading After Plan
+
+- [ ] T1 First
+## Heading
+`,
   });
   assert.equal(headingAfter.tasks.length, 1);
   assert.equal(headingAfter.tasks[0]?.description, "First");
@@ -300,8 +402,11 @@ test("ordinary Markdown outside tasks remains allowed when not adjacent", () => 
     directoryName: "next-task-plan",
     location: "active",
     planMarkdown: "# Next Task Plan\n",
-    tasksMarkdown:
-      "# Tasks: Next Task Plan\n\n- [ ] T1 First\n- [ ] T2 Second\n",
+    tasksMarkdown: `# Tasks: Next Task Plan
+
+- [ ] T1 First
+- [ ] T2 Second
+`,
   });
   assert.equal(nextTask.tasks.length, 2);
   assert.equal(nextTask.tasks[0]?.description, "First");
@@ -313,8 +418,16 @@ test("completed archives allow indented acceptance bullet without merging", () =
     directoryName: "2026-07-22-continuation-plan",
     location: "completed",
     planMarkdown: "# Continuation Plan\n",
-    tasksMarkdown:
-      "# Tasks: Continuation Plan\n\n- [x] T1 First\n  - Acceptance detail\n\n## Completion\n\n- Completed at: 2026-07-22T12:34:56Z\n- Mode: normal\n",
+    tasksMarkdown: `# Tasks: Continuation Plan
+
+- [x] T1 First
+  - Acceptance detail
+
+## Completion
+
+- Completed at: 2026-07-22T12:34:56Z
+- Mode: normal
+`,
   });
 
   assert.equal(validated.state, "completed");
@@ -326,7 +439,10 @@ test("Prettier proseWrap always wrapped task is normalized", async () => {
   const prettier = await import("prettier");
   const long =
     "This is a very long task description that definitely exceeds the default print width of eighty characters and should be wrapped by Prettier with proseWrap always";
-  const singleLine = `# Tasks: Fixture\n\n- [ ] T1 ${long}\n`;
+  const singleLine = `# Tasks: Fixture
+
+- [ ] T1 ${long}
+`;
   const wrapped = await (
     prettier as unknown as {
       format: (s: string, o: unknown) => Promise<string>;

@@ -339,12 +339,12 @@ test("task mutations cannot diverge from an active completion record", () => {
 });
 
 test("wrapped task check and uncheck preserve continuation bytes", () => {
-  const wrapped =
-    "# Tasks: Fixture Plan\r\n" +
-    "\r\n" +
-    "- [ ] T1 First line\r\n" +
-    "  continuation stays untouched\r\n" +
-    "- [ ] T2 Second task\r\n";
+  const wrapped = `# Tasks: Fixture Plan
+
+- [ ] T1 First line
+  continuation stays untouched
+- [ ] T2 Second task
+`;
   withPlanlet(wrapped, (root, tasksPath) => {
     const before = readFileSync(tasksPath, "utf8");
     const checked = updateTask({
