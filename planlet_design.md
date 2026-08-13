@@ -430,6 +430,7 @@ Rules:
 - Verification should appear as explicit tasks when it is significant.
 - The MVP need not support nested task trees or dependency syntax.
 - Free-form Markdown notes are allowed outside recognized task lines.
+- Each task occupies exactly one physical line (`- [ ] T1 <description>` or `- [x] T1 <description>`). Active validation rejects an indented line immediately following a task that matches `/^(?: {2}|\t)[ \t]*\S/` (two or more leading spaces, or a tab in the first column, followed by optional spaces or tabs and a non-whitespace character) with `invalid_plan` and details `{ taskId, line, content }` where `line` is the one-based line number of the follower. The diagnostic with `taskId` applies only to followers the parser would otherwise silently accept as free-form Markdown; task-like followers remain rejected by the parser with `{ line, content }` and no `taskId`. Completed archives are exempt. Put extended detail in `plan.md`, not as indented continuation after the task line.
 
 Verification records are divided as follows, without any new file, command, or schema:
 
