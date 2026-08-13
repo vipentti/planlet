@@ -6,9 +6,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and thi
 
 ## [Unreleased]
 
-### Added
+### Changed
 
-- Active `planlet validate` now rejects indented continuation lines immediately following a task in `tasks.md` (matching `/^(?: {2}|\t)[ \t]*\S/`), preserving one physical line per task (`- [ ] T1 <description>`). Rejected followers fail with `invalid_plan` and details `{ taskId, line, content }` (exit 3); task-like followers keep their existing parser diagnostic without `taskId`. Completed archives are exempt. Extended detail belongs in `plan.md`.
+- `tasks.md` task descriptions may soft-wrap across following indented lines belonging to the same list item. `parseTasks` consumes those lines and normalizes whitespace so `planlet tasks` returns the complete description. This makes formatting with Prettier `proseWrap: "always"` safe. Blank lines or new Markdown block or list constructs end the description. Nested checkbox syntax (`  - [ ] T2 Nested`) stays invalid with the same parser diagnostic.
 
 ## [0.5.0] - 2026-08-11
 
