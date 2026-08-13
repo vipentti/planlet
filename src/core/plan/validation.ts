@@ -2,7 +2,7 @@ import type { CompletionRecord, PlanletState, PlanletTask } from "./models.js";
 import { parseCompletionRecord } from "./completion.js";
 import { assertValidArchiveName, isValidSlug } from "./slugs.js";
 import { deriveLifecycleState, type PlanletLocation } from "./status.js";
-import { parseTasks } from "./task-parser.js";
+import { parseTaskLine, parseTasks } from "./task-parser.js";
 import { PlanletError } from "../../errors/planlet-error.js";
 
 const RECOMMENDED_PLAN_SECTIONS = Object.freeze([
@@ -83,6 +83,30 @@ export function validatePlanletStructure(
   parseInitialH1(input.tasksMarkdown, "tasks.md");
   const parsedTasks = parseTasks(input.tasksMarkdown);
   const completion = parseCompletionRecord(input.tasksMarkdown);
+  if (input.location === "active") {
+    const lines = input.tasksMarkdown.split(/\r?\n/);
+    for (let index = 0; index < lines.length; index += 1) {
+      const line = lines[index] ?? "";
+      const task = parseTaskLine(line);
+      if (task === null) {
+        continue;
+      }
+      const nextLine = lines[index + 1];
+      if (nextLine !== undefined && /^(?: {2}|\t)[ \t]*\S/.test(nextLine)) {
+        throw new PlanletError(
+          "invalid_plan",
+          `Invalid task continuation at line ${index + 2} for ${task.id}: indented text following a task must be on the task line; move detail to plan.md`,
+          {
+            details: {
+              taskId: task.id,
+              line: index + 2,
+              content: nextLine,
+            },
+          },
+        );
+      }
+    }
+  }
   const warnings: string[] = [];
   const planHeadings = new Set(
     input.planMarkdown.split(/\r?\n/).flatMap((line) => {
