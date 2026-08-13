@@ -169,62 +169,59 @@ test("incomplete overrides require exact remaining task IDs and a reason", () =>
   );
 });
 
-test("active validation rejects two-space indented continuation with taskId", () => {
-  assert.throws(
-    () =>
-      validatePlanletStructure({
-        directoryName: "continuation-plan",
-        location: "active",
-        planMarkdown: "# Continuation Plan\n",
-        tasksMarkdown:
-          "# Tasks: Continuation Plan\n\n- [ ] T1 First line\n  indented continuation\n",
-      }),
-    (error) =>
-      error instanceof PlanletError &&
-      error.code === "invalid_plan" &&
-      error.details.taskId === "T1" &&
-      error.details.line === 4 &&
-      error.details.content === "  indented continuation" &&
-      error.message.includes("Invalid task continuation at line 4 for T1"),
+test("soft-wrapped indented continuation is consumed into description", () => {
+  const validated = validatePlanletStructure({
+    directoryName: "continuation-plan",
+    location: "active",
+    planMarkdown: "# Continuation Plan\n",
+    tasksMarkdown:
+      "# Tasks: Continuation Plan\n\n- [ ] T1 First line\n  indented continuation\n",
+  });
+
+  assert.equal(validated.tasks.length, 1);
+  assert.equal(
+    validated.tasks[0]?.description,
+    "First line indented continuation",
   );
 });
 
-test("active validation rejects tab-indented continuation", () => {
-  assert.throws(
-    () =>
-      validatePlanletStructure({
-        directoryName: "continuation-plan",
-        location: "active",
-        planMarkdown: "# Continuation Plan\n",
-        tasksMarkdown:
-          "# Tasks: Continuation Plan\n\n- [ ] T1 First\n\tindented continuation\n",
-      }),
-    (error) =>
-      error instanceof PlanletError &&
-      error.code === "invalid_plan" &&
-      error.details.taskId === "T1" &&
-      error.details.line === 4 &&
-      error.details.content === "\tindented continuation",
-  );
+test("tab-indented continuation is consumed", () => {
+  const validated = validatePlanletStructure({
+    directoryName: "continuation-plan",
+    location: "active",
+    planMarkdown: "# Continuation Plan\n",
+    tasksMarkdown:
+      "# Tasks: Continuation Plan\n\n- [ ] T1 First\n\tindented continuation\n",
+  });
+
+  assert.equal(validated.tasks.length, 1);
+  assert.equal(validated.tasks[0]?.description, "First indented continuation");
 });
 
-test("active validation rejects plain nested bullet as continuation", () => {
-  assert.throws(
-    () =>
-      validatePlanletStructure({
-        directoryName: "continuation-plan",
-        location: "active",
-        planMarkdown: "# Continuation Plan\n",
-        tasksMarkdown:
-          "# Tasks: Continuation Plan\n\n- [ ] T1 First\n  - Acceptance detail\n",
-      }),
-    (error) =>
-      error instanceof PlanletError &&
-      error.code === "invalid_plan" &&
-      error.details.taskId === "T1" &&
-      error.details.line === 4 &&
-      error.details.content === "  - Acceptance detail",
-  );
+test("multiple indented continuations are concatenated with single spaces", () => {
+  const validated = validatePlanletStructure({
+    directoryName: "continuation-plan",
+    location: "active",
+    planMarkdown: "# Continuation Plan\n",
+    tasksMarkdown:
+      "# Tasks: Continuation Plan\n\n- [ ] T1 First\n  second line\n  third line\n",
+  });
+
+  assert.equal(validated.tasks.length, 1);
+  assert.equal(validated.tasks[0]?.description, "First second line third line");
+});
+
+test("plain nested bullet after task ends consumption and stays separate", () => {
+  const validated = validatePlanletStructure({
+    directoryName: "continuation-plan",
+    location: "active",
+    planMarkdown: "# Continuation Plan\n",
+    tasksMarkdown:
+      "# Tasks: Continuation Plan\n\n- [ ] T1 First\n  - Acceptance detail\n",
+  });
+
+  assert.equal(validated.tasks.length, 1);
+  assert.equal(validated.tasks[0]?.description, "First");
 });
 
 test("parser precedence preserves task-like line error without taskId", () => {
@@ -266,6 +263,7 @@ test("single-line active tasks remain valid", () => {
   });
 
   assert.equal(withSingleSpace.tasks.length, 1);
+  assert.equal(withSingleSpace.tasks[0]?.description, "First");
 });
 
 test("ordinary Markdown outside tasks remains allowed when not adjacent", () => {
@@ -286,6 +284,7 @@ test("ordinary Markdown outside tasks remains allowed when not adjacent", () => 
       "# Tasks: Blank Separated Plan\n\n- [ ] T1 First\n\n  indented after blank line\n",
   });
   assert.equal(blankSeparated.tasks.length, 1);
+  assert.equal(blankSeparated.tasks[0]?.description, "First");
 
   const headingAfter = validatePlanletStructure({
     directoryName: "heading-after-plan",
@@ -295,6 +294,7 @@ test("ordinary Markdown outside tasks remains allowed when not adjacent", () => 
       "# Tasks: Heading After Plan\n\n- [ ] T1 First\n## Heading\n",
   });
   assert.equal(headingAfter.tasks.length, 1);
+  assert.equal(headingAfter.tasks[0]?.description, "First");
 
   const nextTask = validatePlanletStructure({
     directoryName: "next-task-plan",
@@ -304,9 +304,11 @@ test("ordinary Markdown outside tasks remains allowed when not adjacent", () => 
       "# Tasks: Next Task Plan\n\n- [ ] T1 First\n- [ ] T2 Second\n",
   });
   assert.equal(nextTask.tasks.length, 2);
+  assert.equal(nextTask.tasks[0]?.description, "First");
+  assert.equal(nextTask.tasks[1]?.description, "Second");
 });
 
-test("completed archives allow indented continuation", () => {
+test("completed archives allow indented acceptance bullet without merging", () => {
   const validated = validatePlanletStructure({
     directoryName: "2026-07-22-continuation-plan",
     location: "completed",
@@ -317,4 +319,30 @@ test("completed archives allow indented continuation", () => {
 
   assert.equal(validated.state, "completed");
   assert.equal(validated.tasks.length, 1);
+  assert.equal(validated.tasks[0]?.description, "First");
+});
+
+test("Prettier proseWrap always wrapped task is normalized", async () => {
+  const prettier = await import("prettier");
+  const long =
+    "This is a very long task description that definitely exceeds the default print width of eighty characters and should be wrapped by Prettier with proseWrap always";
+  const singleLine = `# Tasks: Fixture\n\n- [ ] T1 ${long}\n`;
+  const wrapped = await (
+    prettier as unknown as {
+      format: (s: string, o: unknown) => Promise<string>;
+    }
+  ).format(singleLine, {
+    parser: "markdown",
+    proseWrap: "always",
+    printWidth: 80,
+  } as unknown as Record<string, unknown>);
+  assert.match(wrapped, / {2,}\S/);
+  const validated = validatePlanletStructure({
+    directoryName: "prettier-plan",
+    location: "active",
+    planMarkdown: "# Prettier Plan\n",
+    tasksMarkdown: wrapped,
+  });
+  assert.equal(validated.tasks.length, 1);
+  assert.equal(validated.tasks[0]?.description, long);
 });
