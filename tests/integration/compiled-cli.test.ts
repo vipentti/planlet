@@ -400,6 +400,126 @@ test("compiled validate treats completed normal+unchecked as invalid_plan", () =
   });
 });
 
+test("compiled validate rejects adjacent indented continuation with taskId exit 3", () => {
+  withRepository((root) => {
+    writePlanlet(
+      root,
+      "continuation-active",
+      "# Tasks: Continuation Active\n\n- [ ] T1 First line\n  indented continuation\n",
+    );
+    const result = runCli(["validate", "continuation-active"], root);
+    assert.equal(result.exitCode, EXIT_CODES.invalidPlan);
+    const decodedResult = decode(result.stdout.trimEnd()) as {
+      valid: boolean;
+      entries: Array<{
+        error?: { code: string; details?: Record<string, unknown> };
+      }>;
+    };
+    assert.equal(decodedResult.valid, false);
+    assert.equal(decodedResult.entries[0]?.error?.code, "invalid_plan");
+    assert.equal(decodedResult.entries[0]?.error?.details?.taskId, "T1");
+    assert.equal(decodedResult.entries[0]?.error?.details?.line, 4);
+    assert.equal(
+      decodedResult.entries[0]?.error?.details?.content,
+      "  indented continuation",
+    );
+    assert.match(result.stdout, /Invalid task continuation at line 4 for T1/);
+
+    writePlanlet(
+      root,
+      "continuation-tab",
+      "# Tasks: Continuation Tab\n\n- [ ] T1 First\n\tindented continuation\n",
+    );
+    const tab = runCli(["validate", "continuation-tab"], root);
+    assert.equal(tab.exitCode, EXIT_CODES.invalidPlan);
+    const tabDecoded = decode(tab.stdout.trimEnd()) as {
+      entries: Array<{
+        error?: { code: string; details?: Record<string, unknown> };
+      }>;
+    };
+    assert.equal(tabDecoded.entries[0]?.error?.code, "invalid_plan");
+    assert.equal(tabDecoded.entries[0]?.error?.details?.taskId, "T1");
+    assert.equal(tabDecoded.entries[0]?.error?.details?.line, 4);
+    assert.equal(
+      tabDecoded.entries[0]?.error?.details?.content,
+      "\tindented continuation",
+    );
+  });
+});
+
+test("compiled validate preserves parser error for task-like adjacent line without taskId", () => {
+  withRepository((root) => {
+    writePlanlet(
+      root,
+      "continuation-tasklike",
+      "# Tasks: Continuation Tasklike\n\n- [ ] T1 First\n  - [ ] T2 Nested\n",
+    );
+    const result = runCli(["validate", "continuation-tasklike"], root);
+    assert.equal(result.exitCode, EXIT_CODES.invalidPlan);
+    const decodedResult = decode(result.stdout.trimEnd()) as {
+      entries: Array<{
+        error?: { code: string; details?: Record<string, unknown> };
+      }>;
+    };
+    assert.equal(decodedResult.entries[0]?.error?.code, "invalid_plan");
+    assert.equal(decodedResult.entries[0]?.error?.details?.line, 4);
+    assert.equal(
+      decodedResult.entries[0]?.error?.details?.content,
+      "  - [ ] T2 Nested",
+    );
+    assert.equal(decodedResult.entries[0]?.error?.details?.taskId, undefined);
+    assert.match(result.stdout, /Malformed task line at line 4/);
+  });
+});
+
+test("completed archive with indented continuation validates via --all and targeted location", () => {
+  withRepository((root) => {
+    const archive = join(root, "plans", "completed", "2026-07-22-supervision");
+    mkdirSync(archive, { recursive: true });
+    writeFileSync(join(archive, "plan.md"), "# Supervision\n");
+    writeFileSync(
+      join(archive, "tasks.md"),
+      "# Tasks: Supervision\n\n- [x] T1 First\n  - Acceptance detail stays\n\n## Completion\n\n- Completed at: 2026-07-22T12:34:56Z\n- Mode: normal\n",
+    );
+    const targeted = runCli(["validate", "supervision"], root);
+    assert.equal(targeted.exitCode, EXIT_CODES.success);
+    assert.equal(
+      (decode(targeted.stdout.trimEnd()) as { valid: boolean }).valid,
+      true,
+    );
+    const all = runCli(["validate", "--all"], root);
+    assert.equal(all.exitCode, EXIT_CODES.success);
+    assert.equal(
+      (decode(all.stdout.trimEnd()) as { valid: boolean }).valid,
+      true,
+    );
+  });
+});
+
+test("single-line fixtures still validate and tasks remains reachable", () => {
+  withRepository((root) => {
+    writePlanlet(
+      root,
+      "single-valid",
+      "# Tasks: Single Valid\n\n- [ ] T1 First\n- [x] T2 Second\n",
+    );
+    const validated = runCli(["validate", "single-valid"], root);
+    assert.equal(validated.exitCode, EXIT_CODES.success);
+    assert.equal(
+      (decode(validated.stdout.trimEnd()) as { valid: boolean }).valid,
+      true,
+    );
+    const tasks = runCli(["tasks", "single-valid"], root);
+    assert.equal(tasks.exitCode, EXIT_CODES.success);
+    assert.deepEqual(
+      (
+        decode(tasks.stdout.trimEnd()) as { tasks: Array<{ id: string }> }
+      ).tasks.map((task) => task.id),
+      ["T1", "T2"],
+    );
+  });
+});
+
 test("production entry emits internal_error without stack by default", async () => {
   const { runProductionEntry, renderUnexpectedError } =
     await import("../../src/production-entry.js");

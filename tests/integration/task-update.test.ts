@@ -54,6 +54,7 @@ const MARKDOWN =
   "\r\n" +
   "- [ ] T1 First task\r\n" +
   "- [x] T2 Second task\r\n" +
+  "\r\n" +
   "  - [ ] Nested Markdown stays untouched\r\n" +
   "\r\n" +
   "## Notes\r\n" +
