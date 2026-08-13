@@ -168,3 +168,153 @@ test("incomplete overrides require exact remaining task IDs and a reason", () =>
     (error) => error instanceof PlanletError && error.code === "invalid_plan",
   );
 });
+
+test("active validation rejects two-space indented continuation with taskId", () => {
+  assert.throws(
+    () =>
+      validatePlanletStructure({
+        directoryName: "continuation-plan",
+        location: "active",
+        planMarkdown: "# Continuation Plan\n",
+        tasksMarkdown:
+          "# Tasks: Continuation Plan\n\n- [ ] T1 First line\n  indented continuation\n",
+      }),
+    (error) =>
+      error instanceof PlanletError &&
+      error.code === "invalid_plan" &&
+      error.details.taskId === "T1" &&
+      error.details.line === 4 &&
+      error.details.content === "  indented continuation" &&
+      error.message.includes("Invalid task continuation at line 4 for T1"),
+  );
+});
+
+test("active validation rejects tab-indented continuation", () => {
+  assert.throws(
+    () =>
+      validatePlanletStructure({
+        directoryName: "continuation-plan",
+        location: "active",
+        planMarkdown: "# Continuation Plan\n",
+        tasksMarkdown:
+          "# Tasks: Continuation Plan\n\n- [ ] T1 First\n\tindented continuation\n",
+      }),
+    (error) =>
+      error instanceof PlanletError &&
+      error.code === "invalid_plan" &&
+      error.details.taskId === "T1" &&
+      error.details.line === 4 &&
+      error.details.content === "\tindented continuation",
+  );
+});
+
+test("active validation rejects plain nested bullet as continuation", () => {
+  assert.throws(
+    () =>
+      validatePlanletStructure({
+        directoryName: "continuation-plan",
+        location: "active",
+        planMarkdown: "# Continuation Plan\n",
+        tasksMarkdown:
+          "# Tasks: Continuation Plan\n\n- [ ] T1 First\n  - Acceptance detail\n",
+      }),
+    (error) =>
+      error instanceof PlanletError &&
+      error.code === "invalid_plan" &&
+      error.details.taskId === "T1" &&
+      error.details.line === 4 &&
+      error.details.content === "  - Acceptance detail",
+  );
+});
+
+test("parser precedence preserves task-like line error without taskId", () => {
+  assert.throws(
+    () =>
+      validatePlanletStructure({
+        directoryName: "continuation-plan",
+        location: "active",
+        planMarkdown: "# Continuation Plan\n",
+        tasksMarkdown:
+          "# Tasks: Continuation Plan\n\n- [ ] T1 First\n  - [ ] T2 Nested\n",
+      }),
+    (error) =>
+      error instanceof PlanletError &&
+      error.code === "invalid_plan" &&
+      error.details.line === 4 &&
+      error.details.content === "  - [ ] T2 Nested" &&
+      error.details.taskId === undefined,
+  );
+});
+
+test("single-line active tasks remain valid", () => {
+  const validated = validatePlanletStructure({
+    directoryName: "single-line-plan",
+    location: "active",
+    planMarkdown: "# Single Line Plan\n",
+    tasksMarkdown:
+      "# Tasks: Single Line Plan\n\n- [ ] T1 First\n- [x] T2 Second\n",
+  });
+
+  assert.equal(validated.tasks.length, 2);
+
+  const withSingleSpace = validatePlanletStructure({
+    directoryName: "single-space-plan",
+    location: "active",
+    planMarkdown: "# Single Space Plan\n",
+    tasksMarkdown:
+      "# Tasks: Single Space Plan\n\n- [ ] T1 First\n single space not continuation\n",
+  });
+
+  assert.equal(withSingleSpace.tasks.length, 1);
+});
+
+test("ordinary Markdown outside tasks remains allowed when not adjacent", () => {
+  const beforeFirst = validatePlanletStructure({
+    directoryName: "prose-before-plan",
+    location: "active",
+    planMarkdown: "# Prose Before Plan\n",
+    tasksMarkdown:
+      "# Tasks: Prose Before Plan\n\nProse before first task.\n\n- [ ] T1 First\n",
+  });
+  assert.equal(beforeFirst.tasks.length, 1);
+
+  const blankSeparated = validatePlanletStructure({
+    directoryName: "blank-separated-plan",
+    location: "active",
+    planMarkdown: "# Blank Separated Plan\n",
+    tasksMarkdown:
+      "# Tasks: Blank Separated Plan\n\n- [ ] T1 First\n\n  indented after blank line\n",
+  });
+  assert.equal(blankSeparated.tasks.length, 1);
+
+  const headingAfter = validatePlanletStructure({
+    directoryName: "heading-after-plan",
+    location: "active",
+    planMarkdown: "# Heading After Plan\n",
+    tasksMarkdown:
+      "# Tasks: Heading After Plan\n\n- [ ] T1 First\n## Heading\n",
+  });
+  assert.equal(headingAfter.tasks.length, 1);
+
+  const nextTask = validatePlanletStructure({
+    directoryName: "next-task-plan",
+    location: "active",
+    planMarkdown: "# Next Task Plan\n",
+    tasksMarkdown:
+      "# Tasks: Next Task Plan\n\n- [ ] T1 First\n- [ ] T2 Second\n",
+  });
+  assert.equal(nextTask.tasks.length, 2);
+});
+
+test("completed archives allow indented continuation", () => {
+  const validated = validatePlanletStructure({
+    directoryName: "2026-07-22-continuation-plan",
+    location: "completed",
+    planMarkdown: "# Continuation Plan\n",
+    tasksMarkdown:
+      "# Tasks: Continuation Plan\n\n- [x] T1 First\n  - Acceptance detail\n\n## Completion\n\n- Completed at: 2026-07-22T12:34:56Z\n- Mode: normal\n",
+  });
+
+  assert.equal(validated.state, "completed");
+  assert.equal(validated.tasks.length, 1);
+});
