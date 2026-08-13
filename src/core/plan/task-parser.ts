@@ -63,6 +63,7 @@ export function parseTasks(markdown: string): ParsedTasks {
       continue;
     }
 
+    const taskLine = index + 1;
     let description = task.description;
     while (index + 1 < lines.length) {
       const nextLine = lines[index + 1] ?? "";
@@ -100,7 +101,7 @@ export function parseTasks(markdown: string): ParsedTasks {
       throw new PlanletError(
         "duplicate_task_id",
         `Duplicate task ID: ${normalizedTask.id}`,
-        { details: { taskId: normalizedTask.id, line: index + 1 } },
+        { details: { taskId: normalizedTask.id, line: taskLine } },
       );
     }
 

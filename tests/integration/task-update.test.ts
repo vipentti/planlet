@@ -378,7 +378,6 @@ test("wrapped task check and uncheck preserve continuation bytes", () => {
     assert.equal(afterUncheck, before);
   });
 });
-
 test("task check stages only tasks.md in a git repository", async () => {
   await withGitPlanlet(MARKDOWN, (root, tasksPath) => {
     commitAll(root, "base");
