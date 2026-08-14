@@ -87,19 +87,19 @@ jobs:
 
 Repository-level Actions configuration (not environment-level) must provide these secrets and variables. Values are write-only on GitHub; each is sourced from the local release identity outside GitHub:
 
-| Secret                             | Source outside GitHub                                                        |
-| ---------------------------------- | ---------------------------------------------------------------------------- |
-| `NPM_RELEASE_FLOW_GPG_PRIVATE_KEY` | `gpg --export-secret-keys --armor <fingerprint>`                             |
-| `NPM_RELEASE_FLOW_GPG_PUBLIC_KEY`  | `gpg --export --armor <fingerprint>`                                         |
-| `NPM_RELEASE_FLOW_GPG_PASSPHRASE`  | passphrase store                                                             |
-| `NPM_RELEASE_FLOW_APP_PRIVATE_KEY` | Release Automation App private-key PEM                                       |
+| Secret                             | Source outside GitHub                            |
+| ---------------------------------- | ------------------------------------------------ |
+| `NPM_RELEASE_FLOW_GPG_PRIVATE_KEY` | `gpg --export-secret-keys --armor <fingerprint>` |
+| `NPM_RELEASE_FLOW_GPG_PUBLIC_KEY`  | `gpg --export --armor <fingerprint>`             |
+| `NPM_RELEASE_FLOW_GPG_PASSPHRASE`  | passphrase store                                 |
+| `NPM_RELEASE_FLOW_APP_PRIVATE_KEY` | Release Automation App private-key PEM           |
 
-| Variable                           | Source / value                                      |
-| ---------------------------------- | --------------------------------------------------- |
-| `NPM_RELEASE_FLOW_GPG_FINGERPRINT` | 40-hex primary fingerprint of the dedicated key     |
-| `NPM_RELEASE_FLOW_APP_ID`          | GitHub App ID                                       |
-| `NPM_RELEASE_FLOW_GIT_NAME`        | committer/tagger name for the release tag/commit    |
-| `NPM_RELEASE_FLOW_GIT_EMAIL`       | verified email on the GitHub account holding the key|
+| Variable                           | Source / value                                       |
+| ---------------------------------- | ---------------------------------------------------- |
+| `NPM_RELEASE_FLOW_GPG_FINGERPRINT` | 40-hex primary fingerprint of the dedicated key      |
+| `NPM_RELEASE_FLOW_APP_ID`          | GitHub App ID                                        |
+| `NPM_RELEASE_FLOW_GIT_NAME`        | committer/tagger name for the release tag/commit     |
+| `NPM_RELEASE_FLOW_GIT_EMAIL`       | verified email on the GitHub account holding the key |
 
 Verify locally before cutting:
 

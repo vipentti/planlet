@@ -1,10 +1,6 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "ignore": [
-    "scripts/changelog.mjs",
-    "scripts/detect-release-merge.mjs",
-    "scripts/verify-release-tag.d.mts"
-  ],
+  "ignore": ["scripts/changelog.mjs"],
   "ignoreBinaries": [
     "gpg",
     "planlet",
