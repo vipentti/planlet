@@ -5,4 +5,4 @@
 - [x] T3 Confirm Trusted Publishing for release.yml
 - [x] T4 Replace release.yml with thin reusable caller and delete workflow-coupled tests
 - [ ] T5 Ship 0.5.1 via kit prepare
-- [ ] T7 Migration cleanup after 0.5.1
+- [ ] T7 Post-0.5.1 cleanup: delete legacy RELEASE_* environment secrets/variables + final bookkeeping (source ownership already pulled into this PR at ddca69d/3cb11b0/this revision — scripts, knip entries, shrunk assert-changelog-release-ready.mjs, RELEASING/AGENTS rewrites)
