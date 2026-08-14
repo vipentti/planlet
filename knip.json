@@ -6,8 +6,8 @@
     "planlet",
     "printf",
     "sha256sum",
-    "shellcheck",
     "ssh-keygen",
     "where"
-  ]
+  ],
+  "ignoreDependencies": ["@vipentti/npm-release-flow"]
 }
