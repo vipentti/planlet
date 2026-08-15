@@ -6,6 +6,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and thi
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-08-15
+
 ### Changed
 
 - Migrate release ownership to `vipentti/npm-release-flow@0.1.0` as sole releaser. `package.json` carries exact pin `0.1.0` plus fixed `release:verify` convention (`npm run lint && npm run format:check && npm run type-check && npm run knip && npm test && npm run skills:update && git diff --exit-code`). `.github/workflows/release.yml` is thin caller pinned at `2ddb84caa71d25946a8c718d9364ef6db2699704` with `permissions: {}`, `concurrency {group: release-main, cancel-in-progress: false, queue: max}`, and explicit `NPM_RELEASE_FLOW_*` secrets. Workflow-coupled tests (`release-workflow.test.ts`, `release-intent.test.ts`, `package-artifact.test.ts`, `validate-packed-artifact.test.ts`) and `ci.yml` `shellcheck` install plus `knip.json` `shellcheck` ignore removed.
@@ -137,7 +139,8 @@ First release. Everything below is new, so these notes describe what Planlet is 
 - Unexpected failures surface as a structured `internal_error` with no stack or path leakage; set `PLANLET_DEBUG=1` for diagnostic detail.
 - Planlet and repository paths reject directory traversal and symlink escape, and file writes are atomic or recoverable.
 
-[Unreleased]: https://github.com/vipentti/planlet/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/vipentti/planlet/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/vipentti/planlet/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/vipentti/planlet/compare/v0.4.3...v0.5.0
 [0.4.3]: https://github.com/vipentti/planlet/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/vipentti/planlet/compare/v0.4.1...v0.4.2
@@ -148,7 +151,6 @@ First release. Everything below is new, so these notes describe what Planlet is 
 [0.1.2]: https://github.com/vipentti/planlet/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/vipentti/planlet/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/vipentti/planlet/releases/tag/v0.1.0
-[Unreleased]: https://github.com/vipentti/planlet/compare/v0.5.0...HEAD
 [0.5.0]: https://github.com/vipentti/planlet/compare/v0.4.3...v0.5.0
 [0.4.3]: https://github.com/vipentti/planlet/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/vipentti/planlet/compare/v0.4.1...v0.4.2
