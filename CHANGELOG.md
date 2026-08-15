@@ -8,7 +8,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and thi
 
 ### Added
 
-- Add read-only `planlet check-completion --base <git-ref>` gate for reporting changed active planlets that are ready to complete.
+- Add read-only `planlet check-completion --base <git-ref>` gate for reporting changed active planlets that are ready to complete, and run it in Planlet's Linux Node 22 CI job against `origin/main`.
 
 ### Changed
 
