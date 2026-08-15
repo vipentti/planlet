@@ -48,7 +48,7 @@ A path `plans/<segment>/...` contributes `<segment>` when `segment` is a valid s
 
 No planlet lock. Read-only commands do not take `withPlanletLock` today, and this command must not create a holder file.
 
-Output uses the `validate` pattern: always write one TOON report on stdout when the check ran, then remap a non-empty `violations` list to `EXIT_CODES.stateTransition` (4). Success is exit 0 with `ok: true`. Include `ok`, `base`, `touched`, and `violations` (each violation: `slug` plus `next: "planlet complete <slug>"`). Empty `touched` is success, not an error.
+Output uses the `validate` pattern: always write one TOON report on stdout when the check ran, then remap a non-empty `violations` list to `EXIT_CODES.stateTransition` (4). Success is exit 0 with `ok: true`. Include `ok`, `base`, `touched`, and `violations` (each violation: `slug` plus `next: "planlet complete <slug>"`). `base` is the exact non-empty `--base` string the caller supplied, not the resolved commit OID. A symbolic ref such as `origin/main` or a tag name is echoed unchanged; the OID is used only for the git range. Empty `touched` is success, not an error.
 
 Git and usage failures stay structured errors, not an `ok: false` report:
 
@@ -60,7 +60,7 @@ The command is CI-provider-neutral: no `GITHUB_*` reads, no default of `origin/m
 
 ## Acceptance Criteria
 
-- `planlet check-completion --base <ref>` is documented in help and the README command table, compares `<resolved-oid>...HEAD` only, and is registered beside the other non-mutating commands. There is no `--head` flag.
+- `planlet check-completion --base <ref>` is documented in help and the README command table, compares `<resolved-oid>...HEAD` only, and is registered beside the other non-mutating commands. There is no `--head` flag. A successful or violating report's `base` field is the caller-supplied `--base` string (for example `origin/main`), never the resolved commit OID.
 - The command is read-only: it does not write plan files, take a planlet lock, stage, commit, or invoke `completePlanlet`. Unresolvable `--base` values fail as `git_error` without creating or changing any file.
 - Every non-empty `--base` is resolved with `git rev-parse --verify --end-of-options <base>^{commit}` before `git diff`. Touched detection uses `git diff --name-only --relative -z <oid>...HEAD -- plans/`, ignores `plans/completed/**`, and ignores invalid slug segments. Nested `--root` usage (Planlet root is a subdirectory of the Git worktree) still extracts slugs from `plans/<slug>/...` paths.
 - A unique touched active planlet in `ready_to_complete` produces a stdout report with `ok: false`, that slug in `violations` with `next: "planlet complete <slug>"`, and exit 4.
@@ -74,7 +74,7 @@ The command is CI-provider-neutral: no `GITHUB_*` reads, no default of `origin/m
 Strategy only. Implementers run the repository suite in `AGENTS.md` plus targeted coverage:
 
 - Unit: slug extraction (completed, invalid, nested files); violation selection given unique vs collided summaries; CLI usage (`--base` missing, extra positionals, rejected `--head`); `ERROR_EXIT_CODES` includes `git_error`; help/README command table stay aligned.
-- Integration with `withGitRoot`: ready-and-touched fails 4; completed-in-range passes; in_progress touched passes; completed-only diffs pass; a touched ready active slug that collides with a completed archive does not violate and does not recommend `planlet complete`; bad or unresolvable `--base` is `git_error` and leaves porcelain unchanged; command leaves porcelain unchanged on success; Planlet `--root` nested under a parent worktree still detects `plans/<slug>/` via `--relative`.
+- Integration with `withGitRoot`: ready-and-touched fails 4; completed-in-range passes; in_progress touched passes; completed-only diffs pass; a touched ready active slug that collides with a completed archive does not violate and does not recommend `planlet complete`; `--base` set to a symbolic ref (branch or tag) reports that same string in `base`, not the resolved OID; bad or unresolvable `--base` is `git_error` and leaves porcelain unchanged; command leaves porcelain unchanged on success; Planlet `--root` nested under a parent worktree still detects `plans/<slug>/` via `--relative`.
 - No GitHub Actions job is added in this change. External CI can wrap the command later.
 
 ## Risks and Considerations
