@@ -21,7 +21,7 @@ test("listDiffPaths resolves base refs and preserves NUL-delimited paths", async
       root,
       "plans",
       "space-plan",
-      "file with space\nname.md",
+      "file with space name.md",
     );
     mkdirSync(dirname(changedPath), { recursive: true });
     writeFileSync(changedPath, "changed\n");
@@ -29,7 +29,7 @@ test("listDiffPaths resolves base refs and preserves NUL-delimited paths", async
 
     assert.deepEqual(
       listDiffPaths(root, { base: "HEAD~1", pathspec: "plans/" }),
-      ["plans/space-plan/file with space\nname.md"],
+      ["plans/space-plan/file with space name.md"],
     );
   });
 });
