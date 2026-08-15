@@ -10,22 +10,9 @@
  *   Malformed headings that mention Unreleased or the package version still
  *   count toward cardinality.
  *
- *   The date is deliberately NOT required to be today or later here. Once a
- *   version ships, its section keeps the date it shipped on, and package.json
- *   stays on that version until the next release is prepared; enforcing a
- *   future date in ordinary CI would turn main red the day after every release.
- *   Staleness is a release-time concern, enforced under --release-date below.
- *
- * Release verification:
- *   node scripts/assert-changelog-release-ready.mjs --release-date YYYY-MM-DD
- *   Requires exactly one empty Unreleased section, exactly one correctly dated
- *   package version section matching --release-date with non-empty notes, and a
- *   --release-date that is today or later (UTC).
- *
- * Historical verification:
- *   node scripts/assert-changelog-release-ready.mjs --verify-release [--date YYYY-MM-DD] [--print-date] [CHANGELOG.md] [package.json]
- *   Validates a completed release section. No past-date rule.
- *   --print-date writes exactly YYYY-MM-DD\n to stdout on success, nothing else.
+ * Release preparation and historical release validation are owned by
+ * `npm-release-flow` (kit `todayUtc()`); this helper is ordinary structural
+ * lint only and accepts no release flags.
  */
 
 import { readFileSync } from "node:fs";
@@ -45,96 +32,6 @@ export function isValidCalendarDate(value) {
   return instant.toISOString().slice(0, 10) === value;
 }
 
-export function countFlags(args, prefix) {
-  return args.filter((a) => a === prefix || a.startsWith(prefix + "=")).length;
-}
-
-export function packageLockMismatch(lock, version) {
-  if (lock.version !== version)
-    return (
-      "package-lock.json.version is " + lock.version + ", expected " + version
-    );
-  const rootEntry = lock.packages?.[""];
-  if (!rootEntry || typeof rootEntry !== "object")
-    return 'package-lock.json.packages[""] is missing or not an object';
-  if (rootEntry.version !== version)
-    return (
-      'package-lock.json.packages[""].version is ' +
-      rootEntry.version +
-      ", expected " +
-      version
-    );
-  return null;
-}
-
-export function packageIdentityMismatch(pkg, lock, expectedName) {
-  if (pkg.name !== expectedName)
-    return (
-      "package.json.name is " +
-      JSON.stringify(pkg.name) +
-      ", expected " +
-      JSON.stringify(expectedName)
-    );
-  if (lock.name !== expectedName)
-    return (
-      "package-lock.json.name is " +
-      JSON.stringify(lock.name) +
-      ", expected " +
-      JSON.stringify(expectedName)
-    );
-  const rootEntry = lock.packages?.[""];
-  if (!rootEntry || typeof rootEntry !== "object")
-    return 'package-lock.json.packages[""] is missing or not an object';
-  if (rootEntry.name !== expectedName)
-    return (
-      'package-lock.json.packages[""].name is ' +
-      JSON.stringify(rootEntry.name) +
-      ", expected " +
-      JSON.stringify(expectedName)
-    );
-  return null;
-}
-
-const changelogLinkPattern = /^\[([^\]]+)\]:[ \t]*\S.*$/;
-const compareUrl = "https://github.com/vipentti/planlet/compare";
-
-export function updateChangelogLinkReferences(
-  changelog,
-  previousVersion,
-  version,
-) {
-  const managed = new Map([
-    ["Unreleased", `[Unreleased]: ${compareUrl}/v${version}...HEAD`],
-    [version, `[${version}]: ${compareUrl}/v${previousVersion}...v${version}`],
-  ]);
-  const body = [];
-  const priorLinks = [];
-
-  for (const line of changelog.replace(/\r\n/g, "\n").split("\n")) {
-    const match = changelogLinkPattern.exec(line);
-    if (match) {
-      if (managed.has(match[1])) continue;
-      priorLinks.push(line);
-      continue;
-    }
-    body.push(line);
-  }
-
-  return (
-    [body.join("\n").trimEnd(), "", ...managed.values(), ...priorLinks].join(
-      "\n",
-    ) + "\n"
-  );
-}
-
-const todayUtc = new Date().toISOString().slice(0, 10);
-
-function assertNotPast(date, description) {
-  if (date < todayUtc) {
-    fail(`${description} ${date} is earlier than today ${todayUtc} (UTC).`);
-  }
-}
-
 function hasNonEmptyNotes(sectionBody) {
   return /^\s*-\s+\S/m.test(sectionBody);
 }
@@ -151,32 +48,8 @@ function assertValidDatedNotes(dated, sectionBody, label, version) {
   }
 }
 
-// --- Flag validation ---
-
 function main() {
   const allArgs = process.argv.slice(2);
-
-  const releaseDateCount = countFlags(allArgs, "--release-date");
-  const verifyReleaseCount = countFlags(allArgs, "--verify-release");
-  const printDateCount = countFlags(allArgs, "--print-date");
-  const dateCount = countFlags(allArgs, "--date");
-
-  if (releaseDateCount > 1) fail("Duplicate --release-date option.");
-  if (verifyReleaseCount > 1) fail("Duplicate --verify-release option.");
-  if (printDateCount > 1) fail("Duplicate --print-date option.");
-  if (dateCount > 1) fail("Duplicate --date option.");
-
-  const hasVerifyRelease = verifyReleaseCount === 1;
-
-  if (dateCount === 1 && !hasVerifyRelease) {
-    fail("--date requires --verify-release.");
-  }
-  if (printDateCount === 1 && !hasVerifyRelease) {
-    fail("--print-date requires --verify-release.");
-  }
-  if (releaseDateCount === 1 && hasVerifyRelease) {
-    fail("--release-date and --verify-release are mutually exclusive.");
-  }
 
   let values;
   let positionals;
@@ -184,10 +57,6 @@ function main() {
     ({ values, positionals } = parseArgs({
       args: allArgs,
       options: {
-        "release-date": { type: "string" },
-        "verify-release": { type: "boolean" },
-        date: { type: "string" },
-        "print-date": { type: "boolean" },
         help: { type: "boolean", short: "h" },
       },
       allowPositionals: true,
@@ -199,7 +68,7 @@ function main() {
 
   if (values.help) {
     console.log(
-      `Usage: assert-changelog-release-ready.mjs [--release-date YYYY-MM-DD] [--verify-release [--date YYYY-MM-DD] [--print-date]] [CHANGELOG.md] [package.json]`,
+      "Usage: assert-changelog-release-ready.mjs [CHANGELOG.md] [package.json]",
     );
     process.exit(0);
   }
@@ -209,11 +78,6 @@ function main() {
       "Too many positional arguments (expected at most CHANGELOG.md and package.json).",
     );
   }
-
-  const releaseDate = values["release-date"];
-  const verifyRelease = values["verify-release"] ?? false;
-  const histDate = values["date"];
-  const printDate = values["print-date"] ?? false;
 
   const changelogPath =
     positionals[0] ??
@@ -270,128 +134,47 @@ function main() {
     return { kind: "malformed", raw: suffix };
   }
 
-  function assertChangelogShape({ mode, version, releaseDate }) {
-    assertLinkReferences();
+  assertLinkReferences();
 
-    if (unreleased.length !== 1) {
-      fail(
-        `Changelog must contain exactly one [Unreleased] section (found ${unreleased.length}).`,
-      );
-    }
-    const unreleasedSuffix = parseVersionSuffix(unreleased[0][2]);
-    if (unreleasedSuffix.kind !== "bare") {
-      fail(
-        "Changelog [Unreleased] header must not include a date or trailing text.",
-      );
-    }
-
-    if (mode === "preparation") {
-      if (versionSections.length > 1) {
-        fail(
-          `Changelog must contain at most one [${version}] section (found ${versionSections.length}).`,
-        );
-      }
-      if (!isValidCalendarDate(releaseDate)) {
-        fail(`--release-date is not a valid calendar day: ${releaseDate}`);
-      }
-      assertNotPast(releaseDate, "--release-date");
-      if (sectionBodyAfter(unreleased[0]) !== "") {
-        fail(
-          "Changelog [Unreleased] section must be empty for release verification (notes must be moved, not copied).",
-        );
-      }
-      if (versionSections.length !== 1) {
-        fail(
-          `Changelog must contain exactly one [${version}] section for release verification (found ${versionSections.length}).`,
-        );
-      }
-    } else if (mode === "ci") {
-      if (versionSections.length > 1) {
-        fail(
-          `Changelog must contain at most one [${version}] section (found ${versionSections.length}).`,
-        );
-      }
-      if (versionSections.length === 0) {
-        return undefined;
-      }
-    } else {
-      if (sectionBodyAfter(unreleased[0]) !== "") {
-        fail(
-          "Changelog [Unreleased] section must be empty for historical verification.",
-        );
-      }
-      if (versionSections.length !== 1) {
-        fail(
-          `Changelog must contain exactly one [${version}] section (found ${versionSections.length}).`,
-        );
-      }
-    }
-
-    const sectionMatch = versionSections[0];
-    const suffix = parseVersionSuffix(sectionMatch[2]);
-    if (suffix.kind === "malformed") {
-      fail(`Changelog [${version}] header has an invalid suffix:${suffix.raw}`);
-    }
-    const dated = suffix.kind === "dated" ? suffix.date : undefined;
-    assertValidDatedNotes(
-      dated,
-      sectionBodyAfter(sectionMatch),
-      "Changelog",
-      version,
+  if (unreleased.length !== 1) {
+    fail(
+      `Changelog must contain exactly one [Unreleased] section (found ${unreleased.length}).`,
     );
-
-    if (mode === "preparation" && dated !== releaseDate) {
-      fail(
-        `--release-date ${releaseDate} does not match changelog ${version} date ${dated}.`,
-      );
-    }
-
-    return dated;
+  }
+  const unreleasedSuffix = parseVersionSuffix(unreleased[0][2]);
+  if (unreleasedSuffix.kind !== "bare") {
+    fail(
+      "Changelog [Unreleased] header must not include a date or trailing text.",
+    );
   }
 
-  // --- Historical mode ---
-
-  if (verifyRelease) {
-    const dated = assertChangelogShape({
-      mode: "historical",
-      version,
-      releaseDate: undefined,
-    });
-
-    if (histDate !== undefined) {
-      if (!isValidCalendarDate(histDate)) {
-        fail(`--date is not a valid calendar day: ${histDate}`);
-      }
-      if (dated !== histDate) {
-        fail(
-          `Changelog ${version} date ${dated} does not match --date ${histDate}.`,
-        );
-      }
-    }
-
-    if (printDate) {
-      if (dated === undefined) {
-        fail("Cannot print date: changelog section has no date.");
-      }
-      console.log(dated);
-    }
-
+  if (versionSections.length > 1) {
+    fail(
+      `Changelog must contain at most one [${version}] section (found ${versionSections.length}).`,
+    );
+  }
+  if (versionSections.length === 0) {
     process.exit(0);
   }
 
-  // --- Preparation mode (--release-date) or plain CI ---
-
-  assertChangelogShape({
-    mode: releaseDate === undefined ? "ci" : "preparation",
+  const sectionMatch = versionSections[0];
+  const suffix = parseVersionSuffix(sectionMatch[2]);
+  if (suffix.kind === "malformed") {
+    fail(`Changelog [${version}] header has an invalid suffix:${suffix.raw}`);
+  }
+  const dated = suffix.kind === "dated" ? suffix.date : undefined;
+  assertValidDatedNotes(
+    dated,
+    sectionBodyAfter(sectionMatch),
+    "Changelog",
     version,
-    releaseDate,
-  });
+  );
 
   process.exit(0);
 }
 
 // Run the CLI only when invoked directly; importing this module for the shared
-// helpers must not execute argument parsing, file reads, or process.exit.
+// helper must not execute argument parsing, file reads, or process.exit.
 if (
   process.argv[1] !== undefined &&
   fileURLToPath(import.meta.url) === resolve(process.argv[1])

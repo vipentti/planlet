@@ -8,6 +8,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and thi
 
 ### Changed
 
+- Migrate release ownership to `vipentti/npm-release-flow@0.1.0` as sole releaser. `package.json` carries exact pin `0.1.0` plus fixed `release:verify` convention (`npm run lint && npm run format:check && npm run type-check && npm run knip && npm test && npm run skills:update && git diff --exit-code`). `.github/workflows/release.yml` is thin caller pinned at `2ddb84caa71d25946a8c718d9364ef6db2699704` with `permissions: {}`, `concurrency {group: release-main, cancel-in-progress: false, queue: max}`, and explicit `NPM_RELEASE_FLOW_*` secrets. Workflow-coupled tests (`release-workflow.test.ts`, `release-intent.test.ts`, `package-artifact.test.ts`, `validate-packed-artifact.test.ts`) and `ci.yml` `shellcheck` install plus `knip.json` `shellcheck` ignore removed.
 - `tasks.md` task descriptions may soft-wrap across following indented lines belonging to the same list item, including nested valid Markdown lists (unordered `- ` `* ` `+ ` and ordered `1. `) and indented paragraph continuations (for example 6-space wrapped prose). `parseTasks` consumes those lines and normalizes whitespace so `planlet tasks` returns the complete description. This makes formatting with Prettier `proseWrap: "always"` safe. Blank lines or new Markdown block constructs (heading `#{1,6} `, blockquote `> `) end the description. Nested checkbox syntax (`  - [ ] T2 Nested`) stays invalid with the same parser diagnostic.
 
 ## [0.5.0] - 2026-08-11

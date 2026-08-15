@@ -54,16 +54,12 @@ function fixture(changelog: string, version = "0.1.0", withLinks = true) {
   return { changelogPath, packagePath };
 }
 
-// Release dates are relative to the day the suite runs: --release-date rejects
-// past dates, so fixed dates would rot as the calendar advances.
 function utcDay(offsetDays: number): string {
   return new Date(Date.now() + offsetDays * 86_400_000)
     .toISOString()
     .slice(0, 10);
 }
 
-const yesterday = utcDay(-1);
-const today = utcDay(0);
 const future = utcDay(1);
 const later = utcDay(2);
 
@@ -191,155 +187,7 @@ test("changelog validation requires link references for every section", () => {
   assert.match(out.stderr, /missing link reference/i);
 });
 
-test("explicit release mode enforces dated non-empty matching 0.1.0 notes", () => {
-  const copiedNotes = fixture(
-    `# Changelog\n\n## [Unreleased]\n\n### Added\n\n- Item\n\n## [0.1.0] - ${future}\n\n### Added\n\n- Item\n`,
-  );
-  assert.notEqual(
-    assertReady([
-      "--release-date",
-      future,
-      copiedNotes.changelogPath,
-      copiedNotes.packagePath,
-    ]).status,
-    0,
-  );
-
-  const unreleasedOnly = fixture(
-    "# Changelog\n\n## [Unreleased]\n\n### Added\n\n- Item\n",
-  );
-  assert.notEqual(
-    assertReady([
-      "--release-date",
-      future,
-      unreleasedOnly.changelogPath,
-      unreleasedOnly.packagePath,
-    ]).status,
-    0,
-  );
-
-  const undated = fixture(
-    "# Changelog\n\n## [Unreleased]\n\n## [0.1.0]\n\n### Added\n\n- Item\n",
-  );
-  assert.notEqual(
-    assertReady([
-      "--release-date",
-      future,
-      undated.changelogPath,
-      undated.packagePath,
-    ]).status,
-    0,
-  );
-
-  const mismatch = fixture(
-    `# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - ${later}\n\n### Added\n\n- Item\n`,
-  );
-  assert.notEqual(
-    assertReady([
-      "--release-date",
-      future,
-      mismatch.changelogPath,
-      mismatch.packagePath,
-    ]).status,
-    0,
-  );
-
-  const invalidDay = fixture(
-    "# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - 2026-02-30\n\n### Added\n\n- Item\n",
-  );
-  assert.notEqual(
-    assertReady([
-      "--release-date",
-      "2026-02-30",
-      invalidDay.changelogPath,
-      invalidDay.packagePath,
-    ]).status,
-    0,
-  );
-
-  const emptyNotes = fixture(
-    `# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - ${future}\n\n### Added\n`,
-  );
-  assert.notEqual(
-    assertReady([
-      "--release-date",
-      future,
-      emptyNotes.changelogPath,
-      emptyNotes.packagePath,
-    ]).status,
-    0,
-  );
-
-  const good = fixture(
-    `# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - ${future}\n\n### Added\n\n- Item\n`,
-  );
-  assert.equal(
-    assertReady([
-      "--release-date",
-      future,
-      good.changelogPath,
-      good.packagePath,
-    ]).status,
-    0,
-  );
-
-  const otherVersion = fixture(
-    `# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - ${future}\n\n### Added\n\n- Item\n`,
-    "0.2.0",
-  );
-  assert.notEqual(
-    assertReady([
-      "--release-date",
-      future,
-      otherVersion.changelogPath,
-      otherVersion.packagePath,
-    ]).status,
-    0,
-  );
-  assert.equal(
-    assertReady([otherVersion.changelogPath, otherVersion.packagePath]).status,
-    0,
-  );
-});
-
-test("a past release date fails release verification but not ordinary CI", () => {
-  const dated = (date: string) =>
-    fixture(
-      `# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - ${date}\n\n### Added\n\n- Item\n`,
-    );
-
-  const current = dated(today);
-  assert.equal(
-    assertReady([current.changelogPath, current.packagePath]).status,
-    0,
-  );
-  assert.equal(
-    assertReady([
-      "--release-date",
-      today,
-      current.changelogPath,
-      current.packagePath,
-    ]).status,
-    0,
-  );
-
-  // Ordinary CI must stay green on an already-shipped version: package.json
-  // sits on that version until the next release is prepared, so a past date is
-  // the normal steady state, not a defect.
-  const stale = dated(yesterday);
-  assert.equal(assertReady([stale.changelogPath, stale.packagePath]).status, 0);
-  assert.notEqual(
-    assertReady([
-      "--release-date",
-      yesterday,
-      stale.changelogPath,
-      stale.packagePath,
-    ]).status,
-    0,
-  );
-});
-
-test("malformed Unreleased and version headings still count and fail", () => {
+test("malformed Unreleased and version headings still count and fail (ordinary CI)", () => {
   const cases = [
     "# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - TBD\n\n### Added\n\n- Item\n",
     "# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - 2026-8-10\n\n### Added\n\n- Item\n",
@@ -355,46 +203,12 @@ test("malformed Unreleased and version headings still count and fail", () => {
       0,
       changelog,
     );
-    assert.notEqual(
-      assertReady([
-        "--release-date",
-        future,
-        files.changelogPath,
-        files.packagePath,
-      ]).status,
-      0,
-      changelog,
-    );
   }
 
   const good = fixture(
     `# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - ${future}\n\n### Added\n\n- Item\n`,
   );
   assert.equal(assertReady([good.changelogPath, good.packagePath]).status, 0);
-  assert.equal(
-    assertReady([
-      "--release-date",
-      future,
-      good.changelogPath,
-      good.packagePath,
-    ]).status,
-    0,
-  );
-
-  const dupFlag = fixture(
-    `# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - ${future}\n\n### Added\n\n- Item\n`,
-  );
-  assert.notEqual(
-    assertReady([
-      "--release-date",
-      future,
-      "--release-date",
-      later,
-      dupFlag.changelogPath,
-      dupFlag.packagePath,
-    ]).status,
-    0,
-  );
 
   const extraPositional = fixture(
     `# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - ${future}\n\n### Added\n\n- Item\n`,

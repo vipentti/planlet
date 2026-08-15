@@ -52,12 +52,12 @@
     "test": "tsx --test \"tests/**/*.test.ts\"",
     "type-check": "tsc --noEmit",
     "prepack": "npm run build",
-    "release:prepare": "node scripts/release.mjs prepare",
-    "release:tag": "node scripts/release.mjs tag"
+    "release:verify": "npm run lint && npm run format:check && npm run type-check && npm run knip && npm test && npm run skills:update && git diff --exit-code"
   },
   "devDependencies": {
     "@toon-format/toon": "4.0.0",
     "@types/node": "22.20.1",
+    "@vipentti/npm-release-flow": "0.1.0",
     "esbuild": "0.28.1",
     "eslint": "10.7.0",
     "knip": "6.31.0",
