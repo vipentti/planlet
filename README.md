@@ -160,10 +160,9 @@ CLI contract:
 - uses: actions/checkout@v7
   with:
     fetch-depth: 0
-- run: npm run build
 - name: check active Planlet completion
   if: github.event_name == 'pull_request'
-  run: node dist/planlet.mjs check-completion --base "${{ github.event.pull_request.base.sha }}"
+  run: npx @vipentti/planlet check-completion --base "${{ github.event.pull_request.base.sha }}"
 ```
 
 When the repository uses git, `task check` / `task uncheck` and `complete`
