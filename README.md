@@ -160,6 +160,9 @@ CLI contract:
 - uses: actions/checkout@v7
   with:
     fetch-depth: 0
+- uses: actions/setup-node@v7
+  with:
+    node-version: 22
 - name: check active Planlet completion
   if: github.event_name == 'pull_request'
   run: npx @vipentti/planlet check-completion --base "${{ github.event.pull_request.base.sha }}"
