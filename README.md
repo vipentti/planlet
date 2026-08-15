@@ -164,6 +164,7 @@ scaffold stubs and does not stage them. The CLI never commits, and Planlet opera
 | `tasks <slug> [--remaining\|--completed]`              | List tasks                                                              |
 | `task check\|uncheck <slug> <task-id>`                 | Toggle a task checkbox                                                  |
 | `complete <slug> [--allow-incomplete --reason <text>]` | Archive a planlet under `plans/completed/`                              |
+| `check-completion --base <git-ref>`                    | Fail when changed ready planlets remain active                          |
 | `help [command]`                                       | Show usage                                                              |
 
 Global options: `--root <path>` selects the repository root, `--full` returns
