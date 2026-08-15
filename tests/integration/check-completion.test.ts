@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import test from "node:test";
@@ -86,7 +86,7 @@ test("ready touched planlet fails with an actionable violation and no mutation",
   });
 });
 
-test("completed-in-range planlet does not violate and reports its rename", async () => {
+test("completed-in-range planlet does not violate and reports its archive paths", async () => {
   await withGitRoot(async (root) => {
     makeBase(root);
     writePlanlet(root, "finished-plan", READY_TASKS);
@@ -116,6 +116,44 @@ test("completed-in-range planlet does not violate and reports its rename", async
       base: "implementation-base",
       touched: [],
       completed: ["finished-plan"],
+      violations: [],
+    });
+  });
+});
+
+test("malformed completed archive is not reported", async () => {
+  await withGitRoot(async (root) => {
+    makeBase(root);
+    writePlanlet(root, "broken-plan", READY_TASKS);
+    commitAll(root, "implementation");
+    const implementationBase = spawnSync(
+      "git",
+      ["branch", "implementation-base"],
+      {
+        cwd: root,
+        encoding: "utf8",
+      },
+    );
+    assert.equal(implementationBase.status, 0, implementationBase.stderr);
+    rmSync(join(root, "plans", "broken-plan"), {
+      recursive: true,
+      force: true,
+    });
+    writePlanlet(root, "2028-03-04-broken-plan", READY_TASKS, true);
+    commitAll(root, "malformed archive");
+
+    const result = await invoke(root, [
+      "check-completion",
+      "--base",
+      "implementation-base",
+    ]);
+
+    assert.equal(result.exitCode, 0);
+    assert.deepEqual(output(result.capture), {
+      ok: true,
+      base: "implementation-base",
+      touched: [],
+      completed: [],
       violations: [],
     });
   });

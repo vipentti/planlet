@@ -42,37 +42,27 @@ test("extractTouchedSlugs ignores completed, invalid, and direct plans paths", (
   );
 });
 
-test("extractCompletedSlugs matches removed active and added archive families", () => {
+test("extractCompletedSlugs matches changed active and archive paths", () => {
   assert.deepEqual(
     extractCompletedSlugs([
-      {
-        status: "R065",
-        paths: [
-          "plans/finished-plan/tasks.md",
-          "plans/completed/2028-01-01-finished-plan/tasks.md",
-        ],
-      },
-      {
-        status: "D",
-        paths: ["plans/removed-plan/plan.md"],
-      },
-      {
-        status: "A",
-        paths: ["plans/completed/2028-01-01-removed-plan/plan.md"],
-      },
-      {
-        status: "A",
-        paths: ["plans/completed/2028-01-01-unrelated-plan/plan.md"],
-      },
-      {
-        status: "R100",
-        paths: [
-          "plans/copied-plan/plan.md",
-          "plans/completed/not-an-archive/plan.md",
-        ],
-      },
+      "plans/finished-plan/tasks.md",
+      "plans/completed/2028-01-01-finished-plan/tasks.md",
+      "plans/removed-plan/plan.md",
+      "plans/completed/2028-01-01-removed-plan/plan.md",
+      "plans/completed/2028-01-01-unrelated-plan/plan.md",
+      "plans/copied-plan/plan.md",
+      "plans/completed/not-an-archive/plan.md",
     ]),
-    ["finished-plan", "removed-plan"],
+    [
+      {
+        slug: "finished-plan",
+        archiveName: "2028-01-01-finished-plan",
+      },
+      {
+        slug: "removed-plan",
+        archiveName: "2028-01-01-removed-plan",
+      },
+    ],
   );
 });
 
@@ -100,9 +90,15 @@ test("deriveCompletionResult uses one validation snapshot for active state and u
     "completed",
     "2028-01-01-completed-plan",
   );
+  const malformedCompleted = summary(
+    "malformed-completed",
+    "/repo/plans/completed/2028-01-01-malformed-completed",
+    "invalid",
+    "2028-01-01-malformed-completed",
+  );
   const validation: ValidationResult = {
     valid: false,
-    checked: 5,
+    checked: 6,
     entries: [
       { slug: ready.slug, path: ready.path, valid: true, summary: ready },
       {
@@ -134,6 +130,12 @@ test("deriveCompletionResult uses one validation snapshot for active state and u
         valid: true,
         summary: completed,
       },
+      {
+        slug: malformedCompleted.slug,
+        path: malformedCompleted.path,
+        valid: false,
+        summary: malformedCompleted,
+      },
     ],
   };
 
@@ -142,7 +144,16 @@ test("deriveCompletionResult uses one validation snapshot for active state and u
       "origin/main",
       ["collided-ready", "completed-plan", "in-progress", "unique-ready"],
       validation,
-      ["completed-plan"],
+      [
+        {
+          slug: "completed-plan",
+          archiveName: "2028-01-01-completed-plan",
+        },
+        {
+          slug: "malformed-completed",
+          archiveName: "2028-01-01-malformed-completed",
+        },
+      ],
     ),
     {
       ok: false,

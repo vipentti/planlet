@@ -1,6 +1,10 @@
-import { listDiffChanges, type GitDiffChange } from "./git.js";
+import { listDiffPaths } from "./git.js";
 import { validatePlanlets, type ValidationResult } from "./plan/read-only.js";
-import { isValidSlug, parseArchiveName } from "./plan/slugs.js";
+import {
+  isValidSlug,
+  parseArchiveName,
+  type ParsedArchiveName,
+} from "./plan/slugs.js";
 import { byName } from "./paths.js";
 
 interface CompletionViolation {
@@ -48,7 +52,7 @@ export function extractTouchedSlugs(
   return [...slugs].sort(byName);
 }
 
-function extractArchivedSlug(path: string): string | undefined {
+function extractArchivedPath(path: string): ParsedArchiveName | undefined {
   const segments = path.split("/");
   const archiveName = segments[2];
   if (
@@ -59,30 +63,43 @@ function extractArchivedSlug(path: string): string | undefined {
   ) {
     return undefined;
   }
-  return parseArchiveName(archiveName)?.slug;
+  return parseArchiveName(archiveName) ?? undefined;
 }
 
-/** Extracts slugs whose active path was removed and archive path was added. */
+export interface CompletedPathCandidate {
+  readonly slug: string;
+  readonly archiveName: string;
+}
+
+/** Extracts active/archive path pairs changed in the Git range. */
 export function extractCompletedSlugs(
-  changes: readonly GitDiffChange[],
-): readonly string[] {
-  const removed = new Set<string>();
-  const archived = new Set<string>();
-  for (const change of changes) {
-    const kind = change.status[0];
-    const source = change.paths[0];
-    const destination = change.paths[1] ?? source;
-    if ((kind === "D" || kind === "R") && source !== undefined) {
-      const slug = extractActiveSlug(source);
-      if (slug !== undefined) removed.add(slug);
-    }
-    if ((kind === "A" || kind === "R") && destination !== undefined) {
-      const slug = extractArchivedSlug(destination);
-      if (slug !== undefined) archived.add(slug);
-    }
+  paths: readonly string[],
+): readonly CompletedPathCandidate[] {
+  const activeSlugs = new Set<string>();
+  const archiveNamesBySlug = new Map<string, Set<string>>();
+  for (const path of paths) {
+    const activeSlug = extractActiveSlug(path);
+    if (activeSlug !== undefined) activeSlugs.add(activeSlug);
+
+    const archive = extractArchivedPath(path);
+    if (archive === undefined) continue;
+    const archiveNames = archiveNamesBySlug.get(archive.slug) ?? new Set();
+    archiveNames.add(archive.archiveName);
+    archiveNamesBySlug.set(archive.slug, archiveNames);
   }
 
-  return [...removed].filter((slug) => archived.has(slug)).sort(byName);
+  return [...activeSlugs]
+    .flatMap((slug) =>
+      [...(archiveNamesBySlug.get(slug) ?? [])].map((archiveName) => ({
+        slug,
+        archiveName,
+      })),
+    )
+    .sort(
+      (left, right) =>
+        byName(left.slug, right.slug) ||
+        byName(left.archiveName, right.archiveName),
+    );
 }
 
 export interface CheckCompletionResult extends CheckCompletionReport {
@@ -94,7 +111,7 @@ export function deriveCompletionResult(
   base: string,
   touchedCandidates: readonly string[],
   validation: ValidationResult,
-  completedCandidates: readonly string[] = [],
+  completedCandidates: readonly CompletedPathCandidate[] = [],
 ): CheckCompletionResult {
   const activeEntries = validation.entries.filter(
     (entry) => entry.summary.archiveName === undefined,
@@ -109,12 +126,28 @@ export function deriveCompletionResult(
       ? [{ slug, next: `planlet complete ${slug}` as const }]
       : [];
   });
+  const completed = [
+    ...new Set(
+      completedCandidates
+        .filter((candidate) => !activeBySlug.has(candidate.slug))
+        .filter((candidate) =>
+          validation.entries.some(
+            (entry) =>
+              entry.valid &&
+              entry.slug === candidate.slug &&
+              entry.summary.state === "completed" &&
+              entry.summary.archiveName === candidate.archiveName,
+          ),
+        )
+        .map((candidate) => candidate.slug),
+    ),
+  ].sort(byName);
 
   return {
     ok: violations.length === 0,
     base,
     touched,
-    completed: [...new Set(completedCandidates)].sort(byName),
+    completed,
     violations,
     warnings: activeEntries.flatMap((entry) => entry.summary.warnings),
   };
@@ -123,7 +156,7 @@ export function deriveCompletionResult(
 export function checkCompletion(
   options: CheckCompletionOptions,
 ): CheckCompletionResult {
-  const changes = listDiffChanges(options.repositoryRoot, {
+  const changedPaths = listDiffPaths(options.repositoryRoot, {
     base: options.base,
     pathspec: "plans/",
   });
@@ -133,8 +166,8 @@ export function checkCompletion(
   });
   return deriveCompletionResult(
     options.base,
-    extractTouchedSlugs(changes.flatMap((change) => change.paths)),
+    extractTouchedSlugs(changedPaths),
     validation,
-    extractCompletedSlugs(changes),
+    extractCompletedSlugs(changedPaths),
   );
 }

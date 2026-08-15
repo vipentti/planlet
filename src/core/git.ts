@@ -107,11 +107,6 @@ export interface ListDiffPathsOptions {
   readonly pathspec?: string | undefined;
 }
 
-export interface GitDiffChange {
-  readonly status: string;
-  readonly paths: readonly string[];
-}
-
 function resolveBaseOid(repositoryRoot: string, base: string): string {
   if (base.length === 0) {
     throw new PlanletError("git_error", "Git base ref cannot be empty", {
@@ -140,48 +135,24 @@ function resolveBaseOid(repositoryRoot: string, base: string): string {
   return oid;
 }
 
-function parseGitDiffChanges(
-  stdout: string,
-  base: string,
-): readonly GitDiffChange[] {
-  const fields = stdout.split("\0");
-  const changes: GitDiffChange[] = [];
-  for (let index = 0; index < fields.length;) {
-    const status = fields[index++];
-    if (status === undefined || status.length === 0) continue;
-
-    const pathCount = status.startsWith("R") || status.startsWith("C") ? 2 : 1;
-    const paths = fields.slice(index, index + pathCount);
-    if (
-      paths.length !== pathCount ||
-      paths.some((path) => path === undefined || path.length === 0)
-    ) {
-      throw new PlanletError("git_error", "Could not parse Git changes", {
-        details: { base, reason: "Git returned malformed name-status output" },
-      });
-    }
-    index += pathCount;
-    changes.push({ status, paths });
-  }
-  return changes;
-}
-
 /**
  * Resolves a caller-supplied base ref and lists changed paths from its
- * three-dot range to HEAD. The raw NUL-delimited output is split without
- * trimming so filenames containing whitespace remain intact.
+ * three-dot range to HEAD. Rename detection is disabled so an archive move
+ * produces both its active deletion and archive addition. The raw NUL-
+ * delimited output is split without trimming so filenames containing
+ * whitespace remain intact.
  */
-export function listDiffChanges(
+export function listDiffPaths(
   repositoryRoot: string,
   options: ListDiffPathsOptions,
-): readonly GitDiffChange[] {
+): readonly string[] {
   const oid = resolveBaseOid(repositoryRoot, options.base);
   const pathspec = options.pathspec ?? "plans/";
   const diff = runGitOutput(repositoryRoot, [
     "diff",
-    "--name-status",
+    "--name-only",
+    "--no-renames",
     "--relative",
-    "--find-renames",
     "-z",
     `${oid}...HEAD`,
     "--",
@@ -193,16 +164,7 @@ export function listDiffChanges(
     });
   }
 
-  return parseGitDiffChanges(diff.stdout, options.base);
-}
-
-export function listDiffPaths(
-  repositoryRoot: string,
-  options: ListDiffPathsOptions,
-): readonly string[] {
-  return listDiffChanges(repositoryRoot, options).flatMap(
-    (change) => change.paths,
-  );
+  return diff.stdout.split("\0").filter((path) => path.length > 0);
 }
 
 /**
