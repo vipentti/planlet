@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import test from "node:test";
 
 import { listDiffPaths, tryStage } from "../../src/core/git.js";
@@ -17,11 +17,14 @@ test("listDiffPaths resolves base refs and preserves NUL-delimited paths", async
   await withGitRoot(async (root) => {
     writeFileSync(join(root, "placeholder.txt"), "base\n");
     commitAll(root, "base");
-    mkdirSync(join(root, "plans", "space-plan"), { recursive: true });
-    writeFileSync(
-      join(root, "plans", "space-plan", "file with space\nname.md"),
-      "changed\n",
+    const changedPath = join(
+      root,
+      "plans",
+      "space-plan",
+      "file with space\nname.md",
     );
+    mkdirSync(dirname(changedPath), { recursive: true });
+    writeFileSync(changedPath, "changed\n");
     commitAll(root, "change");
 
     assert.deepEqual(

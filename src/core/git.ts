@@ -8,35 +8,6 @@ function runGitOutput(
   repositoryRoot: string,
   args: readonly string[],
 ): { stdout: string; failure: string | undefined } {
-  const result = spawnSync("git", args, {
-    cwd: repositoryRoot,
-    encoding: "utf8",
-  });
-  if (result.error !== undefined) {
-    return { stdout: "", failure: result.error.message };
-  }
-  if (result.status !== 0) {
-    return {
-      stdout: "",
-      failure:
-        result.stderr.trim() ||
-        `git ${args[0]} exited with status ${result.status}`,
-    };
-  }
-  return { stdout: result.stdout.trim(), failure: undefined };
-}
-
-function runGit(
-  repositoryRoot: string,
-  args: readonly string[],
-): string | undefined {
-  return runGitOutput(repositoryRoot, args).failure;
-}
-
-function runGitRawOutput(
-  repositoryRoot: string,
-  args: readonly string[],
-): { stdout: string; failure: string | undefined } {
   try {
     const result = spawnSync("git", args, {
       cwd: repositoryRoot,
@@ -57,6 +28,13 @@ function runGitRawOutput(
   } catch (error) {
     return { stdout: "", failure: errorMessage(error) };
   }
+}
+
+function runGit(
+  repositoryRoot: string,
+  args: readonly string[],
+): string | undefined {
+  return runGitOutput(repositoryRoot, args).failure;
 }
 
 interface GitMarker {
@@ -144,7 +122,7 @@ export function listDiffPaths(
     });
   }
 
-  const resolved = runGitRawOutput(repositoryRoot, [
+  const resolved = runGitOutput(repositoryRoot, [
     "rev-parse",
     "--verify",
     "--end-of-options",
@@ -164,7 +142,7 @@ export function listDiffPaths(
   }
 
   const pathspec = options.pathspec ?? "plans/";
-  const diff = runGitRawOutput(repositoryRoot, [
+  const diff = runGitOutput(repositoryRoot, [
     "diff",
     "--name-only",
     "--relative",
