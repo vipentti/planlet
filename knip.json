@@ -1,13 +1,5 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "ignore": ["scripts/changelog.mjs"],
-  "ignoreBinaries": [
-    "gpg",
-    "planlet",
-    "printf",
-    "sha256sum",
-    "ssh-keygen",
-    "where"
-  ],
   "ignoreDependencies": ["@vipentti/npm-release-flow"]
 }
