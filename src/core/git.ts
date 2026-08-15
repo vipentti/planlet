@@ -2,27 +2,32 @@ import { spawnSync } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
 
 import { tryLstat } from "./paths.js";
+import { PlanletError } from "../errors/planlet-error.js";
 
 function runGitOutput(
   repositoryRoot: string,
   args: readonly string[],
 ): { stdout: string; failure: string | undefined } {
-  const result = spawnSync("git", args, {
-    cwd: repositoryRoot,
-    encoding: "utf8",
-  });
-  if (result.error !== undefined) {
-    return { stdout: "", failure: result.error.message };
+  try {
+    const result = spawnSync("git", args, {
+      cwd: repositoryRoot,
+      encoding: "utf8",
+    });
+    if (result.error !== undefined) {
+      return { stdout: "", failure: result.error.message };
+    }
+    if (result.status !== 0) {
+      return {
+        stdout: "",
+        failure:
+          result.stderr.trim() ||
+          `git ${args[0]} exited with status ${result.status}`,
+      };
+    }
+    return { stdout: result.stdout, failure: undefined };
+  } catch (error) {
+    return { stdout: "", failure: errorMessage(error) };
   }
-  if (result.status !== 0) {
-    return {
-      stdout: "",
-      failure:
-        result.stderr.trim() ||
-        `git ${args[0]} exited with status ${result.status}`,
-    };
-  }
-  return { stdout: result.stdout.trim(), failure: undefined };
 }
 
 function runGit(
@@ -95,6 +100,71 @@ export function tryStage(
       warnings.push(`Could not stage ${displayLabel}: ${failure}`);
     }
   });
+}
+
+export interface ListDiffPathsOptions {
+  readonly base: string;
+  readonly pathspec?: string | undefined;
+}
+
+function resolveBaseOid(repositoryRoot: string, base: string): string {
+  if (base.length === 0) {
+    throw new PlanletError("git_error", "Git base ref cannot be empty", {
+      details: { base },
+    });
+  }
+
+  const resolved = runGitOutput(repositoryRoot, [
+    "rev-parse",
+    "--verify",
+    "--end-of-options",
+    `${base}^{commit}`,
+  ]);
+  if (resolved.failure !== undefined) {
+    throw new PlanletError("git_error", "Could not resolve Git base ref", {
+      details: { base, reason: resolved.failure },
+    });
+  }
+
+  const oid = resolved.stdout.trim();
+  if (oid.length === 0) {
+    throw new PlanletError("git_error", "Git returned an empty base commit", {
+      details: { base },
+    });
+  }
+  return oid;
+}
+
+/**
+ * Resolves a caller-supplied base ref and lists changed paths from its
+ * three-dot range to HEAD. Rename detection is disabled so an archive move
+ * produces both its active deletion and archive addition. The raw NUL-
+ * delimited output is split without trimming so filenames containing
+ * whitespace remain intact.
+ */
+export function listDiffPaths(
+  repositoryRoot: string,
+  options: ListDiffPathsOptions,
+): readonly string[] {
+  const oid = resolveBaseOid(repositoryRoot, options.base);
+  const pathspec = options.pathspec ?? "plans/";
+  const diff = runGitOutput(repositoryRoot, [
+    "diff",
+    "--name-only",
+    "--no-renames",
+    "--relative",
+    "-z",
+    `${oid}...HEAD`,
+    "--",
+    pathspec,
+  ]);
+  if (diff.failure !== undefined) {
+    throw new PlanletError("git_error", "Could not list Git changes", {
+      details: { base: options.base, reason: diff.failure },
+    });
+  }
+
+  return diff.stdout.split("\0").filter((path) => path.length > 0);
 }
 
 /**

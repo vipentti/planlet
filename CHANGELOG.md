@@ -6,6 +6,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and thi
 
 ## [Unreleased]
 
+### Added
+
+- Add read-only `planlet check-completion --base <git-ref>` gate for reporting changed active planlets that are ready to complete and planlets completed in the same changeset.
+
 ### Changed
 
 - Migrate release ownership to `vipentti/npm-release-flow@0.1.0` as sole releaser. `package.json` carries exact pin `0.1.0` plus fixed `release:verify` convention (`npm run lint && npm run format:check && npm run type-check && npm run knip && npm test && npm run skills:update && git diff --exit-code`). `.github/workflows/release.yml` is thin caller pinned at `2ddb84caa71d25946a8c718d9364ef6db2699704` with `permissions: {}`, `concurrency {group: release-main, cancel-in-progress: false, queue: max}`, and explicit `NPM_RELEASE_FLOW_*` secrets. Workflow-coupled tests (`release-workflow.test.ts`, `release-intent.test.ts`, `package-artifact.test.ts`, `validate-packed-artifact.test.ts`) and `ci.yml` `shellcheck` install plus `knip.json` `shellcheck` ignore removed.

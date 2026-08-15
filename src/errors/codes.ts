@@ -24,6 +24,7 @@ export const ERROR_EXIT_CODES = Object.freeze({
   unsupported_tool: EXIT_CODES.usage,
   unsafe_path: EXIT_CODES.filesystemConflict,
   write_conflict: EXIT_CODES.filesystemConflict,
+  git_error: EXIT_CODES.operational,
   internal_error: EXIT_CODES.operational,
 }) satisfies Readonly<Record<string, ExitCode>>;
 

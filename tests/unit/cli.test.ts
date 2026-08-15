@@ -111,6 +111,28 @@ test("onboard in a non-repository directory writes no files", async () => {
   }
 });
 
+test("check-completion requires base and rejects head or positionals", async () => {
+  for (const arguments_ of [
+    ["check-completion"],
+    ["check-completion", "--base", "main", "extra"],
+    ["check-completion", "--base", "main", "--head", "HEAD"],
+  ]) {
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+
+    assert.equal(
+      await main(arguments_, {
+        cwd: "/path/that/does/not/need/to/exist",
+        stdout: (value) => stdout.push(value),
+        stderr: (value) => stderr.push(value),
+      }),
+      2,
+    );
+    assert.equal(stdout.join(""), "");
+    assert.match(stderr.join(""), /^usage:/);
+  }
+});
+
 test("invalid commands and arguments fail with usage before repository discovery", async () => {
   for (const arguments_ of [["status"], ["bogus"], ["list", "--bogus"]]) {
     const stdout: string[] = [];

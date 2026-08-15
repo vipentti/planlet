@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { parseArgs, type ParseArgsOptionsConfig } from "node:util";
 
+import { handleCheckCompletion } from "./commands/check-completion.js";
 import { handleComplete } from "./commands/complete.js";
 import { handleCreate } from "./commands/create.js";
 import { handleDashboard } from "./commands/dashboard.js";
@@ -57,6 +58,7 @@ const COMMAND_HELP: Readonly<Record<string, string>> = {
   task: "Usage: planlet task check|uncheck <slug> <task-id>\n",
   complete:
     "Usage: planlet complete <slug> [--allow-incomplete --reason <text>]\n",
+  "check-completion": "Usage: planlet check-completion --base <git-ref>\n",
 };
 
 function renderHelp(): string {
@@ -408,6 +410,17 @@ function prepareCommand(
         reason: values.reason,
       };
       return (context) => handleComplete(commandArguments, context);
+    }
+    case "check-completion": {
+      const { values, positionals } = parse(arguments_, {
+        base: { type: "string" },
+      });
+      requirePositionals(positionals, 0, command);
+      if (values.base === undefined) {
+        usage(COMMAND_HELP[command]!.trimEnd());
+      }
+      return (context) =>
+        handleCheckCompletion({ base: values.base! }, context);
     }
     default:
       usage(`Unknown command: ${command}`);

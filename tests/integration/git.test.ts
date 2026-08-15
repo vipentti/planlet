@@ -1,16 +1,48 @@
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import test from "node:test";
 
-import { tryStage } from "../../src/core/git.js";
+import { listDiffPaths, tryStage } from "../../src/core/git.js";
+import { PlanletError } from "../../src/errors/planlet-error.js";
 import {
   addWorktree,
   commitAll,
   porcelain,
   withGitRoot,
 } from "./git-fixtures.js";
+
+test("listDiffPaths resolves base refs and preserves NUL-delimited paths", async () => {
+  await withGitRoot(async (root) => {
+    writeFileSync(join(root, "placeholder.txt"), "base\n");
+    commitAll(root, "base");
+    const changedPath = join(
+      root,
+      "plans",
+      "space-plan",
+      "file with space name.md",
+    );
+    mkdirSync(dirname(changedPath), { recursive: true });
+    writeFileSync(changedPath, "changed\n");
+    commitAll(root, "change");
+
+    assert.deepEqual(
+      listDiffPaths(root, { base: "HEAD~1", pathspec: "plans/" }),
+      ["plans/space-plan/file with space name.md"],
+    );
+  });
+});
+
+test("listDiffPaths rejects an empty base without invoking git", () => {
+  assert.throws(
+    () => listDiffPaths("/path/that/does/not/exist", { base: "" }),
+    (error) =>
+      error instanceof PlanletError &&
+      error.code === "git_error" &&
+      error.details.base === "",
+  );
+});
 
 test("tryStage no-ops without any git marker", () => {
   const root = mkdtempSync(join(tmpdir(), "planlet-git-nomarker-"));
