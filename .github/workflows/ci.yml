@@ -32,7 +32,7 @@ jobs:
       - run: npm run type-check
       - run: npm run build
       - name: check active Planlet completion
-        if: matrix.os == 'ubuntu-latest' && matrix.node == 22
+        if: github.event_name == 'pull_request' && matrix.os == 'ubuntu-latest' && matrix.node == 22
         run: node dist/planlet.mjs check-completion --base origin/main
       - run: npm test
       - run: git diff --check
