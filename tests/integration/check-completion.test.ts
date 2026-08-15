@@ -79,28 +79,43 @@ test("ready touched planlet fails with an actionable violation and no mutation",
       ok: false,
       base: "base",
       touched: ["ready-plan"],
+      completed: [],
       violations: [{ slug: "ready-plan", next: "planlet complete ready-plan" }],
     });
     assert.deepEqual(porcelain(root), before);
   });
 });
 
-test("completed-in-range planlet does not violate", async () => {
+test("completed-in-range planlet does not violate and reports its rename", async () => {
   await withGitRoot(async (root) => {
     makeBase(root);
     writePlanlet(root, "finished-plan", READY_TASKS);
     commitAll(root, "implementation");
+    const implementationBase = spawnSync(
+      "git",
+      ["branch", "implementation-base"],
+      {
+        cwd: root,
+        encoding: "utf8",
+      },
+    );
+    assert.equal(implementationBase.status, 0, implementationBase.stderr);
     const completed = await invoke(root, ["complete", "finished-plan"]);
     assert.equal(completed.exitCode, 0);
     commitAll(root, "complete plan");
 
-    const result = await invoke(root, ["check-completion", "--base", "base"]);
+    const result = await invoke(root, [
+      "check-completion",
+      "--base",
+      "implementation-base",
+    ]);
 
     assert.equal(result.exitCode, 0);
     assert.deepEqual(output(result.capture), {
       ok: true,
-      base: "base",
+      base: "implementation-base",
       touched: [],
+      completed: ["finished-plan"],
       violations: [],
     });
   });
@@ -122,6 +137,7 @@ test("in-progress and completed-only changes pass", async () => {
       ok: true,
       base: "base",
       touched: ["in-progress-plan"],
+      completed: [],
       violations: [],
     });
 
@@ -142,6 +158,7 @@ test("in-progress and completed-only changes pass", async () => {
       ok: true,
       base: "completed-base",
       touched: [],
+      completed: [],
       violations: [],
     });
   });
@@ -161,6 +178,7 @@ test("active and completed logical-slug collision does not recommend completion"
       ok: true,
       base: "base",
       touched: ["collided-plan"],
+      completed: [],
       violations: [],
     });
     assert.doesNotMatch(result.capture.stdout.join(""), /planlet complete/);
@@ -204,6 +222,7 @@ test("nested Planlet roots use relative plans paths", async () => {
       ok: false,
       base: "base",
       touched: ["nested-ready"],
+      completed: [],
       violations: [
         { slug: "nested-ready", next: "planlet complete nested-ready" },
       ],

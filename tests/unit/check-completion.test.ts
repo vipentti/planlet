@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   deriveCompletionResult,
+  extractCompletedSlugs,
   extractTouchedSlugs,
 } from "../../src/core/check-completion.js";
 import type { PlanSummary } from "../../src/core/plan/models.js";
@@ -38,6 +39,40 @@ test("extractTouchedSlugs ignores completed, invalid, and direct plans paths", (
       "other/ready-plan/tasks.md",
     ]),
     ["ready-plan"],
+  );
+});
+
+test("extractCompletedSlugs matches removed active and added archive families", () => {
+  assert.deepEqual(
+    extractCompletedSlugs([
+      {
+        status: "R065",
+        paths: [
+          "plans/finished-plan/tasks.md",
+          "plans/completed/2028-01-01-finished-plan/tasks.md",
+        ],
+      },
+      {
+        status: "D",
+        paths: ["plans/removed-plan/plan.md"],
+      },
+      {
+        status: "A",
+        paths: ["plans/completed/2028-01-01-removed-plan/plan.md"],
+      },
+      {
+        status: "A",
+        paths: ["plans/completed/2028-01-01-unrelated-plan/plan.md"],
+      },
+      {
+        status: "R100",
+        paths: [
+          "plans/copied-plan/plan.md",
+          "plans/completed/not-an-archive/plan.md",
+        ],
+      },
+    ]),
+    ["finished-plan", "removed-plan"],
   );
 });
 
@@ -107,11 +142,13 @@ test("deriveCompletionResult uses one validation snapshot for active state and u
       "origin/main",
       ["collided-ready", "completed-plan", "in-progress", "unique-ready"],
       validation,
+      ["completed-plan"],
     ),
     {
       ok: false,
       base: "origin/main",
       touched: ["collided-ready", "in-progress", "unique-ready"],
+      completed: ["completed-plan"],
       violations: [
         { slug: "unique-ready", next: "planlet complete unique-ready" },
       ],

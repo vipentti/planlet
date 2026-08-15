@@ -278,9 +278,11 @@ planlet check-completion --base origin/main
 
 The command compares the resolved base commit's three-dot range with `HEAD`,
 then checks touched active planlets against current checkout state. It reports
-ready-to-complete planlets that still need `planlet complete <slug>` and does
-not mutate plan files, the index, or completion state. Callers provide the base
-ref explicitly; Planlet does not select a CI provider ref.
+ready-to-complete planlets that still need `planlet complete <slug>` and lists
+slugs completed in the range when an active path is replaced by its matching
+dated archive. It does not mutate plan files, the index, or completion state.
+Completed entries do not affect the violation exit code. Callers provide the
+base ref explicitly; Planlet does not select a CI provider ref.
 
 Planlet should expose clean exit codes and machine output to enable this, but should not couple the core CLI to a particular CI or Git hosting service.
 
@@ -582,9 +584,10 @@ planlet check-completion --base <git-ref>
 ```
 
 This read-only check compares `<resolved-base-oid>...HEAD`, scoped to
-`plans/`, and reports touched active planlets in `ready_to_complete`. It never
-archives or completes a planlet. The base ref is required and caller-supplied;
-there is no `--head` option or CI-provider default.
+`plans/`, and reports touched active planlets in `ready_to_complete` plus
+slugs completed in the range. It never archives or completes a planlet. The
+base ref is required and caller-supplied; there is no `--head` option or
+CI-provider default.
 
 Possible future commands:
 

@@ -20,6 +20,7 @@ export function handleCheckCompletion(
         ok: result.ok,
         base: result.base,
         touched: result.touched,
+        completed: result.completed,
         violations: result.violations,
       },
       warnings: result.warnings,

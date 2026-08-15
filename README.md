@@ -148,10 +148,14 @@ planlet check-completion --base <git-ref>
 
 Planlet resolves supplied base to commit, compares its three-dot range with
 `HEAD`, and checks planlets touched since merge base. Current checkout supplies
-lifecycle state. Gate is read-only: it does not edit, stage, lock, complete, or
-archive planlets. Exit 0 means no violation. Exit 4 means changed active planlet
-is `ready_to_complete`; run `planlet complete <slug>`. Caller must provide base
-with enough Git history for ref resolution and merge-base calculation.
+lifecycle state. Report fields are `ok`, `base`, `touched`, `completed`, and
+`violations`. `completed` lists slugs whose active directory was removed and a
+matching dated archive was added in the range. Gate is read-only: it does not
+edit, stage, lock, complete, or archive planlets. Exit 0 means no violation.
+Exit 4 means changed active planlet is `ready_to_complete`; run
+`planlet complete <slug>`. Completed entries do not affect exit code. Caller
+must provide base with enough Git history for ref resolution and merge-base
+calculation.
 
 GitHub Actions can pass pull request base SHA without changing provider-neutral
 CLI contract:
@@ -180,22 +184,22 @@ scaffold stubs and does not stage them. The CLI never commits, and Planlet opera
 
 ## Commands
 
-| Command                                                | Purpose                                                                 |
-| ------------------------------------------------------ | ----------------------------------------------------------------------- |
-| `init [--tools <ids>] [--force] [--no-agents]`         | Create `plans/`, install harness skills, write agent onboarding section |
-| `update [--tools <ids>] [--force]`                     | Refresh installed skill copies from canonical sources                   |
-| `tools`                                                | Report skill destinations and installation state                        |
-| `onboard`                                              | Print the agent onboarding snippet                                      |
-| `list [--state <state>] [--completed]`                 | List planlets                                                           |
-| `create <slug> [--title <title>]`                      | Scaffold a new planlet                                                  |
-| `show <slug> [--part plan\|tasks\|summary]`            | Show planlet content                                                    |
-| `status <slug>`                                        | Report state and task counts                                            |
-| `validate [<slug>\|--all]`                             | Validate planlet structure                                              |
-| `tasks <slug> [--remaining\|--completed]`              | List tasks                                                              |
-| `task check\|uncheck <slug> <task-id>`                 | Toggle a task checkbox                                                  |
-| `complete <slug> [--allow-incomplete --reason <text>]` | Archive a planlet under `plans/completed/`                              |
-| `check-completion --base <git-ref>`                    | Fail when changed ready planlets remain active                          |
-| `help [command]`                                       | Show usage                                                              |
+| Command                                                | Purpose                                                                      |
+| ------------------------------------------------------ | ---------------------------------------------------------------------------- |
+| `init [--tools <ids>] [--force] [--no-agents]`         | Create `plans/`, install harness skills, write agent onboarding section      |
+| `update [--tools <ids>] [--force]`                     | Refresh installed skill copies from canonical sources                        |
+| `tools`                                                | Report skill destinations and installation state                             |
+| `onboard`                                              | Print the agent onboarding snippet                                           |
+| `list [--state <state>] [--completed]`                 | List planlets                                                                |
+| `create <slug> [--title <title>]`                      | Scaffold a new planlet                                                       |
+| `show <slug> [--part plan\|tasks\|summary]`            | Show planlet content                                                         |
+| `status <slug>`                                        | Report state and task counts                                                 |
+| `validate [<slug>\|--all]`                             | Validate planlet structure                                                   |
+| `tasks <slug> [--remaining\|--completed]`              | List tasks                                                                   |
+| `task check\|uncheck <slug> <task-id>`                 | Toggle a task checkbox                                                       |
+| `complete <slug> [--allow-incomplete --reason <text>]` | Archive a planlet under `plans/completed/`                                   |
+| `check-completion --base <git-ref>`                    | Report completed planlets and fail when changed ready planlets remain active |
+| `help [command]`                                       | Show usage                                                                   |
 
 Global options: `--root <path>` selects the repository root, `--full` returns
 complete `show --part plan|tasks` content, and `--version` prints the version
