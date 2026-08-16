@@ -57,7 +57,7 @@
   "devDependencies": {
     "@toon-format/toon": "4.0.0",
     "@types/node": "22.20.1",
-    "@vipentti/npm-release-flow": "0.1.1",
+    "@vipentti/npm-release-flow": "0.1.2",
     "esbuild": "0.28.1",
     "eslint": "10.7.0",
     "knip": "6.31.0",
