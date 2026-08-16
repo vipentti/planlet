@@ -6,8 +6,6 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and thi
 
 ## [Unreleased]
 
-## [0.5.1] - 2026-08-16
-
 ### Added
 
 - Add read-only `planlet check-completion --base <git-ref>` gate for reporting changed active planlets that are ready to complete and planlets completed in the same changeset.
@@ -148,8 +146,18 @@ First release. Everything below is new, so these notes describe what Planlet is 
 - Unexpected failures surface as a structured `internal_error` with no stack or path leakage; set `PLANLET_DEBUG=1` for diagnostic detail.
 - Planlet and repository paths reject directory traversal and symlink escape, and file writes are atomic or recoverable.
 
-[Unreleased]: https://github.com/vipentti/planlet/compare/v0.5.1...HEAD
-[0.5.1]: https://github.com/vipentti/planlet/compare/v0.5.0...v0.5.1
+[Unreleased]: https://github.com/vipentti/planlet/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/vipentti/planlet/compare/v0.4.3...v0.5.0
+[0.4.3]: https://github.com/vipentti/planlet/compare/v0.4.2...v0.4.3
+[0.4.2]: https://github.com/vipentti/planlet/compare/v0.4.1...v0.4.2
+[0.4.1]: https://github.com/vipentti/planlet/compare/v0.4.0...v0.4.1
+[0.4.0]: https://github.com/vipentti/planlet/compare/v0.3.2...v0.4.0
+[0.3.2]: https://github.com/vipentti/planlet/compare/v0.2.0...v0.3.2
+[0.2.0]: https://github.com/vipentti/planlet/compare/v0.1.2...v0.2.0
+[0.1.2]: https://github.com/vipentti/planlet/compare/v0.1.1...v0.1.2
+[0.1.1]: https://github.com/vipentti/planlet/compare/v0.1.0...v0.1.1
+[0.1.0]: https://github.com/vipentti/planlet/releases/tag/v0.1.0
+[Unreleased]: https://github.com/vipentti/planlet/compare/v0.5.0...HEAD
 [0.5.0]: https://github.com/vipentti/planlet/compare/v0.4.3...v0.5.0
 [0.4.3]: https://github.com/vipentti/planlet/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/vipentti/planlet/compare/v0.4.1...v0.4.2
