@@ -1,5 +1,5 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "ignore": ["scripts/changelog.mjs"],
+  "ignore": ["scripts/changelog.mjs", ".npm-release-flow/**"],
   "ignoreDependencies": ["@vipentti/npm-release-flow"]
 }
