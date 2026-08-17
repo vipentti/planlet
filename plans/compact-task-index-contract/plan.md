@@ -96,8 +96,8 @@ plan needs a `src/` change.
 - Guidance states that no parser or validator enforces any of this.
 - `SKILL.md` names the compression pass before presentation and defers detail to
   the guidance.
-- `planlet update` output is committed in the same changeset: both skill
-  destinations and both `.planlet-manifest.json` files.
+- `node dist/planlet.mjs update` output is included in the same changeset: both
+  skill destinations and both `.planlet-manifest.json` files.
 - `tests/skills/skill-contract.test.ts` asserts the compact template properties
   and the new guidance controls structurally, without matching exact prose.
 - `CHANGELOG.md` carries an `[Unreleased]` entry for the skill behavior change.
