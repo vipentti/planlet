@@ -194,7 +194,22 @@ test("compact task index keeps template tasks single-line and guidance controls 
   const template = read("skills/planlet-plan/assets/tasks-template.md");
   const planSkill = read("skills/planlet-plan/SKILL.md");
 
-  // template tasks are single-line and short
+  // helper: paragraphs are blank-line separated blocks; steps are numbered workflow items in SKILL.md
+  function paragraphs(text: string): string[] {
+    return text
+      .split(/\n\s*\n/)
+      .map((p) => p.trim())
+      .filter(Boolean);
+  }
+  function skillSteps(text: string): string[] {
+    // numbered steps in Develop the proposal section (e.g. "5. Turn...", "6. Before presenting...")
+    return text
+      .split(/(?=^\d+\.\s)/m)
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }
+
+  // template tasks are single-line and short, with no nested content outside the HTML comment
   const taskLines = template
     .split("\n")
     .filter((line) => /^\s*- \[[ x]\] T\d+\b/.test(line));
@@ -212,42 +227,77 @@ test("compact task index keeps template tasks single-line and guidance controls 
   assert.doesNotMatch(templateWithoutComment, /\n {2,}[-*+]\s/);
   assert.doesNotMatch(templateWithoutComment, /\n {2,}\S/);
 
-  // guidance states the tightened 25/50-word targets without the retired 60/100 wording
-  assert.match(guidance, /25[^\n]*words/i);
-  assert.match(guidance, /50[^\n]*words/i);
+  // retired permissive wording is absent everywhere, without exact-prose matching
   assert.doesNotMatch(guidance, /about 60/i);
   assert.doesNotMatch(guidance, /approaching 100/i);
-  assert.match(guidance, /no tool enforces/i);
-  assert.match(guidance, /not parser/i);
 
-  // compression pass as a step before the proposal is presented
-  assert.match(guidance, /compression pass/i);
-  assert.match(guidance, /Before presenting/i);
-  assert.match(
-    guidance,
-    /reread[\s\S]*draft[\s\S]*tasks\.md[\s\S]*against[\s\S]*plan\.md/i,
+  // word targets and enforcement disclaimer occupy the same paragraph, proving the relationship
+  const guidanceParagraphs = paragraphs(guidance);
+  const targetParagraph = guidanceParagraphs.find(
+    (p) => /25/i.test(p) && /50/i.test(p) && /words/i.test(p),
   );
+  assert.ok(
+    targetParagraph,
+    "guidance must have a 25/50-word target paragraph",
+  );
+  assert.match(targetParagraph, /no tool enforces/i);
+  assert.match(targetParagraph, /not parser/i);
 
-  // task-local metadata is exceptional rather than the normal shape
-  assert.match(guidance, /exceptional/i);
-  assert.match(guidance, /bare outcome/i);
-  assert.match(guidance, /Verify:/);
-  assert.match(guidance, /only when useful/i);
+  // compression pass paragraph couples the step timing, the reread operation, and the relocation invariant
+  const compressionParagraph = guidanceParagraphs.find((p) =>
+    /compression pass/i.test(p),
+  );
+  assert.ok(
+    compressionParagraph,
+    "guidance must have a compression pass paragraph",
+  );
+  assert.match(compressionParagraph, /Before presenting/i);
+  assert.match(compressionParagraph, /reread/i);
+  assert.match(compressionParagraph, /tasks\.md/i);
+  assert.match(compressionParagraph, /plan\.md/i);
+  assert.match(compressionParagraph, /relocates detail/i);
 
-  // sparing-nested-list allowance
-  assert.match(guidance, /nested/i);
-  assert.match(guidance, /sparingly/i);
-  assert.match(guidance, /must not become\s+another specification surface/i);
+  // task-local metadata exceptional scope: one paragraph defines exceptional, bare outcome, Verify, and the when-useful guard together
+  const metadataParagraph = guidanceParagraphs.find((p) =>
+    /Task-local metadata is exceptional/i.test(p),
+  );
+  assert.ok(
+    metadataParagraph,
+    "guidance must have a task-local metadata paragraph",
+  );
+  assert.match(metadataParagraph, /bare outcome/i);
+  assert.match(metadataParagraph, /Verify:/);
+  assert.match(metadataParagraph, /only when useful/i);
+  assert.match(metadataParagraph, /never to a task-local clause/i);
 
-  // both semantic exceptions
-  assert.match(guidance, /split[\s\S]*rather than[\s\S]*compress/i);
-  assert.match(guidance, /move[\s\S]*into[\s\S]*plan\.md/i);
-  assert.match(guidance, /relocates detail/i);
+  // sparing nested lists and both semantic exceptions share one paragraph, proving the allowance is bounded
+  const nestingParagraph = guidanceParagraphs.find(
+    (p) => /sparingly/i.test(p) && /must not become/i.test(p),
+  );
+  assert.ok(
+    nestingParagraph,
+    "guidance must have a sparing-nested-list paragraph",
+  );
+  assert.match(nestingParagraph, /nested/i);
+  assert.match(nestingParagraph, /another specification surface/i);
+  // preserved semantic exceptions are in that same paragraph, not elsewhere
+  assert.match(nestingParagraph, /split/i);
+  assert.match(nestingParagraph, /rather than/i);
+  assert.match(nestingParagraph, /compress/i);
+  assert.match(nestingParagraph, /substantial explanation/i);
+  assert.match(nestingParagraph, /move/i);
+  assert.match(nestingParagraph, /plan\.md/i);
 
-  // SKILL.md names the compression pass before presentation and defers detail to guidance
-  assert.match(planSkill, /compression pass/i);
-  assert.match(planSkill, /planning guidance/i);
-  assert.match(planSkill, /Before presenting[^\n]*compression pass/i);
+  // SKILL.md compression step delegates operational detail to planning guidance in one workflow step
+  const steps = skillSteps(planSkill);
+  const compressionStep = steps.find((s) => /compression pass/i.test(s));
+  assert.ok(compressionStep, "SKILL.md must have a compression pass step");
+  assert.match(compressionStep, /Before presenting/i);
+  assert.match(compressionStep, /tasks\.md/i);
+  assert.match(compressionStep, /plan\.md/i);
+  // relationship: the delegation appears in the same step, not via the generic earlier planning-guidance link
+  assert.match(compressionStep, /planning-guidance\.md/i);
+  assert.match(compressionStep, /for the full[\s\S]*procedure/i);
   assert.ok(
     planSkill.indexOf("compression pass") <
       planSkill.indexOf("Present the proposed plan"),

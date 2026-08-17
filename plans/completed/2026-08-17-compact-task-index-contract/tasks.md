@@ -7,3 +7,8 @@
 - [x] T5 Add structural contract assertions for the compact template and the new guidance controls.
 - [x] T6 Add the `[Unreleased]` changelog entry for the published-skill behavior change.
 - [x] T7 Run the full repository verification suite defined in `plan.md`.
+
+## Completion
+
+- Completed at: 2026-08-17T08:57:01.957Z
+- Mode: normal
