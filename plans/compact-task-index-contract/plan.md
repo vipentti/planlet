@@ -68,9 +68,9 @@ what guidance already calls it: used only when useful, when it makes the task
 shorter or clearer and the information is not recoverable from `plan.md`. Broad
 suite execution belongs to the distinct final verification task, never to a
 task-local clause. Ordinary nested Markdown lists remain allowed sparingly and
-must not become another specification surface. No further named metadata field
-is introduced, and none such as `Requirements:`, `Details:`, `Implementation:`,
-or `Cases:` may be added later.
+must not become another specification surface. The ownership split does this
+work regardless of Markdown label, so no new named metadata field is introduced
+and none is governed by name.
 
 **Preserved semantic exceptions.** A task with multiple independent outcomes is
 split rather than compressed. Substantial explanation moves into `plan.md`
@@ -90,8 +90,8 @@ plan needs a `src/` change.
 
 - `planning-guidance.md` states the 25/50-word targets, the compression pass as
   a step before the proposal is presented, task-local metadata as exceptional
-  rather than the normal shape, the sparing-nested-list allowance, the
-  prohibition on new named metadata fields, and both semantic exceptions.
+  rather than the normal shape, the sparing-nested-list allowance, and both
+  semantic exceptions.
 - The retired "about 60 words" and "approaching 100 words" wording is gone.
 - Guidance states that no parser or validator enforces any of this.
 - `SKILL.md` names the compression pass before presentation and defers detail to
@@ -114,18 +114,17 @@ implementation changes when the workflow grants no commit authority.
 Targeted:
 
 - Contract assertions in `tests/skills/skill-contract.test.ts`, in the existing
-  corpus-assertion style: template tasks are single-line and short, the template
-  introduces no named metadata field beyond the optional `Verify:` clause,
-  guidance mentions the compression pass and the tightened targets, and the
-  retired 60/100 wording is absent.
+  corpus-assertion style: template tasks are single-line and short, guidance
+  mentions the compression pass and the tightened targets, and the retired
+  60/100 wording is absent.
 - The existing `validatePlanletStructure` template test must still pass with
   tasks `T1`-`T3`, proving no parser change is implied.
 - `node dist/planlet.mjs update` then `node dist/planlet.mjs --root . tools`:
   every destination reports `installed`, and both manifests plus both skill
   copies appear in the changeset. CI also fails on drift.
 
-Known limitation: word targets and the metadata rule have no automated check by
-design, so conformance is reviewer judgment.
+Known limitation: the word targets and the compression pass have no automated
+check by design, so conformance is reviewer judgment.
 
 ## Risks and Considerations
 
