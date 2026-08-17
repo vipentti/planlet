@@ -6,6 +6,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and thi
 
 ## [Unreleased]
 
+### Changed
+
+- The `planlet-plan` skill now tightens the `tasks.md` compact-index guidance to 25/50-word targets and adds a pre-presentation compression pass that removes detail recoverable from `plan.md`. Task-local `Verify:` stays available only when useful and nested lists remain sparingly allowed; word targets remain planner judgment with no parser or validator enforcement.
+
 ## [0.6.0] - 2026-08-16
 
 ### Added

@@ -189,6 +189,145 @@ test("plan and task templates satisfy Phase 2 file contract", () => {
   }
 });
 
+test("compact task index keeps template tasks single-line and guidance controls present", () => {
+  const guidance = read("skills/planlet-plan/references/planning-guidance.md");
+  const template = read("skills/planlet-plan/assets/tasks-template.md");
+  const planSkill = read("skills/planlet-plan/SKILL.md");
+
+  // helper: paragraphs are blank-line separated blocks; steps are numbered workflow items in SKILL.md
+  function paragraphs(text: string): string[] {
+    return text
+      .split(/\n\s*\n/)
+      .map((p) => p.trim())
+      .filter(Boolean);
+  }
+  function skillSteps(text: string): string[] {
+    // numbered steps in Develop the proposal section (e.g. "5. Turn...", "6. Before presenting...")
+    return text
+      .split(/(?=^\d+\.\s)/m)
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }
+
+  // template tasks are single-line and short, with no nested content outside the HTML comment
+  const taskLines = template
+    .split("\n")
+    .filter((line) => /^\s*- \[[ x]\] T\d+\b/.test(line));
+  assert.equal(taskLines.length, 3);
+  for (const line of taskLines) {
+    const description = line.replace(/^\s*- \[[ x]\] T\d+\s+/, "").trim();
+    assert.equal(description.includes("\n"), false);
+    const words = description.split(/\s+/).filter(Boolean);
+    assert.ok(
+      words.length <= 25,
+      `template task too long (${words.length} words): ${description}`,
+    );
+  }
+  const templateWithoutComment = template.replace(/<!--[\s\S]*?-->/g, "");
+  assert.doesNotMatch(templateWithoutComment, /\n {2,}[-*+]\s/);
+  assert.doesNotMatch(templateWithoutComment, /\n {2,}\S/);
+
+  // retired permissive wording is absent everywhere, without exact-prose matching
+  assert.doesNotMatch(guidance, /about 60/i);
+  assert.doesNotMatch(guidance, /approaching 100/i);
+
+  // word targets and enforcement disclaimer occupy the same paragraph, proving the relationship
+  const guidanceParagraphs = paragraphs(guidance);
+  const targetParagraph = guidanceParagraphs.find(
+    (p) => /25/i.test(p) && /50/i.test(p) && /words/i.test(p),
+  );
+  assert.ok(
+    targetParagraph,
+    "guidance must have a 25/50-word target paragraph",
+  );
+  assert.match(targetParagraph, /no tool enforces/i);
+  assert.match(targetParagraph, /not parser/i);
+
+  // compression pass paragraph couples the step timing, the reread operation, and the relocation invariant
+  const compressionParagraph = guidanceParagraphs.find((p) =>
+    /compression pass/i.test(p),
+  );
+  assert.ok(
+    compressionParagraph,
+    "guidance must have a compression pass paragraph",
+  );
+  assert.match(compressionParagraph, /Before presenting/i);
+  assert.match(compressionParagraph, /reread/i);
+  assert.match(compressionParagraph, /tasks\.md/i);
+  assert.match(compressionParagraph, /plan\.md/i);
+  assert.match(compressionParagraph, /relocates detail/i);
+
+  // task-local metadata exceptional scope: one paragraph defines exceptional, bare outcome, Verify, and the when-useful guard together
+  const metadataParagraph = guidanceParagraphs.find((p) =>
+    /Task-local metadata is exceptional/i.test(p),
+  );
+  assert.ok(
+    metadataParagraph,
+    "guidance must have a task-local metadata paragraph",
+  );
+  assert.match(metadataParagraph, /bare outcome/i);
+  assert.match(metadataParagraph, /Verify:/);
+  assert.match(metadataParagraph, /only when useful/i);
+  assert.match(metadataParagraph, /never to a task-local clause/i);
+
+  // sparing nested lists and substantial-explanation exception share one paragraph
+  const nestingParagraph = guidanceParagraphs.find(
+    (p) => /sparingly/i.test(p) && /must not become/i.test(p),
+  );
+  assert.ok(
+    nestingParagraph,
+    "guidance must have a sparing-nested-list paragraph",
+  );
+  assert.match(nestingParagraph, /nested/i);
+  assert.match(nestingParagraph, /another specification surface/i);
+  assert.match(nestingParagraph, /substantial explanation/i);
+  assert.match(nestingParagraph, /move/i);
+  assert.match(nestingParagraph, /plan\.md/i);
+
+  // Task-boundary rule: independently meaningful delivered outcomes as sole criterion, folded with split-rather-than-compress, every checkbox as coherent outcome
+  const boundaryParagraph = guidanceParagraphs.find((p) =>
+    /Task boundaries follow/i.test(p),
+  );
+  assert.ok(boundaryParagraph, "guidance must have a task-boundary paragraph");
+  assert.match(
+    boundaryParagraph,
+    /independently meaningful delivered outcomes/i,
+  );
+  assert.match(boundaryParagraph, /sole\s+split criterion/i);
+  // proves one checkbox == one coherent outcome relationship in a single paragraph
+  assert.match(boundaryParagraph, /every resulting checkbox/i);
+  assert.match(boundaryParagraph, /coherent delivered outcome/i);
+  assert.match(boundaryParagraph, /splitting rather than compressing/i);
+  // tolerates several requirements when they serve one outcome, requirements stay in plan.md
+  assert.match(boundaryParagraph, /several.*requirements/i);
+  assert.match(boundaryParagraph, /keep those requirements in/i);
+  assert.match(boundaryParagraph, /plan\.md/i);
+  // implementability/verifiability only evidence, never sufficient
+  assert.match(boundaryParagraph, /only evidence/i);
+  assert.match(boundaryParagraph, /never sufficient/i);
+  // word-count pressure must not change semantic boundaries
+  assert.match(boundaryParagraph, /word-count pressure/i);
+  assert.match(boundaryParagraph, /semantic task boundaries/i);
+  // anti-mechanical guard preserved in same paragraph
+  assert.match(boundaryParagraph, /Do not\s+split\s+mechanically/i);
+
+  // SKILL.md compression step delegates operational detail to planning guidance in one workflow step
+  const steps = skillSteps(planSkill);
+  const compressionStep = steps.find((s) => /compression pass/i.test(s));
+  assert.ok(compressionStep, "SKILL.md must have a compression pass step");
+  assert.match(compressionStep, /Before presenting/i);
+  assert.match(compressionStep, /tasks\.md/i);
+  assert.match(compressionStep, /plan\.md/i);
+  // relationship: the delegation appears in the same step, not via the generic earlier planning-guidance link
+  assert.match(compressionStep, /planning-guidance\.md/i);
+  assert.match(compressionStep, /for the full[\s\S]*procedure/i);
+  assert.ok(
+    planSkill.indexOf("compression pass") <
+      planSkill.indexOf("Present the proposed plan"),
+    "compression pass must appear before presentation step",
+  );
+});
+
 test("generic and Claude bootstrap copies are byte-identical to canonical skills", () => {
   for (const name of SKILL_NAMES) {
     const canonicalRoot = `skills/${name}`;

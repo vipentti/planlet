@@ -1,9 +1,0 @@
-# Tasks: Compact Task Index Contract
-
-- [ ] T2 Tighten word targets and add the compression pass in planning guidance.
-- [ ] T3 Name the compression pass before proposal presentation in the plan skill.
-- [ ] T4 Build the CLI, then regenerate all tracked installed skill copies and both manifests into the changeset.
-  - Verify: `npm run build`, `node dist/planlet.mjs update`, then `node dist/planlet.mjs --root . tools` reports every destination installed.
-- [ ] T5 Add structural contract assertions for the compact template and the new guidance controls.
-- [ ] T6 Add the `[Unreleased]` changelog entry for the published-skill behavior change.
-- [ ] T7 Run the full repository verification suite defined in `plan.md`.
