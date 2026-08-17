@@ -6,6 +6,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and thi
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-08-17
+
 ### Changed
 
 - The `planlet-plan` skill now tightens the `tasks.md` compact-index guidance to 25/50-word targets and adds a pre-presentation compression pass that removes detail recoverable from `plan.md`. Task-local `Verify:` stays available only when useful and nested lists remain sparingly allowed; word targets remain planner judgment with no parser or validator enforcement.
@@ -146,7 +148,8 @@ First release. Everything below is new, so these notes describe what Planlet is 
 - Unexpected failures surface as a structured `internal_error` with no stack or path leakage; set `PLANLET_DEBUG=1` for diagnostic detail.
 - Planlet and repository paths reject directory traversal and symlink escape, and file writes are atomic or recoverable.
 
-[Unreleased]: https://github.com/vipentti/planlet/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/vipentti/planlet/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/vipentti/planlet/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/vipentti/planlet/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/vipentti/planlet/compare/v0.4.3...v0.5.0
 [0.4.3]: https://github.com/vipentti/planlet/compare/v0.4.2...v0.4.3

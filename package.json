@@ -1,6 +1,6 @@
 {
   "name": "@vipentti/planlet",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "Repository-local planning and task management for AI coding agents: focused Markdown planlets plus a deterministic CLI and portable agent skills. Small plans. Clear handoffs.",
   "license": "MIT",
   "author": "Ville Penttinen",
