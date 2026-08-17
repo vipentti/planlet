@@ -288,6 +288,23 @@ test("compact task index keeps template tasks single-line and guidance controls 
   assert.match(nestingParagraph, /move/i);
   assert.match(nestingParagraph, /plan\.md/i);
 
+  // Task-boundary rule couples focused-task preference, coherent-outcome scope, verifiable split, and anti-mechanical guard in one paragraph
+  const boundaryParagraph = guidanceParagraphs.find(
+    (p) =>
+      /Task boundaries follow meaningful outcomes/i.test(p) ||
+      (/Prefer several focused tasks/i.test(p) &&
+        /independently implementable or verifiable/i.test(p)),
+  );
+  assert.ok(boundaryParagraph, "guidance must have a task-boundary paragraph");
+  assert.match(boundaryParagraph, /coherent delivered outcome/i);
+  assert.match(
+    boundaryParagraph,
+    /implemented, reviewed, or verified separately/i,
+  );
+  assert.match(boundaryParagraph, /Do not\s+split mechanically/i);
+  assert.match(boundaryParagraph, /treat that as a\s+signal to split/i);
+  assert.match(boundaryParagraph, /packing them into one checkbox/i);
+
   // SKILL.md compression step delegates operational detail to planning guidance in one workflow step
   const steps = skillSteps(planSkill);
   const compressionStep = steps.find((s) => /compression pass/i.test(s));

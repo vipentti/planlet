@@ -91,3 +91,12 @@ Ordinary nested Markdown lists remain allowed sparingly and must not become
 another specification surface. If a task carries multiple independent outcomes,
 split it rather than compress. If substantial explanation is needed, move it
 into `plan.md` rather than keeping it in `tasks.md`.
+
+Task boundaries follow meaningful outcomes. Prefer several focused tasks over
+one verbose task when work contains independently implementable or verifiable
+outcomes; each task represents one coherent delivered outcome. Split when parts
+can reasonably be implemented, reviewed, or verified separately. If keeping a
+task concise requires listing several independent requirements, treat that as a
+signal to split the task instead of packing them into one checkbox. Do not
+split mechanically by file, function, tiny edit, or incidental implementation
+step.
