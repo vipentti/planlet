@@ -2,128 +2,104 @@
 
 ## Summary
 
-Generated `tasks.md` files currently restate `plan.md` detail: modes, frame
-sequences, error strings, steering sequences, and case lists. The cause is the
-canonical tasks template, whose prose-shaped example invites a second
-specification, not a lack of guidance wording. This planlet redefines the
-authored contract so `tasks.md` is a compact execution index, codifies that
-contract in the authoritative design plus the planning guidance and template,
-and leaves CLI parsing untouched.
+Planning guidance already calls `tasks.md` a compact execution index, already
+assigns detailed requirements to `plan.md`, and the canonical tasks template is
+already three short one-line outcomes. What is missing are the controls that
+make the stated intent bite: the length targets are permissive (about 60 words
+per task, escalation only near 100), and nothing tells the planner to compress
+the draft index before presenting it.
 
-When complete, the planning skill produces task lists of short imperative
-outcomes carrying at most the two standard named metadata fields, and a planner
-applies an explicit compression pass before presenting any proposal.
+This planlet tightens those two controls in the planning skill and locks the
+compact template shape with regression assertions. Duplicated specifications
+drift; the narrowed change is the smallest one that removes the room to
+duplicate.
 
 ## Scope
 
 Changes:
 
-- `planlet_design.md` §10.4 and §14.1: distinguish structural CLI validity from
-  generated authoring convention, codify compact-index ownership for `tasks.md`,
-  and clarify when `Verify:` metadata suffices versus when significant
-  verification belongs in its own explicit task (reconciling the existing
-  "verification should appear as explicit tasks when it is significant" rule).
-- `skills/planlet-plan/assets/tasks-template.md`: rewrite the example task list
-  and its HTML comment.
-- `skills/planlet-plan/references/planning-guidance.md`: replace the current
-  task-length wording with the ownership split, metadata-field rule, word
-  targets, and compression pass.
-- `skills/planlet-plan/SKILL.md`: align the "Develop the proposal" task wording
-  and add the compression pass to the pre-presentation step.
-- Regenerated installed copies under `.claude/skills/planlet-plan/` and
-  `.agents/skills/planlet-plan/` (produced by `planlet update`, committed).
-- `tests/skills/skill-contract.test.ts`: assertions for the new contract.
+- `skills/planlet-plan/references/planning-guidance.md`: replace the 60/100-word
+  wording with 25/50-word targets and add the pre-presentation compression pass.
+- `skills/planlet-plan/SKILL.md`: name the compression pass in the step that
+  precedes presenting the proposal, referring to the guidance for detail.
+- Regenerated tracked installed copies, as generated outputs of
+  `planlet update`: `.claude/skills/planlet-plan/`,
+  `.agents/skills/planlet-plan/`, `.claude/skills/.planlet-manifest.json`, and
+  `.agents/skills/.planlet-manifest.json`.
+- `tests/skills/skill-contract.test.ts`: structural assertions for the compact
+  template properties and the new guidance controls.
 - `CHANGELOG.md` under `[Unreleased]`: published-skill behavior change.
 
-Excluded:
+Excluded, with reasons:
 
-- Parser, validator, or CLI changes of any kind. Word limits are authoring
-  guidance only; there is no enforcement and no new error code.
-- `planlet-implement` and `planlet-complete` skills.
-- Rewriting existing planlets under `plans/completed/`.
-- `plan-template.md`, which already owns the specification sections correctly.
+- `assets/tasks-template.md` rewrite. The current template already demonstrates
+  short one-line outcomes; no concrete text in it contradicts the tightened
+  rule, so it is locked by tests rather than rewritten.
+- New standard `Scope:` metadata field. No repository evidence shows existing
+  ownership guidance failing in a way a named field would fix, and a named field
+  is itself a duplication surface.
+- `planlet_design.md`. Its §10.4 template is already short one-line outcomes and
+  its rules do not contradict the tightened targets, so no alignment edit is
+  needed. Revisit only if implementation finds contradicting text.
+- Parser, validator, or CLI changes. Word targets are authoring guidance with no
+  enforcement and no new error code.
+- `planlet-implement` and `planlet-complete` skills; existing planlets under
+  `plans/completed/`.
 
 ## Approach
 
-**Ownership split.** `plan.md` is the single specification: design decisions,
-boundaries, invariants, acceptance criteria, detailed behavior, edge cases, and
-broad verification strategy. `tasks.md` is an execution index: ordered delivered
-outcomes, unique stable T-IDs, prerequisites before consumers. A task states
-*what outcome lands*, never *how the behavior is specified*.
+**Ownership split (restated, not changed).** `plan.md` is the specification:
+design decisions, boundaries, invariants, acceptance criteria, detailed
+behavior, edge cases, and broad verification strategy. `tasks.md` orders
+delivered outcomes with unique stable T-IDs, prerequisites before consumers.
 
-**Standard metadata fields.** Exactly two named metadata fields exist, both
-optional:
-
-- `Scope:` likely components or ownership boundaries.
-- `Verify:` targeted commands, test suites, or behavior categories.
-
-No other named metadata field may be introduced, explicitly not
-`Requirements:`, `Details:`, `Implementation:`, `Cases:`, or equivalents; such
-fields are the invitation that produces copied specification. This is a rule
-about named fields, not a ban on nesting: ordinary nested Markdown lists remain
-allowed sparingly where they make a task shorter or clearer, and must not become
-another specification surface. The existing `Verify:` inline clause form stays
-valid; the nested bullet is the preferred form when metadata is present.
-
-**`Verify:` versus a verification task.** `Verify:` carries a targeted pointer
-that fits one short line, naming the command, suite, or behavior category that
-proves that one task's outcome. Verification that is itself significant work,
-such as new fixtures, a new suite, or the broad completion run, stays a distinct
-explicit task, as the design already requires.
-
-**Word targets.** Checkbox sentence preferably 25 words or fewer; a complete
-task including nested bullets normally 50 words or fewer. These replace the
-current "about 60 words / approaching 100 words" wording. They are targets a
-planner applies with judgment, not thresholds any tool measures.
+**Word targets.** A checkbox sentence preferably 25 words or fewer; a complete
+task normally 50 words or fewer. These replace "about 60 words" and "approaching
+100 words". They are planner judgment targets, not thresholds any tool measures.
 
 **Compression pass.** Before presenting a proposal, the planner rereads the
 draft `tasks.md` against `plan.md` and deletes every detail an implementer can
 recover unambiguously from `plan.md`. Only detail whose removal would leave the
 outcome or its ownership genuinely ambiguous survives.
 
+**Task-local metadata is exceptional.** A bare outcome line is the default and
+the exemplar. The existing short `Verify:` clause stays available, and stays
+what guidance already calls it: used only when useful, when it makes the task
+shorter or clearer and the information is not recoverable from `plan.md`. Broad
+suite execution belongs to the distinct final verification task, never to a
+task-local clause. Ordinary nested Markdown lists remain allowed sparingly and
+must not become another specification surface. No further named metadata field
+is introduced, and none such as `Requirements:`, `Details:`, `Implementation:`,
+or `Cases:` may be added later.
+
 **Preserved semantic exceptions.** A task with multiple independent outcomes is
 split rather than compressed. Substantial explanation moves into `plan.md`
-rather than being deleted. Compression never drops a requirement; it relocates
-or already has it stated in `plan.md`.
+rather than being deleted. Compression relocates detail, never drops a
+requirement.
 
-**Rationale.** Duplicated specifications drift. That single sentence is the
-whole justification carried into published guidance; no historical anecdote.
+**Layering.** Operational detail lives in `planning-guidance.md`; `SKILL.md`
+stays a workflow trigger pointing at it; the template demonstrates shape without
+repeating rationale or enforcement disclaimers.
 
-**One durable owner per layer.** `planlet_design.md` states the product-level
-rule: structural validity is what the CLI parser accepts, compact-index
-authoring convention is a separate generated-content contract, and `tasks.md`
-owns execution order rather than specification. `planning-guidance.md` holds the
-operational detail: metadata fields, word targets, compression pass, exceptions.
-`SKILL.md` stays a workflow trigger that points at the guidance.
-`tasks-template.md` demonstrates the shape and does not repeat rationale or
-enforcement disclaimers.
-
-**Template shape.** The rewritten `tasks-template.md` demonstrates short
-imperative outcomes, one task carrying a `Scope:` bullet and one carrying a
-`Verify:` bullet, and keeps three tasks (T1-T3) so the existing structural
-contract test continues to hold. Its HTML comment says tasks are an execution
-index, not a second specification, and keeps the existing parser-shape facts
-(one physical checkbox line, nested checkbox syntax invalid).
+**Parser evidence.** Indented nested Markdown continuation and checkbox mutation
+already work: `parseTasks` consumes indented continuation lines and nested
+lists, and existing tests cover that behavior and task checking. Nothing in this
+plan needs a `src/` change.
 
 ## Acceptance Criteria
 
-- `planlet_design.md` §10.4 separates structural CLI validity from compact-index
-  authoring convention, and states when `Verify:` metadata suffices versus when
-  significant verification is its own task, consistently with §14.1.
-- `tasks-template.md` shows short imperative outcomes with at least one `Scope:`
-  and one `Verify:` nested bullet, and no other named metadata field.
-- The template's HTML comment states that `tasks.md` is not a second
-  specification and retains the current parser-shape facts.
-- `planning-guidance.md` states the ownership split, `Scope:`/`Verify:` as the
-  only standard named metadata fields with the prohibited names called out, the
-  sparing-nested-list allowance, the 25/50 word targets, the compression pass,
-  and both semantic exceptions, and no longer states the 60/100 word wording.
-- `planning-guidance.md` or `SKILL.md` names the compression pass as a step that
-  runs before the proposal is presented.
-- Guidance states explicitly that no parser or validator enforces word counts or
-  the metadata-field rule; the template does not repeat that disclaimer.
-- `skills/`, `.claude/skills/`, and `.agents/skills/` copies are byte-identical
-  (`planlet tools` reports every destination `installed`).
+- `planning-guidance.md` states the 25/50-word targets, the compression pass as
+  a step before the proposal is presented, task-local metadata as exceptional
+  rather than the normal shape, the sparing-nested-list allowance, the
+  prohibition on new named metadata fields, and both semantic exceptions.
+- The retired "about 60 words" and "approaching 100 words" wording is gone.
+- Guidance states that no parser or validator enforces any of this.
+- `SKILL.md` names the compression pass before presentation and defers detail to
+  the guidance.
+- `planlet update` output is committed in the same changeset: both skill
+  destinations and both `.planlet-manifest.json` files.
+- `tests/skills/skill-contract.test.ts` asserts the compact template properties
+  and the new guidance controls structurally, without matching exact prose.
 - `CHANGELOG.md` carries an `[Unreleased]` entry for the skill behavior change.
 - No file under `src/` changes.
 
@@ -131,31 +107,29 @@ index, not a second specification, and keeps the existing parser-shape facts
 
 Repository suite, in the documented order: `npm run format:check`,
 `npm run lint`, `npm run knip`, `npm run type-check`, `npm run build`,
-`npm test`, `git diff --check`, `git status --porcelain` empty.
+`npm test`, `git diff --check`. Then `git status --porcelain` as inspection
+only: expect no unexpected paths, accepting staged or unstaged planlet and
+implementation changes when the workflow grants no commit authority.
 
 Targeted:
 
-- `tests/skills/skill-contract.test.ts` covers the template through
-  `validatePlanletStructure`; the rewritten template must still parse to
-  `planned` with tasks `T1`-`T3`, proving the new shape needs no parser change.
-- Add contract assertions for the new guidance terms (standard metadata fields,
-  compression pass, word targets) and a negative assertion that the retired
-  60/100 wording is absent, matching the existing corpus-assertion style in that
-  file. Nested-list and checkbox-mutation parser behavior is already covered by
-  existing tests and needs no new `src/` support.
-- `node dist/planlet.mjs --root . tools` after `node dist/planlet.mjs update` to
-  confirm no drift between canonical and installed skill copies; CI also fails
-  on drift.
-- Manual read-through: generate or hand-check one sample `tasks.md` against the
-  new template to confirm the compression pass produces a materially shorter
-  index than the current prose shape.
+- Contract assertions in `tests/skills/skill-contract.test.ts`, in the existing
+  corpus-assertion style: template tasks are single-line and short, the template
+  introduces no named metadata field beyond the optional `Verify:` clause,
+  guidance mentions the compression pass and the tightened targets, and the
+  retired 60/100 wording is absent.
+- The existing `validatePlanletStructure` template test must still pass with
+  tasks `T1`-`T3`, proving no parser change is implied.
+- `node dist/planlet.mjs update` then `node dist/planlet.mjs --root . tools`:
+  every destination reports `installed`, and both manifests plus both skill
+  copies appear in the changeset. CI also fails on drift.
 
-Known limitation: word targets and the metadata-field rule have no automated
-check by design, so conformance is reviewer judgment.
+Known limitation: word targets and the metadata rule have no automated check by
+design, so conformance is reviewer judgment.
 
 ## Risks and Considerations
 
-Published-skill behavior change: downstream repositories pick up the new task
-shape on `planlet update`. Existing planlets stay valid because nothing about
-the parser contract changes, so the risk is stylistic inconsistency between old
-and new task files, which is acceptable and not worth a migration.
+Published-skill behavior change: downstream repositories pick up the tightened
+targets on `planlet update`. Existing planlets stay valid because the parser
+contract is untouched, so the only effect is stylistic inconsistency between old
+and new task files, which needs no migration.
