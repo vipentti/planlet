@@ -23,7 +23,7 @@ Changes:
 - `skills/planlet-plan/SKILL.md`: name the compression pass in the step that
   precedes presenting the proposal, referring to the guidance for detail.
 - Regenerated tracked installed copies, as generated outputs of
-  `planlet update`: `.claude/skills/planlet-plan/`,
+  `node dist/planlet.mjs update`: `.claude/skills/planlet-plan/`,
   `.agents/skills/planlet-plan/`, `.claude/skills/.planlet-manifest.json`, and
   `.agents/skills/.planlet-manifest.json`.
 - `tests/skills/skill-contract.test.ts`: structural assertions for the compact
