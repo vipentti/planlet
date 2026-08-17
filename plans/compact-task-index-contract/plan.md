@@ -119,9 +119,12 @@ Targeted:
   60/100 wording is absent.
 - The existing `validatePlanletStructure` template test must still pass with
   tasks `T1`-`T3`, proving no parser change is implied.
-- `node dist/planlet.mjs update` then `node dist/planlet.mjs --root . tools`:
+- Regeneration order: `npm run build` first, because `dist/` is gitignored and a
+  fresh implementation checkout has no built CLI to run. Then
+  `node dist/planlet.mjs update` and `node dist/planlet.mjs --root . tools`:
   every destination reports `installed`, and both manifests plus both skill
-  copies appear in the changeset. CI also fails on drift.
+  copies appear in the changeset. CI also fails on drift. The final full suite
+  stays in T7 and runs its own build.
 
 Known limitation: the word targets and the compression pass have no automated
 check by design, so conformance is reviewer judgment.
