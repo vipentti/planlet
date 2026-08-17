@@ -58,7 +58,12 @@ Create or revise one focused planlet while keeping planning separate from implem
    templates in [plan-template.md](assets/plan-template.md) and
    [tasks-template.md](assets/tasks-template.md).
 
-6. Present the proposed plan and tasks in conversation. Outside the proposed
+6. Before presenting the proposal, run a compression pass over the draft
+   `tasks.md` against `plan.md` to remove recoverable detail; see
+   [planning guidance](references/planning-guidance.md) for the full
+   procedure.
+
+7. Present the proposed plan and tasks in conversation. Outside the proposed
    file content, keep commentary brief: call out only material assumptions,
    exclusions, unresolved decisions, or tradeoffs that need review. Do not
    restate the plan in a second narrative summary. Obtain explicit confirmation

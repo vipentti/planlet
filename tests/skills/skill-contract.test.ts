@@ -189,6 +189,72 @@ test("plan and task templates satisfy Phase 2 file contract", () => {
   }
 });
 
+test("compact task index keeps template tasks single-line and guidance controls present", () => {
+  const guidance = read("skills/planlet-plan/references/planning-guidance.md");
+  const template = read("skills/planlet-plan/assets/tasks-template.md");
+  const planSkill = read("skills/planlet-plan/SKILL.md");
+
+  // template tasks are single-line and short
+  const taskLines = template
+    .split("\n")
+    .filter((line) => /^\s*- \[[ x]\] T\d+\b/.test(line));
+  assert.equal(taskLines.length, 3);
+  for (const line of taskLines) {
+    const description = line.replace(/^\s*- \[[ x]\] T\d+\s+/, "").trim();
+    assert.equal(description.includes("\n"), false);
+    const words = description.split(/\s+/).filter(Boolean);
+    assert.ok(
+      words.length <= 25,
+      `template task too long (${words.length} words): ${description}`,
+    );
+  }
+  const templateWithoutComment = template.replace(/<!--[\s\S]*?-->/g, "");
+  assert.doesNotMatch(templateWithoutComment, /\n {2,}[-*+]\s/);
+  assert.doesNotMatch(templateWithoutComment, /\n {2,}\S/);
+
+  // guidance states the tightened 25/50-word targets without the retired 60/100 wording
+  assert.match(guidance, /25[^\n]*words/i);
+  assert.match(guidance, /50[^\n]*words/i);
+  assert.doesNotMatch(guidance, /about 60/i);
+  assert.doesNotMatch(guidance, /approaching 100/i);
+  assert.match(guidance, /no tool enforces/i);
+  assert.match(guidance, /not parser/i);
+
+  // compression pass as a step before the proposal is presented
+  assert.match(guidance, /compression pass/i);
+  assert.match(guidance, /Before presenting/i);
+  assert.match(
+    guidance,
+    /reread[\s\S]*draft[\s\S]*tasks\.md[\s\S]*against[\s\S]*plan\.md/i,
+  );
+
+  // task-local metadata is exceptional rather than the normal shape
+  assert.match(guidance, /exceptional/i);
+  assert.match(guidance, /bare outcome/i);
+  assert.match(guidance, /Verify:/);
+  assert.match(guidance, /only when useful/i);
+
+  // sparing-nested-list allowance
+  assert.match(guidance, /nested/i);
+  assert.match(guidance, /sparingly/i);
+  assert.match(guidance, /must not become\s+another specification surface/i);
+
+  // both semantic exceptions
+  assert.match(guidance, /split[\s\S]*rather than[\s\S]*compress/i);
+  assert.match(guidance, /move[\s\S]*into[\s\S]*plan\.md/i);
+  assert.match(guidance, /relocates detail/i);
+
+  // SKILL.md names the compression pass before presentation and defers detail to guidance
+  assert.match(planSkill, /compression pass/i);
+  assert.match(planSkill, /planning guidance/i);
+  assert.match(planSkill, /Before presenting[^\n]*compression pass/i);
+  assert.ok(
+    planSkill.indexOf("compression pass") <
+      planSkill.indexOf("Present the proposed plan"),
+    "compression pass must appear before presentation step",
+  );
+});
+
 test("generic and Claude bootstrap copies are byte-identical to canonical skills", () => {
   for (const name of SKILL_NAMES) {
     const canonicalRoot = `skills/${name}`;

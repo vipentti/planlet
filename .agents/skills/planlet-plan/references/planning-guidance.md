@@ -70,7 +70,24 @@ implementation walkthroughs, test-case matrices, historical reasoning, and
 incidental edit sequences unless they remove material ambiguity.
 
 Tasks must not duplicate detailed plan requirements, but may repeat a small
-constraint when needed for task clarity. Prefer one concise sentence; most tasks
-should fit within about 60 words, with no minimum. A task approaching 100 words
-should trigger moving shared detail into `plan.md` or splitting independent
-outcomes.
+constraint when needed for task clarity. Prefer one concise outcome sentence,
+ideally 25 words or fewer; a complete task normally stays within 50 words
+including any `Verify:` clause or nested list. These are planner judgment
+targets, not parser or validator thresholds, and no tool enforces them.
+
+Before presenting the proposal, run a compression pass: reread the draft
+`tasks.md` against `plan.md` and delete every detail an implementer can recover
+unambiguously from `plan.md`. Keep only detail whose removal would leave the
+outcome or its ownership genuinely ambiguous. Compression relocates detail,
+never drops a requirement.
+
+Task-local metadata is exceptional. A bare outcome line is the default and the
+exemplar. The short `Verify:` clause stays available only when useful, when it
+makes the task shorter or clearer and the information is not recoverable from
+`plan.md`. Broad suite execution belongs to the distinct final verification
+task, never to a task-local clause.
+
+Ordinary nested Markdown lists remain allowed sparingly and must not become
+another specification surface. If a task carries multiple independent outcomes,
+split it rather than compress. If substantial explanation is needed, move it
+into `plan.md` rather than keeping it in `tasks.md`.
