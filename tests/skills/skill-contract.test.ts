@@ -270,7 +270,7 @@ test("compact task index keeps template tasks single-line and guidance controls 
   assert.match(metadataParagraph, /only when useful/i);
   assert.match(metadataParagraph, /never to a task-local clause/i);
 
-  // sparing nested lists and both semantic exceptions share one paragraph, proving the allowance is bounded
+  // sparing nested lists and substantial-explanation exception share one paragraph
   const nestingParagraph = guidanceParagraphs.find(
     (p) => /sparingly/i.test(p) && /must not become/i.test(p),
   );
@@ -280,30 +280,36 @@ test("compact task index keeps template tasks single-line and guidance controls 
   );
   assert.match(nestingParagraph, /nested/i);
   assert.match(nestingParagraph, /another specification surface/i);
-  // preserved semantic exceptions are in that same paragraph, not elsewhere
-  assert.match(nestingParagraph, /split/i);
-  assert.match(nestingParagraph, /rather than/i);
-  assert.match(nestingParagraph, /compress/i);
   assert.match(nestingParagraph, /substantial explanation/i);
   assert.match(nestingParagraph, /move/i);
   assert.match(nestingParagraph, /plan\.md/i);
 
-  // Task-boundary rule couples focused-task preference, coherent-outcome scope, verifiable split, and anti-mechanical guard in one paragraph
-  const boundaryParagraph = guidanceParagraphs.find(
-    (p) =>
-      /Task boundaries follow meaningful outcomes/i.test(p) ||
-      (/Prefer several focused tasks/i.test(p) &&
-        /independently implementable or verifiable/i.test(p)),
+  // Task-boundary rule: independently meaningful delivered outcomes as sole criterion, folded with split-rather-than-compress, every checkbox as coherent outcome
+  const boundaryParagraph = guidanceParagraphs.find((p) =>
+    /Task boundaries follow/i.test(p),
   );
   assert.ok(boundaryParagraph, "guidance must have a task-boundary paragraph");
-  assert.match(boundaryParagraph, /coherent delivered outcome/i);
   assert.match(
     boundaryParagraph,
-    /implemented, reviewed, or verified separately/i,
+    /independently meaningful delivered outcomes/i,
   );
-  assert.match(boundaryParagraph, /Do not\s+split mechanically/i);
-  assert.match(boundaryParagraph, /treat that as a\s+signal to split/i);
-  assert.match(boundaryParagraph, /packing them into one checkbox/i);
+  assert.match(boundaryParagraph, /sole\s+split criterion/i);
+  // proves one checkbox == one coherent outcome relationship in a single paragraph
+  assert.match(boundaryParagraph, /every resulting checkbox/i);
+  assert.match(boundaryParagraph, /coherent delivered outcome/i);
+  assert.match(boundaryParagraph, /splitting rather than compressing/i);
+  // tolerates several requirements when they serve one outcome, requirements stay in plan.md
+  assert.match(boundaryParagraph, /several.*requirements/i);
+  assert.match(boundaryParagraph, /keep those requirements in/i);
+  assert.match(boundaryParagraph, /plan\.md/i);
+  // implementability/verifiability only evidence, never sufficient
+  assert.match(boundaryParagraph, /only evidence/i);
+  assert.match(boundaryParagraph, /never sufficient/i);
+  // word-count pressure must not change semantic boundaries
+  assert.match(boundaryParagraph, /word-count pressure/i);
+  assert.match(boundaryParagraph, /semantic task boundaries/i);
+  // anti-mechanical guard preserved in same paragraph
+  assert.match(boundaryParagraph, /Do not\s+split\s+mechanically/i);
 
   // SKILL.md compression step delegates operational detail to planning guidance in one workflow step
   const steps = skillSteps(planSkill);

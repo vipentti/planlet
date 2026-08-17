@@ -88,15 +88,15 @@ makes the task shorter or clearer and the information is not recoverable from
 task, never to a task-local clause.
 
 Ordinary nested Markdown lists remain allowed sparingly and must not become
-another specification surface. If a task carries multiple independent outcomes,
-split it rather than compress. If substantial explanation is needed, move it
+another specification surface. If substantial explanation is needed, move it
 into `plan.md` rather than keeping it in `tasks.md`.
 
-Task boundaries follow meaningful outcomes. Prefer several focused tasks over
-one verbose task when work contains independently implementable or verifiable
-outcomes; each task represents one coherent delivered outcome. Split when parts
-can reasonably be implemented, reviewed, or verified separately. If keeping a
-task concise requires listing several independent requirements, treat that as a
-signal to split the task instead of packing them into one checkbox. Do not
-split mechanically by file, function, tiny edit, or incidental implementation
-step.
+Task boundaries follow independently meaningful delivered outcomes, the sole
+split criterion. A task may contain several independently testable or
+reviewable components and several requirements when they together serve one
+coherent delivered outcome; keep those requirements in `plan.md`. Split only
+when every resulting checkbox can stand as its own coherent delivered outcome,
+splitting rather than compressing. Separate implementability or verifiability
+is only evidence for that boundary, never sufficient on its own. Do not let
+word-count pressure change semantic task boundaries, and do not split
+mechanically by file, function, tiny edit, or incidental implementation step.
