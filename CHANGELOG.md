@@ -6,6 +6,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and thi
 
 ## [Unreleased]
 
+### Fixed
+
+- `planlet check-completion --base <git-ref>` now treats a missing `plans/` directory as no plans found (ok: true, exit 0) instead of failing with `plans_not_initialized`, so the CI gate passes before a repository starts planning.
+
 ## [0.6.1] - 2026-08-17
 
 ### Changed

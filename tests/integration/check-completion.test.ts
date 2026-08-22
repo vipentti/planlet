@@ -267,3 +267,53 @@ test("nested Planlet roots use relative plans paths", async () => {
     });
   });
 });
+
+test("repo without plans directory reports no plans without error", async () => {
+  await withGitRoot(async (root) => {
+    writeFileSync(join(root, "README.md"), "# repo\n");
+    commitAll(root, "initial");
+    const branch = spawnSync("git", ["branch", "base"], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    assert.equal(branch.status, 0, branch.stderr);
+    writeFileSync(join(root, "other.txt"), "change\n");
+    commitAll(root, "other change");
+
+    const result = await invoke(root, ["check-completion", "--base", "base"]);
+
+    assert.equal(result.exitCode, 0);
+    assert.equal(result.capture.stderr.join(""), "");
+    assert.deepEqual(output(result.capture), {
+      ok: true,
+      base: "base",
+      touched: [],
+      completed: [],
+      violations: [],
+    });
+  });
+});
+
+test("repo without plans directory and no diff still passes", async () => {
+  await withGitRoot(async (root) => {
+    writeFileSync(join(root, "README.md"), "# repo\n");
+    commitAll(root, "initial");
+    const branch = spawnSync("git", ["branch", "base"], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    assert.equal(branch.status, 0, branch.stderr);
+
+    const result = await invoke(root, ["check-completion", "--base", "base"]);
+
+    assert.equal(result.exitCode, 0);
+    assert.equal(result.capture.stderr.join(""), "");
+    assert.deepEqual(output(result.capture), {
+      ok: true,
+      base: "base",
+      touched: [],
+      completed: [],
+      violations: [],
+    });
+  });
+});

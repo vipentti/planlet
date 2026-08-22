@@ -1,3 +1,4 @@
+import { isPlanletError } from "../errors/planlet-error.js";
 import { listDiffPaths } from "./git.js";
 import { validatePlanlets, type ValidationResult } from "./plan/read-only.js";
 import {
@@ -160,10 +161,25 @@ export function checkCompletion(
     base: options.base,
     pathspec: "plans/",
   });
-  const validation = validatePlanlets({
-    repositoryRoot: options.repositoryRoot,
-    all: true,
-  });
+  let validation: ValidationResult;
+  try {
+    validation = validatePlanlets({
+      repositoryRoot: options.repositoryRoot,
+      all: true,
+    });
+  } catch (error) {
+    if (isPlanletError(error) && error.code === "plans_not_initialized") {
+      return {
+        ok: true,
+        base: options.base,
+        touched: [],
+        completed: [],
+        violations: [],
+        warnings: [],
+      };
+    }
+    throw error;
+  }
   return deriveCompletionResult(
     options.base,
     extractTouchedSlugs(changedPaths),
