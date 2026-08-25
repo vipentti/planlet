@@ -11,21 +11,10 @@ export interface ParsedArchiveName {
 }
 
 export function isValidSlug(value: string): boolean {
-  return (
-    SLUG_PATTERN.test(value) &&
-    !/^\d+$/.test(value) &&
-    !DATE_PREFIX_PATTERN.test(value)
-  );
+  return SLUG_PATTERN.test(value) && !/^\d+$/.test(value);
 }
 
 export function assertValidSlug(value: string): string {
-  if (DATE_PREFIX_PATTERN.test(value)) {
-    throw new PlanletError("invalid_slug", `Invalid planlet slug: ${value}`, {
-      details: { slug: value },
-      next: "Slugs must not start with a date (YYYY-MM-DD-); that prefix is reserved for archived plans under plans/completed/.",
-    });
-  }
-
   if (!isValidSlug(value)) {
     throw new PlanletError("invalid_slug", `Invalid planlet slug: ${value}`, {
       details: { slug: value },
@@ -34,6 +23,21 @@ export function assertValidSlug(value: string): string {
   }
 
   return value;
+}
+
+export function isCreatableSlug(value: string): boolean {
+  return isValidSlug(value) && !DATE_PREFIX_PATTERN.test(value);
+}
+
+export function assertCreatableSlug(value: string): string {
+  if (DATE_PREFIX_PATTERN.test(value)) {
+    throw new PlanletError("invalid_slug", `Invalid planlet slug: ${value}`, {
+      details: { slug: value },
+      next: "Slugs must not start with a date (YYYY-MM-DD-); that prefix is reserved for archived plans under plans/completed/.",
+    });
+  }
+
+  return assertValidSlug(value);
 }
 
 export function isRealArchiveDate(value: string): boolean {

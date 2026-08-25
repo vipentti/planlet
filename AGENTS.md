@@ -86,7 +86,7 @@ there; do not duplicate them here.
 
 ## Planlet file conventions
 
-- Slugs use lowercase ASCII letters, digits, and single hyphens and must match `^[a-z0-9]+(?:-[a-z0-9]+)*$`.
+- Slugs use lowercase ASCII letters, digits, and single hyphens and must match `^[a-z0-9]+(?:-[a-z0-9]+)*$`. Persistent slug syntax stays valid for existing planlets; `planlet create` additionally rejects new slugs starting with `YYYY-MM-DD-` (that prefix is reserved for archived plans under `plans/completed/`).
 - The canonical filenames are `plan.md` and `tasks.md`.
 - Each file starts with an H1 title.
 - Recognized tasks use `- [ ] T<number> Description` or `- [x] T<number> Description`.

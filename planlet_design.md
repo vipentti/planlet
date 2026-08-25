@@ -345,11 +345,13 @@ Example valid slug:
 add-multiple-user-support
 ```
 
-Example validation expression:
+Example persistent slug validation expression (storage format):
 
 ```text
 ^[a-z0-9]+(?:-[a-z0-9]+)*$
 ```
+
+For new planlets, `planlet create` additionally rejects slugs that start with a date-shaped prefix `YYYY-MM-DD-` (for example `2026-08-25-my-plan`). That prefix is reserved for archived storage names under `plans/completed/`. Existing active and completed planlets that already use a date-prefixed logical slug remain valid for read, validation, task updates, and completion without migration; only new creation is blocked.
 
 ### 10.2 Completed archive names
 
