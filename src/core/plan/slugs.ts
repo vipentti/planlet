@@ -2,6 +2,7 @@ import { PlanletError } from "../../errors/planlet-error.js";
 
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const ARCHIVE_NAME_PATTERN = /^(\d{4}-\d{2}-\d{2})-(.+)$/;
+const DATE_PREFIX_PATTERN = /^\d{4}-\d{2}-\d{2}-/;
 
 export interface ParsedArchiveName {
   readonly archiveName: string;
@@ -10,10 +11,21 @@ export interface ParsedArchiveName {
 }
 
 export function isValidSlug(value: string): boolean {
-  return SLUG_PATTERN.test(value) && !/^\d+$/.test(value);
+  return (
+    SLUG_PATTERN.test(value) &&
+    !/^\d+$/.test(value) &&
+    !DATE_PREFIX_PATTERN.test(value)
+  );
 }
 
 export function assertValidSlug(value: string): string {
+  if (DATE_PREFIX_PATTERN.test(value)) {
+    throw new PlanletError("invalid_slug", `Invalid planlet slug: ${value}`, {
+      details: { slug: value },
+      next: "Slugs must not start with a date (YYYY-MM-DD-); that prefix is reserved for archived plans under plans/completed/.",
+    });
+  }
+
   if (!isValidSlug(value)) {
     throw new PlanletError("invalid_slug", `Invalid planlet slug: ${value}`, {
       details: { slug: value },

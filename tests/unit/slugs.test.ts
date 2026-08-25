@@ -43,6 +43,33 @@ test("slug validation rejects unsafe or non-descriptive names", () => {
   );
 });
 
+test("slug validation rejects date-prefixed slugs reserved for archives", () => {
+  for (const slug of [
+    "2026-08-25-my-plan",
+    "2026-99-99-foo",
+    "2024-02-29-cli-core",
+  ]) {
+    assert.equal(isValidSlug(slug), false, slug);
+    assert.throws(
+      () => assertValidSlug(slug),
+      (error) => {
+        assert.ok(error instanceof PlanletError);
+        assert.equal(error.code, "invalid_slug");
+        assert.match(
+          error.next ?? "",
+          /must not start with a date.*YYYY-MM-DD-.*reserved for archived plans.*plans\/completed\//,
+        );
+        return true;
+      },
+    );
+  }
+
+  for (const slug of ["my-2026-plan", "cli-2024-01-01", "a-2026-08-25"]) {
+    assert.equal(isValidSlug(slug), true, slug);
+    assert.equal(assertValidSlug(slug), slug);
+  }
+});
+
 test("archive names expose a real date and the unchanged logical slug", () => {
   assert.deepEqual(parseArchiveName("2024-02-29-cli-core"), {
     archiveName: "2024-02-29-cli-core",
