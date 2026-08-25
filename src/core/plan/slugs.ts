@@ -25,10 +25,6 @@ export function assertValidSlug(value: string): string {
   return value;
 }
 
-export function isCreatableSlug(value: string): boolean {
-  return isValidSlug(value) && !DATE_PREFIX_PATTERN.test(value);
-}
-
 export function assertCreatableSlug(value: string): string {
   if (DATE_PREFIX_PATTERN.test(value)) {
     throw new PlanletError("invalid_slug", `Invalid planlet slug: ${value}`, {

@@ -7,7 +7,6 @@ import {
   assertValidArchiveName,
   assertValidSlug,
   createArchiveName,
-  isCreatableSlug,
   isRealArchiveDate,
   isValidSlug,
   parseArchiveName,
@@ -53,7 +52,6 @@ test("slug validation keeps persistent syntax backward compatible while creation
   ]) {
     assert.equal(isValidSlug(slug), true, slug);
     assert.equal(assertValidSlug(slug), slug);
-    assert.equal(isCreatableSlug(slug), false, slug);
     assert.throws(
       () => assertCreatableSlug(slug),
       (error) => {
@@ -71,7 +69,6 @@ test("slug validation keeps persistent syntax backward compatible while creation
   for (const slug of ["my-2026-plan", "cli-2024-01-01", "a-2026-08-25"]) {
     assert.equal(isValidSlug(slug), true, slug);
     assert.equal(assertValidSlug(slug), slug);
-    assert.equal(isCreatableSlug(slug), true, slug);
     assert.equal(assertCreatableSlug(slug), slug);
   }
 });
@@ -83,7 +80,10 @@ test("archive parsing keeps date-prefixed logical slugs for legacy archives", ()
     slug: "2026-08-25-my-plan",
   });
   assert.equal(isValidSlug("2026-08-25-my-plan"), true);
-  assert.equal(isCreatableSlug("2026-08-25-my-plan"), false);
+  assert.throws(
+    () => assertCreatableSlug("2026-08-25-my-plan"),
+    (error) => error instanceof PlanletError && error.code === "invalid_slug",
+  );
 });
 
 test("archive names expose a real date and the unchanged logical slug", () => {
