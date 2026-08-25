@@ -6,6 +6,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and thi
 
 ## [Unreleased]
 
+### Changed
+
+- `planlet create` now rejects slugs starting with `YYYY-MM-DD-` (for example `2026-08-25-my-plan`). That prefix is reserved for archived plans under `plans/completed/`. Existing active and completed planlets with date-prefixed logical slugs remain valid for read, validation, and completion.
+
 ### Fixed
 
 - `planlet check-completion --base <git-ref>` now treats a missing `plans/` directory as no plans found (ok: true, exit 0) instead of failing with `plans_not_initialized`, so the CI gate passes before a repository starts planning.

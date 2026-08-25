@@ -9,7 +9,11 @@ import { randomUUID } from "node:crypto";
 
 import type { PlanSummary } from "./models.js";
 import { atomicPublish, resolveSafePath, tryLstat } from "../paths.js";
-import { assertValidSlug, parseArchiveName } from "./slugs.js";
+import {
+  assertCreatableSlug,
+  assertValidSlug,
+  parseArchiveName,
+} from "./slugs.js";
 import { PlanletError, asWriteConflict } from "../../errors/planlet-error.js";
 
 export interface CreatePlanletOptions {
@@ -96,7 +100,7 @@ function assertNoCompletedCollision(plansPath: string, slug: string): void {
  * rename only after both complete stub files have been written.
  */
 export function createPlanlet(options: CreatePlanletOptions): PlanSummary {
-  const slug = assertValidSlug(options.slug);
+  const slug = assertCreatableSlug(options.slug);
   const title =
     options.title === undefined
       ? deriveTitleFromSlug(slug)
