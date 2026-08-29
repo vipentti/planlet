@@ -6,6 +6,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and thi
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-08-29
+
 ### Changed
 
 - `planlet create` now rejects slugs starting with `YYYY-MM-DD-` (for example `2026-08-25-my-plan`). That prefix is reserved for archived plans under `plans/completed/`. Existing active and completed planlets with date-prefixed logical slugs remain valid for read, validation, and completion.
@@ -156,7 +158,8 @@ First release. Everything below is new, so these notes describe what Planlet is 
 - Unexpected failures surface as a structured `internal_error` with no stack or path leakage; set `PLANLET_DEBUG=1` for diagnostic detail.
 - Planlet and repository paths reject directory traversal and symlink escape, and file writes are atomic or recoverable.
 
-[Unreleased]: https://github.com/vipentti/planlet/compare/v0.6.1...HEAD
+[Unreleased]: https://github.com/vipentti/planlet/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/vipentti/planlet/compare/v0.6.1...v0.7.0
 [0.6.1]: https://github.com/vipentti/planlet/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/vipentti/planlet/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/vipentti/planlet/compare/v0.4.3...v0.5.0
