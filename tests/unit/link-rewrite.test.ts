@@ -813,6 +813,27 @@ test("an unbalanced destination is not a definition", () => {
   assert.equal(outcome.rewritten, 0);
 });
 
+test("partially marked nested quotes stay lazy", () => {
+  const input = "> > > foo\n> [id]: ../other-plan/plan.md\n";
+  const outcome = rewrite(input);
+  assert.equal(outcome.text, input);
+  assert.equal(outcome.rewritten, 0);
+});
+
+test("an ordered marker must start at 1 to interrupt", () => {
+  const lazy = "foo\n2. [id]: ../other-plan/plan.md\n";
+  const lazyOutcome = rewrite(lazy);
+  assert.equal(lazyOutcome.text, lazy);
+  assert.equal(lazyOutcome.rewritten, 0);
+  const interrupting = "foo\n1. [id]: ../other-plan/plan.md\n";
+  const interruptingOutcome = rewrite(interrupting);
+  assert.equal(
+    interruptingOutcome.text,
+    "foo\n1. [id]: ../../other-plan/plan.md\n",
+  );
+  assert.equal(interruptingOutcome.rewritten, 1);
+});
+
 test("resolveLinkPath is POSIX-only and reports root escapes", () => {
   assert.equal(
     resolveLinkPath("plans/a", "../other/plan.md"),

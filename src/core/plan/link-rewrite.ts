@@ -483,7 +483,6 @@ function containersEqual(
 function isLazyContinuation(
   state: ParagraphState,
   stripped: string,
-  kinds: readonly ContainerKind[],
   explicitKinds: readonly ContainerKind[],
   consumedBullet: boolean,
 ): boolean {
@@ -491,9 +490,15 @@ function isLazyContinuation(
     return false;
   }
   if (explicitKinds.length === 0) {
+    // No markers written: lazy continuation with markers omitted.
     return true;
   }
-  return state.signature === containerSignature(kinds);
+  // Partial omission is lazy too: written markers must match the
+  // open containers from the outside in (`> > > foo` then `> bar`).
+  // Deeper nesting always starts a new block.
+  const open = state.signature === null ? [] : state.signature.split("\0");
+  if (explicitKinds.length > open.length) return false;
+  return explicitKinds.every((kind, index) => open[index] === kind);
 }
 
 function trackParagraph(
@@ -506,9 +511,7 @@ function trackParagraph(
   if (endsParagraph(stripped)) {
     return { open: false, signature: null };
   }
-  if (
-    isLazyContinuation(state, stripped, kinds, explicitKinds, consumedBullet)
-  ) {
+  if (isLazyContinuation(state, stripped, explicitKinds, consumedBullet)) {
     return state;
   }
   return { open: true, signature: containerSignature(kinds) };
@@ -532,6 +535,10 @@ interface ContainerColumn {
 function stripContainers(
   line: string,
   contentColumn: readonly ContainerColumn[] = [],
+  // Whether a paragraph is open: an ordered list marker only opens a
+  // new item (interrupting the paragraph) when its start number is 1.
+  // Otherwise the line is lazy continuation text.
+  paragraphOpen = false,
 ): {
   depth: number;
   content: string;
@@ -562,8 +569,17 @@ function stripContainers(
       explicitKinds.push("quote");
       continue;
     }
-    const bullet = /^ {0,3}(?:[-+*]|\d+[.)]) +/.exec(rest);
+    const bullet = /^ {0,3}(?:([-+*])|(\d+)[.)]) +/.exec(rest);
     if (bullet !== null) {
+      // An ordered marker opens an item only for start number 1 when
+      // a paragraph is open; otherwise this line is lazy text.
+      if (
+        bullet[2] !== undefined &&
+        Number.parseInt(bullet[2], 10) !== 1 &&
+        paragraphOpen
+      ) {
+        break;
+      }
       // A new item closes open items at its depth or deeper.
       columns = columns.filter((entry) => entry.depth < depth);
       const markerColumn =
@@ -698,7 +714,7 @@ function splitProtectedSpans(
       explicitKinds,
       consumedBullet,
       bulletColumn,
-    } = stripContainers(bare, contentColumn);
+    } = stripContainers(bare, contentColumn, para.open);
     contentColumn = columns;
     const stripped = content;
     // Raw HTML blocks own their lines before fence detection: their
@@ -1621,7 +1637,7 @@ function findReferenceDefinitions(
     // Container-stripped content drives the shared paragraph model:
     // `> [id]: ...` inside an open quote paragraph stays lazy
     // continuation text, while a new list item starts fresh.
-    const strippedContainers = stripContainers(bare, contentColumn);
+    const strippedContainers = stripContainers(bare, contentColumn, para.open);
     contentColumn = strippedContainers.columns;
     if (bare.trim().length === 0) contentColumn = [];
     const stripped = strippedContainers.content;
@@ -1633,7 +1649,6 @@ function findReferenceDefinitions(
     const lazy = isLazyContinuation(
       para,
       stripped,
-      kinds,
       explicitKinds,
       consumedBullet,
     );
