@@ -84,8 +84,8 @@ the CLI for discovery, validation, progress, and archiving.
    `plans/completed/<YYYY-MM-DD>-<slug>/`. Unfinished tasks require an explicit
    override with a recorded reason. Because the archive sits one directory
    deeper, completion also rewrites the relative links in `plan.md` and
-   `tasks.md` that point outside the planlet, and reports any link it left
-   unchanged.
+   `tasks.md` that would otherwise break there, and warns about any link it
+   had to leave unchanged.
 
 A typical session: ask for a plan, review the two Markdown files yourself, then
 ask for implementation, then completion. Nothing is hidden from review — the

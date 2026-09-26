@@ -8,7 +8,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and thi
 
 ### Added
 
-- `planlet complete <slug>` now rewrites the relative links in `plan.md` and `tasks.md` for the archive location. Every link that points outside the planlet gains one `../` prefix, so it keeps resolving after the planlet moves to `plans/completed/<YYYY-MM-DD>-<slug>/`. Links that stay inside the planlet are unchanged, and the rewrite only inserts those three bytes: titles, escapes, query strings, fragments, and line endings stay byte-identical. Links that cannot be resolved to a single archive-depth target are left alone and reported as warnings with a reason.
+- `planlet complete <slug>` now rewrites the relative links in `plan.md` and `tasks.md` for the archive location. A relative link whose target exists at the planlet's current depth but not at the archive depth gains one `../` prefix, so it keeps resolving after the planlet moves to `plans/completed/<YYYY-MM-DD>-<slug>/`. Links that stay inside the planlet, and links that are already written for the archive depth, are left alone. The rewrite only inserts those three bytes: titles, escapes, query strings, fragments, and line endings stay byte-identical. A link left unchanged because its target is unresolved, ambiguous, inside the planlet through its parent directory, or not a valid path is reported as a warning with that reason.
 
 ## [0.7.0] - 2026-08-29
 
