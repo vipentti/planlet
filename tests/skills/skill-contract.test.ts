@@ -328,6 +328,21 @@ test("compact task index keeps template tasks single-line and guidance controls 
   );
 });
 
+test("the complete skill reports every completion warning it is given", () => {
+  const completeCorpus = filesUnder("skills/planlet-complete")
+    .map(read)
+    .join("\n");
+
+  assert.match(
+    completeCorpus,
+    /Report every warning the `complete` output carries/,
+  );
+  assert.match(completeCorpus, /link-rewrite counts/);
+  assert.match(completeCorpus, /links left unchanged/);
+  assert.match(completeCorpus, /never a rewritten or repaired\s+link/);
+  assert.match(completeCorpus, /every completion warning/);
+});
+
 test("generic and Claude bootstrap copies are byte-identical to canonical skills", () => {
   for (const name of SKILL_NAMES) {
     const canonicalRoot = `skills/${name}`;
