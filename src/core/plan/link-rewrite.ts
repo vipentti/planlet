@@ -580,6 +580,11 @@ function stripContainers(
       ) {
         break;
       }
+      // An empty item never interrupts an open paragraph: without
+      // content it stays lazy continuation text.
+      if (paragraphOpen && /^[ \t]*$/.test(rest.slice(bullet[0].length))) {
+        break;
+      }
       // A new item closes open items at its depth or deeper.
       columns = columns.filter((entry) => entry.depth < depth);
       const markerColumn =
@@ -923,9 +928,20 @@ function splitProtectedSpans(
       continue;
     }
     // A fence-looking line with an invalid info string reaches here:
-    // it is ordinary paragraph text, not a block boundary.
-    para = trackParagraph(para, stripped, kinds, explicitKinds, consumedBullet);
-    previousWasCode = false;
+    // it is ordinary paragraph text, not a block boundary. An empty
+    // list item never opens nor closes a paragraph either way.
+    if (/^[ \t]{0,3}(?:[-+*]|\d+[.)])[ \t]*$/.test(stripped)) {
+      previousWasCode = false;
+    } else {
+      para = trackParagraph(
+        para,
+        stripped,
+        kinds,
+        explicitKinds,
+        consumedBullet,
+      );
+      previousWasCode = false;
+    }
     // A blank line closes open list items; other boundaries keep the
     // item open for lazy continuation lines.
     if (bare.trim().length === 0) contentColumn = [];
@@ -1565,6 +1581,14 @@ function findReferenceDefinitions(
         lineStart >= span.offset &&
         lineStart < span.offset + span.text.length,
     );
+  // Link labels need at least one non-whitespace character and at
+  // most 999 characters. `labelGroup` is the regex group holding the
+  // bracketed label plus its colon and trailing whitespace.
+  const isValidLabelGroup = (labelGroup: string): boolean => {
+    const inner = labelGroup.replace(/^\[/, "").replace(/\]:[\s\S]*$/, "");
+    const text = inner.replace(/\\(.)/g, "$1");
+    return /\S/.test(text) && text.length <= 999;
+  };
   const matchSingle = (
     candidate: string,
   ): { destination: string; destinationLength: number } | null => {
@@ -1577,6 +1601,7 @@ function findReferenceDefinitions(
     const container = probe[1] ?? "";
     const label = probe[2] ?? "";
     const destination = probe[3] ?? "";
+    if (!isValidLabelGroup(label)) return null;
     return {
       destination,
       destinationLength: container.length + label.length,
@@ -1589,6 +1614,7 @@ function findReferenceDefinitions(
     const probe = MULTILINE_DEFINITION_PATTERN.exec(candidate);
     MULTILINE_DEFINITION_PATTERN.lastIndex = 0;
     if (probe === null) return null;
+    if (!isValidLabelGroup(probe[2] ?? "")) return null;
     // Destination offsets resolve in original bytes at the call site:
     // only the destination text travels here.
     return { destination: probe[3] ?? "" };
@@ -1697,14 +1723,17 @@ function findReferenceDefinitions(
       {
         const destinationStart = lineStart + singleFirst.destinationLength;
         let end = lineStart + line.length;
-        // A title on the following line belongs to the definition.
-        const titleLine = titleContinuationLine(
-          lineIndex + 1 < lines.length ? lines[lineIndex + 1] : null,
-        );
-        if (titleLine !== null) {
-          end += 1 + titleLine.length;
-          offset += titleLine.length + 1;
-          lineIndex += 1;
+        // A following title line belongs only when no title already
+        // closed on this line: CommonMark permits a single title.
+        if (/^[ \t]*$/.test(restAfterDest)) {
+          const titleLine = titleContinuationLine(
+            lineIndex + 1 < lines.length ? lines[lineIndex + 1] : null,
+          );
+          if (titleLine !== null) {
+            end += 1 + titleLine.length;
+            offset += titleLine.length + 1;
+            lineIndex += 1;
+          }
         }
         matches.push({
           start: lineStart,
@@ -1792,14 +1821,17 @@ function findReferenceDefinitions(
         }
         {
           let end = nextStart + (next ?? "").length;
-          // A title on the third line belongs to the definition.
-          const titleLine = titleContinuationLine(
-            lineIndex + 2 < lines.length ? lines[lineIndex + 2] : null,
-          );
-          if (titleLine !== null) {
-            end += 1 + titleLine.length;
-            offset += titleLine.length + 1;
-            lineIndex += 1;
+          // A third-line title belongs only when no title already
+          // closed on the destination line: a single title only.
+          if (/^[ \t]*$/.test(restAfterDest)) {
+            const titleLine = titleContinuationLine(
+              lineIndex + 2 < lines.length ? lines[lineIndex + 2] : null,
+            );
+            if (titleLine !== null) {
+              end += 1 + titleLine.length;
+              offset += titleLine.length + 1;
+              lineIndex += 1;
+            }
           }
           matches.push({
             start: lineStart,
@@ -1851,6 +1883,18 @@ function findReferenceDefinitions(
             const container = labelProbe[1] ?? "";
             const label = labelProbe[2] ?? "";
             const destination = labelProbe[3] ?? "";
+            if (!isValidLabelGroup(label)) {
+              // Invalid labels stay ordinary text: no recording, no
+              // consumption beyond normal paragraph tracking below.
+              para = trackParagraph(
+                para,
+                stripped,
+                kinds,
+                explicitKinds,
+                consumedBullet,
+              );
+              continue;
+            }
             const carriage = line.endsWith("\r") ? 1 : 0;
             const destinationStart =
               lineStart + container.length + label.length + carriage;
@@ -1863,7 +1907,6 @@ function findReferenceDefinitions(
             });
           }
           para = { open: false, signature: null };
-          // Original bytes: the second line plus its preceding ending.
           // Original bytes: the second line plus its single preceding
           // line ending (labelNext retains its own trailing CR, so only
           // the split newline remains to count).
@@ -1913,7 +1956,11 @@ function findReferenceDefinitions(
     // Indented lines never change paragraph state here: inside an open
     // paragraph they are lazy continuation text, outside one they
     // cannot open anything (code lines return early above).
+    // An empty list item never opens nor closes a paragraph either.
     if (/^(?: {4}|\t)/.test(stripped)) {
+      continue;
+    }
+    if (/^[ \t]{0,3}(?:[-+*]|\d+[.)])[ \t]*$/.test(stripped)) {
       continue;
     }
     para = trackParagraph(para, stripped, kinds, explicitKinds, consumedBullet);
@@ -2022,13 +2069,16 @@ function matchContinuedDefinition(
     cursorCol += indent.length;
   }
   // Label: '[' ... ']' with escapes and soft breaks (never blanks).
+  // Labels need visible content within 999 characters to own bytes.
   if (current.stripped[cursorCol] !== "[") return null;
   cursorCol += 1;
   let closedLabel = false;
+  let labelText = "";
   for (;;) {
     while (cursorCol < current.stripped.length) {
       const char = current.stripped[cursorCol] ?? "";
       if (char === "\\") {
+        labelText += current.stripped.slice(cursorCol, cursorCol + 2);
         cursorCol += 2;
         continue;
       }
@@ -2037,11 +2087,15 @@ function matchContinuedDefinition(
         cursorCol += 1;
         break;
       }
+      labelText += char;
       cursorCol += 1;
     }
     if (closedLabel) break;
     if (!crossBreak()) return null;
+    labelText += "\n";
   }
+  const labelContent = labelText.replace(/\\(.)/g, "$1");
+  if (!/\S/.test(labelContent) || labelContent.length > 999) return null;
   // Colon immediately after the label.
   if (current.stripped[cursorCol] !== ":") return null;
   cursorCol += 1;

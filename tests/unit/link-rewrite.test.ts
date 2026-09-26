@@ -834,6 +834,32 @@ test("an ordered marker must start at 1 to interrupt", () => {
   assert.equal(interruptingOutcome.rewritten, 1);
 });
 
+test("empty list items never interrupt a paragraph", () => {
+  for (const input of [
+    "foo\n-   \n[id]: ../other-plan/plan.md\n",
+    "foo\n2.   \n[id]: ../other-plan/plan.md\n",
+  ]) {
+    const outcome = rewrite(input);
+    assert.equal(outcome.text, input);
+    assert.equal(outcome.rewritten, 0);
+  }
+});
+
+test("empty and oversized labels stay ordinary text", () => {
+  for (const input of [
+    "[]: ../other-plan/plan.md\n",
+    "[   ]: ../other-plan/plan.md\n",
+    `[${"a".repeat(1000)}]: ../other-plan/plan.md\n`,
+  ]) {
+    const outcome = rewrite(input);
+    assert.equal(outcome.text, input);
+    assert.equal(outcome.rewritten, 0);
+  }
+  const boundary = `[${"a".repeat(999)}]: ../other-plan/plan.md\n`;
+  const boundaryOutcome = rewrite(boundary);
+  assert.equal(boundaryOutcome.rewritten, 1);
+});
+
 test("resolveLinkPath is POSIX-only and reports root escapes", () => {
   assert.equal(
     resolveLinkPath("plans/a", "../other/plan.md"),
