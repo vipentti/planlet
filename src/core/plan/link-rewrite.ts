@@ -106,6 +106,65 @@ function rewritePath(encodedPath: string): string {
   return `../${encodedPath}`;
 }
 
+/**
+ * Classifies a bare destination path (no brackets, no title).
+ * Returns the rewritten path, or null when it must pass through.
+ * `skipped` carries the skip note when one applies.
+ */
+function classifyDestinationPath(
+  encodedPath: string,
+  planDir: string,
+  repositoryRoot: string,
+  existence: LinkTargetExistence,
+): { rewritten: string | null; skipped?: string } {
+  if (isExternalDestination(encodedPath)) {
+    return { rewritten: null };
+  }
+  // Split the query/fragment suffix before decoding: `%23` in the path
+  // is data, while a literal `#` starts the fragment.
+  let pathEnd = encodedPath.length;
+  const hashIndex = encodedPath.indexOf("#");
+  const queryIndex = encodedPath.indexOf("?");
+  if (hashIndex !== -1) pathEnd = Math.min(pathEnd, hashIndex);
+  if (queryIndex !== -1) pathEnd = Math.min(pathEnd, queryIndex);
+  const pathOnly = encodedPath.slice(0, pathEnd);
+  let decoded = pathOnly;
+  try {
+    decoded = decodeURIComponent(pathOnly);
+  } catch {
+    decoded = pathOnly;
+  }
+  const oldResolved = resolveLinkPath(planDir, decoded);
+  // Links escaping above the repository root are never guessed at.
+  if (oldResolved === null) {
+    return {
+      rewritten: null,
+      skipped: `outside repository: ${encodedPath}`,
+    };
+  }
+  if (!escapesPlan(planDir, oldResolved)) {
+    return { rewritten: null };
+  }
+  // A pre-written archived-depth link (correct only after the move) must
+  // not be rewritten again. From the active base it climbs above `plans/`
+  // into a repository-root-relative target; rewriting would push it one
+  // level too far. Detect it lexically: a link that resolves from the old
+  // base to a path outside `plans/` entirely was authored for the archived
+  // depth (or dangles), so only rewrite links that resolve inside `plans/`.
+  if (!oldResolved.startsWith("plans/")) {
+    return { rewritten: null };
+  }
+  // Dangling links (no such target on disk) are never guessed at:
+  // rewriting them would corrupt text no reader could have followed.
+  if (!existence.exists(`${repositoryRoot}/${oldResolved}`)) {
+    return {
+      rewritten: null,
+      skipped: `missing target: ${encodedPath}`,
+    };
+  }
+  return { rewritten: rewritePath(encodedPath) };
+}
+
 function rewriteDestination(
   destination: string,
   planDir: string,
@@ -120,48 +179,24 @@ function rewriteDestination(
   if (split === null) {
     return { destination, rewritten: false };
   }
-  if (isExternalDestination(split.path)) {
-    return { destination, rewritten: false };
-  }
-  let decoded = split.path;
-  try {
-    decoded = decodeURIComponent(split.path);
-  } catch {
-    decoded = split.path;
-  }
-  const oldResolved = resolveLinkPath(planDir, decoded);
-  // Links escaping above the repository root are never guessed at.
-  if (oldResolved === null) {
+  const classified = classifyDestinationPath(
+    split.path,
+    planDir,
+    repositoryRoot,
+    existence,
+  );
+  if (classified.rewritten === null) {
     return {
       destination,
       rewritten: false,
-      skipped: `outside repository: ${split.path}`,
-    };
-  }
-  if (!escapesPlan(planDir, oldResolved)) {
-    return { destination, rewritten: false };
-  }
-  // A pre-written archived-depth link (correct only after the move) must
-  // not be rewritten again. From the active base it climbs above `plans/`
-  // into a repository-root-relative target; rewriting would push it one
-  // level too far. Detect it lexically: a link that resolves from the old
-  // base to a path outside `plans/` entirely was authored for the archived
-  // depth (or dangles), so only rewrite links that resolve inside `plans/`.
-  if (!oldResolved.startsWith("plans/")) {
-    return { destination, rewritten: false };
-  }
-  // Dangling links (no such target on disk) are never guessed at: rewriting
-  // them would corrupt text no reader could have followed before the move.
-  if (!existence.exists(`${repositoryRoot}/${oldResolved}`)) {
-    return {
-      destination,
-      rewritten: false,
-      skipped: `missing target: ${split.path}`,
+      ...(classified.skipped === undefined
+        ? {}
+        : { skipped: classified.skipped }),
     };
   }
   const newPath = split.angled
-    ? `<${rewritePath(split.path)}>`
-    : rewritePath(split.path);
+    ? `<${classified.rewritten}>`
+    : classified.rewritten;
   const rewritten = `${newPath}${split.suffix}`;
   return { destination: rewritten, rewritten: true };
 }
@@ -176,6 +211,8 @@ interface ProtectedSpan {
   readonly text: string;
   /** Byte offset of the span start within the source document. */
   readonly offset: number;
+  /** Block kind for protected spans: fence, indented, code, or html. */
+  readonly kind: "fence" | "indented" | "code" | "html" | "text";
 }
 
 /**
@@ -187,14 +224,30 @@ interface ProtectedSpan {
  * for hole-punching at the inline level.
  */
 function excludeRanges(
-  intervals: Array<[number, number]>,
+  intervals: Array<[number, number, ProtectedSpan["kind"]]>,
   exclusions: readonly { start: number; end: number }[],
-): Array<[number, number]> {
+): Array<[number, number, ProtectedSpan["kind"]]> {
   return intervals.filter(
     ([start, end]) =>
       !exclusions.some(
         (exclusion) => exclusion.start < end && exclusion.end > start,
       ),
+  );
+}
+
+/**
+ * Shared block-boundary rule: ATX headings, thematic breaks, and blank
+ * lines end a paragraph. Used by both the block splitter (indented-code
+ * starts) and reference-definition tracking (lazy continuation), so the
+ * two models cannot disagree.
+ */
+function endsParagraph(line: string): boolean {
+  return (
+    line.trim().length === 0 ||
+    /^(?: {0,3}> ?)? {0,3}#{1,6}(?:\s|$)/.test(line) ||
+    /^(?: {0,3}> ?)? {0,3}(?:\*[ \t]*){3,}$/.test(line) ||
+    /^(?: {0,3}> ?)? {0,3}(?:-[ \t]*){3,}$/.test(line) ||
+    /^(?: {0,3}> ?)? {0,3}(?:_[ \t]*){3,}$/.test(line)
   );
 }
 
@@ -208,26 +261,29 @@ function splitProtectedSpans(
   let inFence = false;
   let fenceMarker = "";
   let fenceQuoted = false;
-  // Paragraph/block-start tracking for the indented-code rule: an
-  // indented code block interrupts a paragraph, so only blank lines,
-  // code blocks, and non-paragraph lines reset it.
   let paragraphOpen = false;
   let previousWasCode = true;
   const canStartIndentedCode = (): boolean => !paragraphOpen || previousWasCode;
-  const isNonParagraphLine = (line: string): boolean =>
-    /^(?: {0,3}> ?)? {0,3}#{1,6}(?:\s|$)/.test(line);
-
-  const flush = (protected_: boolean, chunk: string): void => {
+  const flush = (
+    protected_: boolean,
+    chunk: string,
+    kind: ProtectedSpan["kind"] = protected_ ? "fence" : "text",
+  ): void => {
     if (chunk.length === 0) return;
     const last = spans[spans.length - 1];
-    if (last !== undefined && last.protected_ === protected_) {
+    if (
+      last !== undefined &&
+      last.protected_ === protected_ &&
+      last.kind === kind
+    ) {
       spans[spans.length - 1] = {
         protected_: last.protected_,
         text: last.text + chunk,
         offset: last.offset,
+        kind: last.kind,
       };
     } else {
-      spans.push({ protected_, text: chunk, offset: -1 });
+      spans.push({ protected_, text: chunk, offset: -1, kind });
     }
   };
 
@@ -268,7 +324,7 @@ function splitProtectedSpans(
         )
       ) {
         current += withNewline;
-        flush(true, current);
+        flush(true, current, "fence");
         current = "";
         inFence = false;
         fenceMarker = "";
@@ -282,7 +338,7 @@ function splitProtectedSpans(
       if (fenceQuoted && !quoted) {
         // The quote container ended: close the quoted fence and
         // reprocess this line as ordinary Markdown.
-        flush(true, current);
+        flush(true, current, "fence");
         current = "";
         inFence = false;
         fenceMarker = "";
@@ -304,24 +360,25 @@ function splitProtectedSpans(
     if (/^(?: {4}|\t)/.test(line)) {
       flush(false, current);
       current = "";
-      flush(true, withNewline);
+      flush(true, withNewline, "indented");
       paragraphOpen = false;
       previousWasCode = true;
       continue;
     }
-    if (line.trim().length === 0) {
+    if (endsParagraph(line)) {
       paragraphOpen = false;
       previousWasCode = false;
-    } else if (fenceMatch === null && !isNonParagraphLine(line)) {
+    } else if (fenceMatch === null) {
       paragraphOpen = true;
       previousWasCode = false;
-    } else if (fenceMatch !== null) {
+    } else {
+      paragraphOpen = false;
       previousWasCode = false;
     }
     current += withNewline;
   }
   flush(inFence, current);
-  // Resolve block-span offsets in document order.
+  // Resolve block-span offsets in document order, preserving kinds.
   let blockBase = 0;
   for (let spanIndex = 0; spanIndex < spans.length; spanIndex += 1) {
     const span = spans[spanIndex];
@@ -330,6 +387,7 @@ function splitProtectedSpans(
         protected_: span.protected_,
         text: span.text,
         offset: blockBase,
+        kind: span.kind,
       };
       blockBase += span.text.length;
     }
@@ -343,23 +401,32 @@ function splitProtectedSpans(
   // no exact-length closer are literal text.
   const result: ProtectedSpan[] = [];
   let inlineBase = 0;
-  const emitSpan = (protected_: boolean, chunk: string): void => {
+  const emitSpan = (
+    protected_: boolean,
+    chunk: string,
+    kind: ProtectedSpan["kind"] = protected_ ? "code" : "text",
+  ): void => {
     if (chunk.length === 0) return;
     const last = result[result.length - 1];
-    if (last !== undefined && last.protected_ === protected_) {
+    if (
+      last !== undefined &&
+      last.protected_ === protected_ &&
+      last.kind === kind
+    ) {
       result[result.length - 1] = {
         protected_: last.protected_,
         text: last.text + chunk,
         offset: last.offset,
+        kind: last.kind,
       };
     } else {
-      result.push({ protected_, text: chunk, offset: inlineBase });
+      result.push({ protected_, text: chunk, offset: inlineBase, kind });
     }
     inlineBase += chunk.length;
   };
   for (const span of spans) {
     if (span.protected_) {
-      emitSpan(true, span.text);
+      emitSpan(true, span.text, span.kind);
       continue;
     }
     // Translate document-level link ranges into span coordinates: any
@@ -386,7 +453,11 @@ function splitProtectedSpans(
     const runs = [...span.text.matchAll(/`+/g)].filter(
       (run) => !inHtml(run.index ?? 0),
     );
-    const protectedRanges: Array<[number, number]> = [...htmlRanges];
+    const protectedRanges: Array<[number, number, ProtectedSpan["kind"]]> =
+      htmlRanges.map(
+        ([start, end]) =>
+          [start, end, "html"] as [number, number, ProtectedSpan["kind"]],
+      );
     let openStart = -1;
     let openLength = 0;
     for (const run of runs) {
@@ -398,7 +469,7 @@ function splitProtectedSpans(
         continue;
       }
       if (length === openLength) {
-        protectedRanges.push([openStart, start + length]);
+        protectedRanges.push([openStart, start + length, "code"]);
         openStart = -1;
         openLength = 0;
       }
@@ -412,21 +483,30 @@ function splitProtectedSpans(
     // inline code or HTML, and protection must not split the link.
     const punched = excludeRanges(protectedRanges, localExclusions);
     punched.sort((left, right) => left[0] - right[0]);
-    const coalesced: Array<[number, number]> = [];
-    for (const [start, end] of punched) {
-      const last = coalesced[coalesced.length - 1];
-      if (last !== undefined && start <= last[1]) {
+    const coalescedWithKind: Array<[number, number, ProtectedSpan["kind"]]> =
+      [];
+    for (const [start, end, kind] of punched) {
+      const last = coalescedWithKind[coalescedWithKind.length - 1];
+      if (
+        last !== undefined &&
+        start <= last[1] &&
+        (last[2] === kind || last[2] === "code" || kind === "code")
+      ) {
+        last[1] = Math.max(last[1], end);
+        last[2] = "code";
+      } else if (last !== undefined && start <= last[1]) {
         last[1] = Math.max(last[1], end);
       } else {
-        coalesced.push([start, end]);
+        coalescedWithKind.push([start, end, kind]);
       }
     }
+    // Track whether each protected interval is HTML so kinds survive.
     let cursor = 0;
-    for (const [start, end] of coalesced) {
+    for (const [start, end, kind] of coalescedWithKind) {
       if (start > cursor) {
         emitSpan(false, span.text.slice(cursor, start));
       }
-      emitSpan(true, span.text.slice(start, end));
+      emitSpan(true, span.text.slice(start, end), kind);
       cursor = Math.max(cursor, end);
     }
     if (cursor < span.text.length) {
@@ -448,13 +528,12 @@ interface InlineLinkMatch {
   readonly end: number;
   readonly bang: string;
   readonly label: string;
-  /** Full inside-parens text (destination plus optional title). */
-  readonly inside: string;
+  /** Byte range of the destination path only (no brackets, no title). */
+  readonly destinationStart: number;
+  readonly destinationEnd: number;
   /** Decoded destination path without brackets or title. */
   readonly destination: string;
   readonly angled: boolean;
-  /** Title text after an angle destination, including leading space. */
-  readonly angledTitle: string;
 }
 
 /**
@@ -575,6 +654,18 @@ function parseTitleTail(text: string): RegExpExecArray | null {
 }
 
 /**
+ * Finds the first backtick run of exactly `length` in `text`, where the
+ * run is neither preceded nor followed by another backtick. Returns the
+ * run start or -1.
+ */
+function findExactRun(text: string, length: number): number {
+  const ticks = "`".repeat(length);
+  const pattern = new RegExp(`(?<!${ticks})${ticks}(?!${ticks[0] ?? "`"})`);
+  const match = pattern.exec(text);
+  return match === null ? -1 : (match.index ?? -1);
+}
+
+/**
  * Finds inline links `[label](destination)` and `![alt](destination)` with
  * a small scanner: backslash-escape parity is honored, labels balance
  * nested brackets, and destinations may hold balanced parentheses or one
@@ -608,10 +699,14 @@ function findInlineLinks(text: string): InlineLinkMatch[] {
     while (cursor < text.length) {
       const char = text[cursor];
       if (char === "`") {
+        // Whole-run pairing: a closer must be a run of exactly the
+        // opener length, never a prefix of a longer run. Scan runs
+        // forward so `[a `` b ``` c]` keeps its backticks literal.
         const run = /`+/.exec(text.slice(cursor))?.[0] ?? "`";
-        const closer = text.indexOf(run, cursor + run.length);
+        const rest = text.slice(cursor + run.length);
+        const closer = findExactRun(rest, run.length);
         if (closer === -1) break;
-        cursor = closer + run.length;
+        cursor = cursor + run.length + closer + run.length;
         continue;
       }
       if (char === "<" && !isEscaped(text, cursor)) {
@@ -680,23 +775,19 @@ function findInlineLinks(text: string): InlineLinkMatch[] {
         const after = allowOneLineEnding(text.slice(close + 1));
         const tail = after === null ? null : parseTitleTail(after.text);
         if (tail !== undefined && tail !== null && after !== null) {
-          // Keep the optional title: the tail ends at the link paren, so
-          // everything before its final `)` is title text.
           destEnd = close;
           end = close + 1 + after.prefix + tail[0].length;
           angled = true;
-          // Rebuild inside from source offsets so the separator between
-          // `>` and the title round-trips byte-identically.
-          const inside = text.slice(destStart, end - 1);
           matches.push({
             start: bang.length === 0 ? open : open - 1,
             end,
             bang,
             label: text.slice(open + 1, closeBracket),
-            inside,
+            // Inside `<...>`: brackets stay outside, path only.
+            destinationStart: destStart + 1,
+            destinationEnd: close,
             destination: text.slice(destStart + 1, close),
             angled,
-            angledTitle: tail[0].slice(0, -1),
           });
           index = end;
           continue;
@@ -760,15 +851,14 @@ function findInlineLinks(text: string): InlineLinkMatch[] {
       end,
       bang,
       label: text.slice(open + 1, closeBracket),
-      // Full inside-parens text: splitDestination separates the path
-      // from any title, so titled links round-trip byte-identically.
-      inside: text.slice(destStart, end - 1),
-      // Exclude the angle brackets: splitDestination re-adds the wrapper.
+      // Path bytes only: `<...>` brackets stay outside the range so the
+      // splice prefixes the path and preserves the wrapper.
+      destinationStart: destStart + (angled ? 1 : 0),
+      destinationEnd: destEnd - (angled ? 1 : 0),
       destination: angled
-        ? text.slice(destStart + 1, destEnd)
+        ? text.slice(destStart + 1, destEnd - 1)
         : text.slice(destStart, destEnd),
       angled,
-      angledTitle: "",
     });
     index = end;
   }
@@ -777,7 +867,9 @@ function findInlineLinks(text: string): InlineLinkMatch[] {
 
 /**
  * Rewrites pre-recognized document-level links that lie fully inside one
- * rewritable span. Offsets translate by the span base.
+ * rewritable span. Only the destination-path bytes are spliced: every
+ * other byte (whitespace, titles, brackets) passes through untouched, so
+ * the transform stays a pure prefix edit.
  */
 function rewriteOwnedLinks(
   text: string,
@@ -792,20 +884,36 @@ function rewriteOwnedLinks(
   let cursor = 0;
   const parts: string[] = [];
   for (const found of owned) {
-    const outcome = rewriteDestination(
-      found.inside,
+    const rawPath = text.slice(
+      found.destinationStart - spanOffset,
+      found.destinationEnd - spanOffset,
+    );
+    // Angle brackets never belong to the path: strip one wrapper pair
+    // when the recognizer included it.
+    const encodedPath =
+      found.angled && rawPath.startsWith("<") && rawPath.endsWith(">")
+        ? rawPath.slice(1, -1)
+        : rawPath;
+    const classified = classifyDestinationPath(
+      encodedPath,
       planDir,
       repositoryRoot,
       existence,
     );
-    if (outcome.skipped !== undefined) skipped.push(outcome.skipped);
+    if (classified.skipped !== undefined) skipped.push(classified.skipped);
     const start = found.start - spanOffset;
     const end = found.end - spanOffset;
+    const pathStart = found.destinationStart - spanOffset;
+    const pathEnd = found.destinationEnd - spanOffset;
     parts.push(text.slice(cursor, start));
-    if (!outcome.rewritten) {
+    if (classified.rewritten === null) {
       parts.push(text.slice(start, end));
     } else {
-      parts.push(`${found.bang}[${found.label}](${outcome.destination})`);
+      // Splice only the path bytes; brackets, wrapper, whitespace,
+      // and titles stay exactly as authored.
+      parts.push(text.slice(start, pathStart));
+      parts.push(classified.rewritten);
+      parts.push(text.slice(pathEnd, end));
       rewritten += 1;
     }
     cursor = end;
@@ -904,8 +1012,10 @@ function rewriteReferenceDefinitions(
     const single = replaceLine(line, REFERENCE_DEFINITION_PATTERN);
     if (!single.matched) {
       out.push(line);
-      if (line.trim().length === 0) open = false;
-      else if (/^(?: {4}|\t)/.test(line)) open = false;
+      // Shared endsParagraph model: headings, breaks, and blanks end
+      // the paragraph just like in the block splitter.
+      if (/^(?: {4}|\t)/.test(line)) open = false;
+      else if (endsParagraph(line)) open = false;
       else open = true;
       continue;
     }
@@ -947,6 +1057,9 @@ export function rewriteOutgoingLinks(
   // recognition: links fully inside a protected block span are dropped
   // from the exclusions, so code content never punches protection holes.
   // Only links in rewritable inline regions punch holes for their labels.
+  // Block spans also drive definition tracking: a protected fence or
+  // indented span ends the paragraph exactly like the block splitter's
+  // endsParagraph model (one shared rule, two call sites).
   const documentLinks = findInlineLinks(markdown);
   const blockSpans = splitProtectedSpans(markdown);
   const inProtectedBlock = (link: { start: number; end: number }): boolean =>
@@ -962,6 +1075,11 @@ export function rewriteOutgoingLinks(
   for (const span of splitProtectedSpans(markdown, exclusions)) {
     if (span.protected_) {
       parts.push(span.text);
+      // Block spans end paragraphs (same endsParagraph model as the
+      // block splitter); inline code/HTML spans never do.
+      if (span.kind === "fence" || span.kind === "indented") {
+        definitionsParagraphOpen = false;
+      }
       continue;
     }
     const spanEnd = span.offset + span.text.length;

@@ -290,8 +290,27 @@ test("no space is allowed between label and paren", () => {
 
 test("whitespace after the opening paren is allowed", () => {
   const outcome = rewrite("[x](   ../other-plan/plan.md)\n");
+  assert.equal(outcome.text, "[x](   ../../other-plan/plan.md)\n");
   assert.equal(outcome.rewritten, 1);
-  assert.ok(outcome.text.includes("(../../other-plan/plan.md)"));
+});
+
+test("a line ending after the opening paren is preserved", () => {
+  const outcome = rewrite("[x](\n   ../other-plan/plan.md\n)");
+  assert.equal(outcome.text, "[x](\n   ../../other-plan/plan.md\n)");
+  assert.equal(outcome.rewritten, 1);
+});
+
+test("trailing whitespace before the paren is preserved", () => {
+  const outcome = rewrite('[x](../other-plan/plan.md   "T"   )');
+  assert.equal(outcome.text, '[x](../../other-plan/plan.md   "T"   )');
+  assert.equal(outcome.rewritten, 1);
+});
+
+test("a shorter backtick opener never closes on a longer run", () => {
+  const input = "[a `` b ``` c](../other-plan/plan.md)";
+  const outcome = rewrite(input);
+  assert.equal(outcome.text, "[a `` b ``` c](../../other-plan/plan.md)");
+  assert.equal(outcome.rewritten, 1);
 });
 
 test("escaped delimiters inside titles are honored", () => {
@@ -317,6 +336,35 @@ test("a quoted reference definition is recognized", () => {
   const outcome = rewrite("> [id]: ../other-plan/plan.md\n");
   assert.equal(outcome.rewritten, 1);
   assert.ok(outcome.text.includes("> [id]: ../../other-plan/plan.md"));
+});
+
+test("a paragraph, heading, then indented code protects the link", () => {
+  const input = "Foo\n# H\n    [x](../other-plan/plan.md)\n";
+  const outcome = rewrite(input);
+  assert.equal(outcome.text, input);
+  assert.equal(outcome.rewritten, 0);
+});
+
+test("a definition after a heading is recognized", () => {
+  const outcome = rewrite("# H\n[id]: ../other-plan/plan.md\n");
+  assert.equal(outcome.text, "# H\n[id]: ../../other-plan/plan.md\n");
+  assert.equal(outcome.rewritten, 1);
+});
+
+test("a definition after a fenced block is recognized", () => {
+  const input = "Foo\n\n```\ncode\n```\n[id]: ../other-plan/plan.md\n";
+  const outcome = rewrite(input);
+  assert.equal(
+    outcome.text,
+    "Foo\n\n```\ncode\n```\n[id]: ../../other-plan/plan.md\n",
+  );
+  assert.equal(outcome.rewritten, 1);
+});
+
+test("a shorter backtick opener never closes on a longer run", () => {
+  const outcome = rewrite("[a `` b ``` c](../other-plan/plan.md)");
+  assert.equal(outcome.text, "[a `` b ``` c](../../other-plan/plan.md)");
+  assert.equal(outcome.rewritten, 1);
 });
 
 test("resolveLinkPath is POSIX-only and reports root escapes", () => {
