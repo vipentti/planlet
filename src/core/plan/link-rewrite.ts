@@ -678,6 +678,24 @@ function lineEndingLength(text: string, index: number): number {
   return text[index] === "\n" ? 1 : 0;
 }
 
+/**
+ * Length of a soft line break at `index`: a line ending that does not
+ * open a blank line (which would end the paragraph). Returns 0 for
+ * blank-line boundaries and non-breaks, so labels and titles may span
+ * multiple nonblank lines while paragraph breaks still stop them.
+ */
+function softBreakLength(text: string, index: number): number {
+  const length = lineEndingLength(text, index);
+  if (length === 0) return 0;
+  const rest = text.slice(index + length);
+  const spaces = /^[ \t]*/.exec(rest)?.[0] ?? "";
+  const after = rest.slice(spaces.length);
+  if (after.length === 0 || after.startsWith("\r") || after.startsWith("\n")) {
+    return 0;
+  }
+  return length;
+}
+
 /** Counts line endings (`\r\n`, `\n`, `\r`) in `text[start, end)`. */
 function countLineEndings(text: string, start: number, end: number): number {
   let count = 0;
@@ -721,24 +739,21 @@ function allowOneLineEnding(
 /**
  * Matches an optional title plus the link-closing paren at the start of
  * `text`: `"..."`, `'...'`, or `(...)` with backslash-escaped delimiters
- * honored, spanning at most one line ending, then optional whitespace
- * and `)`. Returns the full match (title plus paren) or null. A bare
- * suffix never matches, so non-title text is rejected. Only `[0]` of the
- * returned array is read by callers.
+ * honored. Titles may span multiple nonblank lines; a blank line ends
+ * the paragraph and rejects the match. A bare suffix never matches, so
+ * non-title text is rejected. Only `[0]` of the returned array is read
+ * by callers.
  */
 function parseTitleTail(text: string): RegExpExecArray | null {
   let cursor = 0;
-  let lineBreaks = 0;
   while (cursor < text.length) {
     const char = text[cursor];
     if (char === " " || char === "\t") {
       cursor += 1;
       continue;
     }
-    const breakLength = lineEndingLength(text, cursor);
+    const breakLength = softBreakLength(text, cursor);
     if (breakLength > 0) {
-      lineBreaks += 1;
-      if (lineBreaks > 1) return null;
       cursor += breakLength;
       continue;
     }
@@ -749,7 +764,6 @@ function parseTitleTail(text: string): RegExpExecArray | null {
     if (char === '"' || char === "'" || char === "(") {
       const closer = char === "(" ? ")" : char;
       cursor += 1;
-      let breaks = 0;
       let closed = false;
       while (cursor < text.length) {
         const inner = text[cursor];
@@ -757,13 +771,13 @@ function parseTitleTail(text: string): RegExpExecArray | null {
           cursor += 2;
           continue;
         }
-        const innerBreak = lineEndingLength(text, cursor);
+        const innerBreak = softBreakLength(text, cursor);
         if (innerBreak > 0) {
-          breaks += 1;
-          if (breaks > 1) return null;
           cursor += innerBreak;
           continue;
         }
+        // A blank line inside a title ends the paragraph: reject.
+        if (lineEndingLength(text, cursor) > 0) return null;
         if (inner === closer) {
           closed = true;
           cursor += 1;
@@ -774,17 +788,14 @@ function parseTitleTail(text: string): RegExpExecArray | null {
       if (!closed) return null;
     }
   }
-  let trailingBreaks = lineBreaks;
   while (cursor < text.length) {
     const char = text[cursor];
     if (char === " " || char === "\t") {
       cursor += 1;
       continue;
     }
-    const trailingLength = lineEndingLength(text, cursor);
+    const trailingLength = softBreakLength(text, cursor);
     if (trailingLength > 0) {
-      trailingBreaks += 1;
-      if (trailingBreaks > 1) return null;
       cursor += trailingLength;
       continue;
     }
@@ -837,13 +848,11 @@ function findInlineLinks(text: string): InlineLinkMatch[] {
         ? "!"
         : "";
     // Find the closing bracket, balancing nested brackets while
-    // skipping inline code spans and raw HTML inside the label: backtick
-    // runs pair by exact length and tags span to `>`, so `]` bytes
-    // inside them never close the label. One line ending is allowed.
+    // skipping inline code spans and raw HTML inside the label.
+    // Labels may hold multiple soft breaks but never a blank line.
     let cursor = open + 1;
     let depth = 0;
     let closeBracket = -1;
-    let lineBreaks = 0;
     while (cursor < text.length) {
       const char = text[cursor];
       if (char === "`") {
@@ -878,9 +887,9 @@ function findInlineLinks(text: string): InlineLinkMatch[] {
         }
       }
       if (char === "\r" || char === "\n") {
-        const breakLength = lineEndingLength(text, cursor);
-        lineBreaks += 1;
-        if (lineBreaks > 1) break;
+        // A blank line ends the paragraph and the label.
+        const breakLength = softBreakLength(text, cursor);
+        if (breakLength === 0) break;
         cursor += breakLength;
         continue;
       }
@@ -924,7 +933,9 @@ function findInlineLinks(text: string): InlineLinkMatch[] {
     let angled = false;
     if (text[destStart] === "<") {
       const close = text.indexOf(">", destStart + 1);
-      if (close !== -1 && countLineEndings(text, destStart, close) <= 1) {
+      // A link destination never contains a line ending: angled
+      // destinations with newlines stay byte-identical.
+      if (close !== -1 && countLineEndings(text, destStart, close) === 0) {
         const after = allowOneLineEnding(text.slice(close + 1));
         const tail = after === null ? null : parseTitleTail(after.text);
         if (tail !== undefined && tail !== null && after !== null) {

@@ -534,6 +534,33 @@ test("an unmatched short run before a valid long run protects the link", () => {
   assert.equal(outcome.rewritten, 0);
 });
 
+test("labels span soft breaks but never blank lines", () => {
+  const multi = rewrite("[a\nb\nc](../other-plan/plan.md)");
+  assert.equal(multi.text, "[a\nb\nc](../../other-plan/plan.md)");
+  assert.equal(multi.rewritten, 1);
+  const blank = "[a\n\nb](../other-plan/plan.md)\n";
+  const blankOutcome = rewrite(blank);
+  assert.equal(blankOutcome.text, blank);
+  assert.equal(blankOutcome.rewritten, 0);
+});
+
+test("titles span nonblank lines but never blank lines", () => {
+  const multi = rewrite('[x](../other-plan/plan.md "a\nb\nc")');
+  assert.equal(multi.text, '[x](../../other-plan/plan.md "a\nb\nc")');
+  assert.equal(multi.rewritten, 1);
+  const blank = '[x](../other-plan/plan.md "a\n\nc")';
+  const blankOutcome = rewrite(blank);
+  assert.equal(blankOutcome.text, blank);
+  assert.equal(blankOutcome.rewritten, 0);
+});
+
+test("an angled destination with a newline stays byte-identical", () => {
+  const input = "[x](<../other-plan/plan.md\n>)";
+  const outcome = rewrite(input);
+  assert.equal(outcome.text, input);
+  assert.equal(outcome.rewritten, 0);
+});
+
 test("resolveLinkPath is POSIX-only and reports root escapes", () => {
   assert.equal(
     resolveLinkPath("plans/a", "../other/plan.md"),
