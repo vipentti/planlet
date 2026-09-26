@@ -672,14 +672,40 @@ test("a quoted paragraph swallows definition-looking text", () => {
 });
 
 test("raw HTML ends with its quote container", () => {
-  const outcome = rewrite(
-    "> <script>\n> x\n</script>\n[x](../other-plan/plan.md)\n",
-  );
+  const outcome = rewrite("> <script>\n> x\n[x](../other-plan/plan.md)\n");
   assert.equal(
     outcome.text,
-    "> <script>\n> x\n</script>\n[x](../../other-plan/plan.md)\n",
+    "> <script>\n> x\n[x](../../other-plan/plan.md)\n",
   );
   assert.equal(outcome.rewritten, 1);
+});
+
+test("processing instructions, declarations, CDATA, and complete tags", () => {
+  for (const input of [
+    "<?pi\n[x](../other-plan/plan.md)\n?>\n",
+    "<!A\n[x](../other-plan/plan.md)\n>\n",
+    "<![CDATA[\n[x](../other-plan/plan.md)\n]]>\n",
+    "<custom-tag>\n[x](../other-plan/plan.md)\n\n",
+  ]) {
+    const outcome = rewrite(input);
+    assert.equal(outcome.text, input);
+    assert.equal(outcome.rewritten, 0);
+  }
+  const after = rewrite(
+    "<custom-tag>\n[x](../other-plan/plan.md)\n\n[y](../other-plan/plan.md)\n",
+  );
+  assert.equal(
+    after.text,
+    "<custom-tag>\n[x](../other-plan/plan.md)\n\n[y](../../other-plan/plan.md)\n",
+  );
+  assert.equal(after.rewritten, 1);
+});
+
+test("a lone closing tag opens a blank-terminated block", () => {
+  const input = "> <script>\n> x\n</script>\n[x](../other-plan/plan.md)\n";
+  const outcome = rewrite(input);
+  assert.equal(outcome.text, input);
+  assert.equal(outcome.rewritten, 0);
 });
 
 test("lazy paragraph definitions never close the paragraph", () => {

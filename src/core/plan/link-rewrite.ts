@@ -235,10 +235,14 @@ interface ProtectedSpan {
   readonly kind: "fence" | "indented" | "htmlblock" | "code" | "html" | "text";
 }
 
-/** Raw HTML block state: comments run to `-->`, elements to their close
- * tag, and generic block tags to the next blank line. */
+/** Raw HTML block state: comments, processing instructions,
+ * declarations, and CDATA run to their closers; elements to their
+ * close tag; generic complete-tag and block-tag lines to blank. */
 type HtmlBlockState =
   | { readonly end: "comment" }
+  | { readonly end: "instruction" }
+  | { readonly end: "declaration" }
+  | { readonly end: "cdata" }
   | { readonly end: "element"; readonly tag: string }
   | { readonly end: "blank" };
 
@@ -309,16 +313,29 @@ const HTML_BLOCK_TAGS = [
 ];
 
 /**
- * Detects a raw HTML block start on a container-stripped line. Comments
- * and script-like elements interrupt paragraphs; generic block tags
- * open only outside paragraphs. Single-line constructs stay inline:
- * only unclosed comments/elements open a block. Returns null when the
+ * Detects a raw HTML block start on a container-stripped line.
+ * Comments, processing instructions, declarations, CDATA sections, and
+ * script-like elements interrupt paragraphs; generic block tags and
+ * complete single-line tags open only outside paragraphs. Constructs
+ * closing on the same line stay inline-handled. Returns null when the
  * line is ordinary Markdown.
  */
 function htmlBlockStart(stripped: string): HtmlBlockState | "line" | null {
   const comment = /^ {0,3}<!--/.exec(stripped);
   if (comment !== null) {
     return stripped.includes("-->") ? null : { end: "comment" };
+  }
+  const instruction = /^ {0,3}<\?/.exec(stripped);
+  if (instruction !== null) {
+    return stripped.includes("?>") ? null : { end: "instruction" };
+  }
+  const declaration = /^ {0,3}<![A-Z]/.exec(stripped);
+  if (declaration !== null) {
+    return stripped.includes(">") ? null : { end: "declaration" };
+  }
+  const cdata = /^ {0,3}<!\[CDATA\[/.exec(stripped);
+  if (cdata !== null) {
+    return stripped.includes("]]>") ? null : { end: "cdata" };
   }
   const element = /^ {0,3}<(script|pre|style|textarea)(?=[\s/>]|$)/i.exec(
     stripped,
@@ -337,6 +354,15 @@ function htmlBlockStart(stripped: string): HtmlBlockState | "line" | null {
   if (block !== null) {
     return { end: "blank" };
   }
+  // A complete open or closing tag alone on the line (type 7): raw
+  // until the next blank line.
+  const complete =
+    /^ {0,3}(?:<[A-Za-z][A-Za-z0-9-]*(?:\s+[A-Za-z_:][A-Za-z0-9_.:-]*(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]*))?)*\s*\/?>|<\/[A-Za-z][A-Za-z0-9-]*\s*>)[ \t]*$/.exec(
+      stripped,
+    );
+  if (complete !== null) {
+    return { end: "blank" };
+  }
   return null;
 }
 
@@ -344,6 +370,15 @@ function htmlBlockStart(stripped: string): HtmlBlockState | "line" | null {
 function htmlBlockEnds(state: HtmlBlockState, line: string): boolean {
   if (state.end === "comment") {
     return line.includes("-->");
+  }
+  if (state.end === "instruction") {
+    return line.includes("?>");
+  }
+  if (state.end === "declaration") {
+    return line.includes(">");
+  }
+  if (state.end === "cdata") {
+    return line.includes("]]>");
   }
   if (state.end === "element") {
     return new RegExp(`</${state.tag}\\s*>`, "i").test(line);
