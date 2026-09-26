@@ -471,6 +471,28 @@ test("CRLF documents rewrite with original bytes preserved", () => {
   assert.equal(multiline.rewritten, 1);
 });
 
+test("an inline link before a definition rewrites both exactly once", () => {
+  const outcome = rewrite(
+    "[x](../other-plan/plan.md)\n\n[id]: ../other-plan/plan.md\n",
+  );
+  assert.equal(
+    outcome.text,
+    "[x](../../other-plan/plan.md)\n\n[id]: ../../other-plan/plan.md\n",
+  );
+  assert.equal(outcome.rewritten, 2);
+});
+
+test("a complete definition never consumes the next line", () => {
+  const outcome = rewrite(
+    "[id]: ../other-plan/plan.md\n  [x](../other-plan/plan.md)\n",
+  );
+  assert.equal(
+    outcome.text,
+    "[id]: ../../other-plan/plan.md\n  [x](../../other-plan/plan.md)\n",
+  );
+  assert.equal(outcome.rewritten, 2);
+});
+
 test("resolveLinkPath is POSIX-only and reports root escapes", () => {
   assert.equal(
     resolveLinkPath("plans/a", "../other/plan.md"),

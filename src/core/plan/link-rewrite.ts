@@ -987,63 +987,6 @@ function findInlineLinks(text: string): InlineLinkMatch[] {
   return matches;
 }
 
-/**
- * Rewrites pre-recognized document-level links that lie fully inside one
- * rewritable span. Only the destination-path bytes are spliced: every
- * other byte (whitespace, titles, brackets) passes through untouched, so
- * the transform stays a pure prefix edit.
- */
-function rewriteOwnedLinks(
-  text: string,
-  spanOffset: number,
-  owned: readonly InlineLinkMatch[],
-  planDir: string,
-  repositoryRoot: string,
-  existence: LinkTargetExistence,
-  skipped: string[],
-): { text: string; rewritten: number } {
-  let rewritten = 0;
-  let cursor = 0;
-  const parts: string[] = [];
-  for (const found of owned) {
-    const rawPath = text.slice(
-      found.destinationStart - spanOffset,
-      found.destinationEnd - spanOffset,
-    );
-    // Angle brackets never belong to the path: strip one wrapper pair
-    // when the recognizer included it.
-    const encodedPath =
-      found.angled && rawPath.startsWith("<") && rawPath.endsWith(">")
-        ? rawPath.slice(1, -1)
-        : rawPath;
-    const classified = classifyDestinationPath(
-      encodedPath,
-      planDir,
-      repositoryRoot,
-      existence,
-    );
-    if (classified.skipped !== undefined) skipped.push(classified.skipped);
-    const start = found.start - spanOffset;
-    const end = found.end - spanOffset;
-    const pathStart = found.destinationStart - spanOffset;
-    const pathEnd = found.destinationEnd - spanOffset;
-    parts.push(text.slice(cursor, start));
-    if (classified.rewritten === null) {
-      parts.push(text.slice(start, end));
-    } else {
-      // Splice only the path bytes; brackets, wrapper, whitespace,
-      // and titles stay exactly as authored.
-      parts.push(text.slice(start, pathStart));
-      parts.push(classified.rewritten);
-      parts.push(text.slice(pathEnd, end));
-      rewritten += 1;
-    }
-    cursor = end;
-  }
-  parts.push(text.slice(cursor));
-  return { text: parts.join(""), rewritten };
-}
-
 interface DefinitionMatch {
   /** Byte range of the whole owned definition (label, destination, title). */
   readonly start: number;
@@ -1062,7 +1005,8 @@ interface DefinitionMatch {
  * are excluded from inline-link recognition. A definition line
  * continuing an open paragraph is lazy continuation text and never
  * matches. Lines inside fenced/indented blocks are code, never
- * definitions.
+ * definitions. A complete single-line definition never consumes the
+ * next line, so a real inline link below a definition stays visible.
  */
 function findReferenceDefinitions(
   markdown: string,
@@ -1079,28 +1023,33 @@ function findReferenceDefinitions(
         lineStart >= span.offset &&
         lineStart < span.offset + span.text.length,
     );
-  const matchPatterns = (
+  const matchSingle = (
     candidate: string,
   ): { destination: string; destinationLength: number } | null => {
-    for (const pattern of [
-      MULTILINE_DEFINITION_PATTERN,
-      REFERENCE_DEFINITION_PATTERN,
-    ]) {
-      pattern.lastIndex = 0;
-      const probe = pattern.exec(candidate);
-      pattern.lastIndex = 0;
-      if (probe === null) continue;
-      // Groups: (container)(label+colon)(destination). The patterns
-      // consume no trailing title bytes (lookahead only).
-      const container = probe[1] ?? "";
-      const label = probe[2] ?? "";
-      const destination = probe[3] ?? "";
-      return {
-        destination,
-        destinationLength: container.length + label.length,
-      };
-    }
-    return null;
+    REFERENCE_DEFINITION_PATTERN.lastIndex = 0;
+    const probe = REFERENCE_DEFINITION_PATTERN.exec(candidate);
+    REFERENCE_DEFINITION_PATTERN.lastIndex = 0;
+    if (probe === null) return null;
+    // Groups: (container)(label+colon)(destination). The pattern
+    // consumes no trailing title bytes (lookahead only).
+    const container = probe[1] ?? "";
+    const label = probe[2] ?? "";
+    const destination = probe[3] ?? "";
+    return {
+      destination,
+      destinationLength: container.length + label.length,
+    };
+  };
+  const matchMultiline = (
+    candidate: string,
+  ): { destination: string } | null => {
+    MULTILINE_DEFINITION_PATTERN.lastIndex = 0;
+    const probe = MULTILINE_DEFINITION_PATTERN.exec(candidate);
+    MULTILINE_DEFINITION_PATTERN.lastIndex = 0;
+    if (probe === null) return null;
+    // Destination offsets resolve in original bytes at the call site:
+    // only the destination text travels here.
+    return { destination: probe[3] ?? "" };
   };
   for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
     const line = lines[lineIndex] ?? "";
@@ -1113,6 +1062,22 @@ function findReferenceDefinitions(
     // offsets below stay in original bytes (the CR sits at the line
     // end, past every recorded offset).
     const bare = line.endsWith("\r") ? line.slice(0, -1) : line;
+    const singleFirst = matchSingle(bare);
+    if (singleFirst !== null) {
+      if (!open) {
+        const destinationStart = lineStart + singleFirst.destinationLength;
+        matches.push({
+          start: lineStart,
+          // Own the whole line so titles stay definition-owned.
+          end: lineStart + line.length,
+          destinationStart,
+          destinationEnd: destinationStart + singleFirst.destination.length,
+          destination: singleFirst.destination,
+        });
+      }
+      open = false;
+      continue;
+    }
     // A definition destination may sit on the next line: join the pair
     // for matching.
     const next = lineIndex + 1 < lines.length ? lines[lineIndex + 1] : null;
@@ -1127,14 +1092,18 @@ function findReferenceDefinitions(
         ? `${bare}\n${nextBare}`
         : null;
     if (joined !== null) {
-      const found = matchPatterns(joined);
+      const found = matchMultiline(joined);
       if (found !== null) {
         if (!open) {
-          const destinationStart = lineStart + found.destinationLength;
+          // Destination offsets in original bytes: the destination
+          // opens the next line after its leading whitespace.
+          const nextStart = lineStart + line.length + 1;
+          const indent = /^[ \t]+/.exec(nextBare ?? "")?.[0] ?? "";
+          const destinationStart = nextStart + indent.length;
           matches.push({
             start: lineStart,
             // Original bytes: both lines plus the line ending between.
-            end: lineStart + line.length + 1 + (next ?? "").length,
+            end: nextStart + (next ?? "").length,
             destinationStart,
             destinationEnd: destinationStart + found.destination.length,
             destination: found.destination,
@@ -1148,70 +1117,14 @@ function findReferenceDefinitions(
         continue;
       }
     }
-    const single = matchPatterns(bare);
-    if (single === null) {
-      // Shared endsParagraph model: headings, breaks, and blanks end
-      // the paragraph just like in the block splitter.
-      if (/^(?: {4}|\t)/.test(bare)) open = false;
-      else if (endsParagraph(bare)) open = false;
-      else open = true;
-      continue;
-    }
-    if (!open) {
-      const destinationStart = lineStart + single.destinationLength;
-      matches.push({
-        start: lineStart,
-        // Own the whole line so titles stay definition-owned.
-        end: lineStart + line.length,
-        destinationStart,
-        destinationEnd: destinationStart + single.destination.length,
-        destination: single.destination,
-      });
-    }
-    open = false;
+    // Shared endsParagraph model: headings, breaks, and blanks end
+    // the paragraph just like in the block splitter.
+    if (/^(?: {4}|\t)/.test(bare)) open = false;
+    else if (endsParagraph(bare)) open = false;
+    else open = true;
+    continue;
   }
   return matches;
-}
-
-function rewriteReferenceDefinitions(
-  text: string,
-  planDir: string,
-  repositoryRoot: string,
-  existence: LinkTargetExistence,
-  skipped: string[],
-  owned: readonly DefinitionMatch[],
-  spanOffset: number,
-): { text: string; rewritten: number } {
-  let rewritten = 0;
-  let cursor = 0;
-  const parts: string[] = [];
-  for (const definition of owned) {
-    const outcome = rewriteDestination(
-      definition.destination,
-      planDir,
-      repositoryRoot,
-      existence,
-    );
-    if (outcome.skipped !== undefined) skipped.push(outcome.skipped);
-    const start = definition.start - spanOffset;
-    const destinationStart = definition.destinationStart - spanOffset;
-    const destinationEnd = definition.destinationEnd - spanOffset;
-    const end = definition.end - spanOffset;
-    parts.push(text.slice(cursor, start));
-    if (!outcome.rewritten) {
-      parts.push(text.slice(start, end));
-    } else {
-      // Splice only the recorded destination bytes: labels and titles
-      // (which may hold link-looking text) stay byte-identical.
-      parts.push(text.slice(start, destinationStart));
-      parts.push(outcome.destination);
-      parts.push(text.slice(destinationEnd, end));
-      rewritten += 1;
-    }
-    cursor = end;
-  }
-  parts.push(text.slice(cursor));
-  return { text: parts.join(""), rewritten };
 }
 
 /**
@@ -1235,8 +1148,6 @@ export function rewriteOutgoingLinks(
   repositoryRoot = ".",
 ): LinkRewriteOutcome {
   const skipped: string[] = [];
-  let rewritten = 0;
-  const parts: string[] = [];
   // Block spans come from one unexcluded split; definitions derive from
   // the same stream, so fence/indented ownership is exact.
   const blockSpans = splitProtectedSpans(markdown);
@@ -1268,41 +1179,88 @@ export function rewriteOutgoingLinks(
   const exclusions = documentLinks
     .filter((link) => !inProtectedBlock(link))
     .map((link) => ({ start: link.start, end: link.end }));
-  for (const span of splitProtectedSpans(markdown, exclusions)) {
-    if (span.protected_) {
-      parts.push(span.text);
+  const spans = splitProtectedSpans(markdown, exclusions);
+  // All edits splice the original source in one ordered pass: inline
+  // destinations and definition destinations share one offset space,
+  // so no pass can shift a later pass's offsets.
+  interface Splice {
+    readonly start: number;
+    readonly end: number;
+    readonly insert: string;
+  }
+  const splices: Splice[] = [];
+  const rewritable = (start: number, end: number): boolean =>
+    spans.some(
+      (span) =>
+        !span.protected_ &&
+        start >= span.offset &&
+        end <= span.offset + span.text.length,
+    );
+  for (const link of documentLinks) {
+    if (!rewritable(link.start, link.end)) continue;
+    const rawPath = markdown.slice(link.destinationStart, link.destinationEnd);
+    const encodedPath =
+      link.angled && rawPath.startsWith("<") && rawPath.endsWith(">")
+        ? rawPath.slice(1, -1)
+        : rawPath;
+    const classified = classifyDestinationPath(
+      encodedPath,
+      planDir,
+      repositoryRoot,
+      existence,
+    );
+    if (classified.skipped !== undefined) skipped.push(classified.skipped);
+    if (classified.rewritten === null) continue;
+    splices.push({
+      start: link.destinationStart,
+      end: link.destinationEnd,
+      insert: classified.rewritten,
+    });
+  }
+  for (const definition of definitions) {
+    // Skip definitions inside fenced/indented blocks (code, never
+    // definitions); inline fragmentation never blocks them because
+    // recognition ran on the block stream.
+    const inBlock = blockSpans.some(
+      (span) =>
+        (span.kind === "fence" || span.kind === "indented") &&
+        definition.start >= span.offset &&
+        definition.end <= span.offset + span.text.length,
+    );
+    if (inBlock) continue;
+    const outcome = rewriteDestination(
+      definition.destination,
+      planDir,
+      repositoryRoot,
+      existence,
+    );
+    if (outcome.skipped !== undefined) skipped.push(outcome.skipped);
+    if (!outcome.rewritten) continue;
+    splices.push({
+      start: definition.destinationStart,
+      end: definition.destinationEnd,
+      insert: outcome.destination,
+    });
+  }
+  splices.sort((left, right) => left.start - right.start);
+  // Refuse overlapping edits rather than corrupting bytes: keep the
+  // first and report the rest as skipped.
+  const applied: Splice[] = [];
+  for (const splice of splices) {
+    const last = applied[applied.length - 1];
+    if (last !== undefined && splice.start < last.end) {
+      skipped.push("overlapping link ranges left unchanged");
       continue;
     }
-    const spanEnd = span.offset + span.text.length;
-    const owned = documentLinks.filter(
-      (link) => link.start >= span.offset && link.end <= spanEnd,
-    );
-    const inline = rewriteOwnedLinks(
-      span.text,
-      span.offset,
-      owned,
-      planDir,
-      repositoryRoot,
-      existence,
-      skipped,
-    );
-    // Definitions owned by this span splice their recorded destination
-    // bytes; filter to definitions fully inside the span.
-    const ownedDefinitions = definitions.filter(
-      (definition) =>
-        definition.start >= span.offset && definition.end <= spanEnd,
-    );
-    const rewrittenDefinitions = rewriteReferenceDefinitions(
-      inline.text,
-      planDir,
-      repositoryRoot,
-      existence,
-      skipped,
-      ownedDefinitions,
-      span.offset,
-    );
-    rewritten += inline.rewritten + rewrittenDefinitions.rewritten;
-    parts.push(rewrittenDefinitions.text);
+    applied.push(splice);
   }
-  return { text: parts.join(""), rewritten, skipped };
+  let cursor = 0;
+  const out: string[] = [];
+  for (const splice of applied) {
+    out.push(markdown.slice(cursor, splice.start));
+    out.push(splice.insert);
+    cursor = splice.end;
+  }
+  out.push(markdown.slice(cursor));
+  return { text: out.join(""), rewritten: applied.length, skipped };
 }
