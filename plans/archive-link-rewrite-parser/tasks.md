@@ -7,4 +7,4 @@
 - [x] T3 Make the complete skill report completion warnings, add its contract assertion, and regenerate installed skill copies.
   - Verify: `node dist/planlet.mjs update`, then `node dist/planlet.mjs --root . tools` reports every destination installed.
 - [x] T4 Update `planlet_design.md` (step 9, dependency exception), `README.md`, and the `[Unreleased]` changelog entry.
-- [ ] T5 Run the full repository verification suite defined in `plan.md`.
+- [x] T5 Run the full repository verification suite defined in `plan.md`.
