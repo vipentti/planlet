@@ -517,6 +517,78 @@ function trackParagraph(
   return { open: true, signature: containerSignature(kinds) };
 }
 
+interface ListMarkerMatch {
+  /** Digits for an ordered marker, null for `-`, `+`, `*`. */
+  digits: string | null;
+  /** Absolute column of the marker start (after up-to-3-space indent). */
+  markerColumn: number;
+  /** Offset past the marker and its gap within the scanned text. */
+  gapEnd: number;
+  /** True when the gap spans five or more columns: the item's first
+   * block is indented code, not ordinary content. */
+  code: boolean;
+}
+
+/**
+ * Tokenizes one CommonMark list marker at the start of `rest`:
+ * at most three leading spaces, `-`/`+`/`*` or 1-to-9 digits plus
+ * `.`/`)`, then a space/tab gap (tabs expand to 4-column stops from
+ * the marker end). Returns null for pseudo-markers (`1234567890.`,
+ * `1.foo`) and markers with no gap at all. Shared by container
+ * stripping and definition-prefix validation so both agree on
+ * ownership.
+ */
+function matchListMarker(
+  rest: string,
+  startColumn: number,
+): ListMarkerMatch | null {
+  const bullet = /^ {0,3}(?:([-+*])|(\d{1,9})[.)])(?=[ \t]|$)/.exec(rest);
+  if (bullet === null) return null;
+  const leadLength = /^ */.exec(bullet[0])?.[0].length ?? 0;
+  const markerLength =
+    bullet[1] !== undefined ? 1 : (bullet[2] ?? "").length + 1;
+  const markerColumn = startColumn + leadLength;
+  const markerEndColumn = markerColumn + markerLength;
+  let gapEnd = bullet[0].length;
+  let gapColumn = markerEndColumn;
+  while (rest[gapEnd] === " " || rest[gapEnd] === "\t") {
+    gapColumn += rest[gapEnd] === "\t" ? 4 - (gapColumn % 4) : 1;
+    gapEnd += 1;
+  }
+  if (gapEnd === bullet[0].length) return null;
+  return {
+    digits: bullet[1] !== undefined ? null : (bullet[2] ?? ""),
+    markerColumn,
+    gapEnd,
+    code: gapColumn - markerEndColumn >= 5,
+  };
+}
+
+/**
+ * Validates a definition pattern's container prefix with the same
+ * tokenizer container stripping uses: quote markers and 1-to-9-digit
+ * list markers with gaps under five columns, then only plain indent
+ * may remain.
+ */
+function isValidContainerPrefix(container: string): boolean {
+  let rest = container;
+  let column = 0;
+  for (;;) {
+    const quote = /^ {0,3}> ?/.exec(rest);
+    if (quote !== null) {
+      column += quote[0].length;
+      rest = rest.slice(quote[0].length);
+      continue;
+    }
+    const marker = matchListMarker(rest, column);
+    if (marker === null) break;
+    if (marker.code) return false;
+    column += marker.gapEnd;
+    rest = rest.slice(marker.gapEnd);
+  }
+  return /^[ \t]*$/.test(rest);
+}
+
 /**
  * Strips block-quote markers (`>`) and list markers (`-`, `+`, `*`,
  * `1.`) with their container indentation, returning the container depth
@@ -569,37 +641,51 @@ function stripContainers(
       explicitKinds.push("quote");
       continue;
     }
-    const bullet = /^ {0,3}(?:([-+*])|(\d+)[.)]) +/.exec(rest);
-    if (bullet !== null) {
+    const marker = matchListMarker(rest, line.length - rest.length);
+    if (marker !== null) {
       // An ordered marker opens an item only for start number 1 when
       // a paragraph is open; otherwise this line is lazy text.
       if (
-        bullet[2] !== undefined &&
-        Number.parseInt(bullet[2], 10) !== 1 &&
+        marker.digits !== null &&
+        Number.parseInt(marker.digits, 10) !== 1 &&
         paragraphOpen
       ) {
         break;
       }
       // An empty item never interrupts an open paragraph: without
       // content it stays lazy continuation text.
-      if (paragraphOpen && /^[ \t]*$/.test(rest.slice(bullet[0].length))) {
+      if (paragraphOpen && /^[ \t]*$/.test(rest.slice(marker.gapEnd))) {
         break;
       }
       // A new item closes open items at its depth or deeper.
       columns = columns.filter((entry) => entry.depth < depth);
-      const markerColumn =
-        line.length - rest.length + (/^ */.exec(bullet[0])?.[0].length ?? 0);
       // Any new item outside the fence's item scope ends it; keep the
       // outermost (minimum) column for that comparison.
       bulletColumn =
         bulletColumn === null
-          ? markerColumn
-          : Math.min(bulletColumn, markerColumn);
+          ? marker.markerColumn
+          : Math.min(bulletColumn, marker.markerColumn);
+      // An indented-code first block consumes the marker, then
+      // re-indents four spaces so fences, HTML, headings, lazy
+      // checks, and definitions all see code. Stored columns keep
+      // true positions for alignment.
+      if (marker.code) {
+        columns.push({
+          depth,
+          column: line.length - rest.length + marker.gapEnd,
+        });
+        rest = `    ${rest.slice(marker.gapEnd)}`;
+        depth += 1;
+        kinds.push("list");
+        explicitKinds.push("list");
+        consumedBullet = true;
+        break;
+      }
       columns.push({
         depth,
-        column: line.length - rest.length + bullet[0].length,
+        column: line.length - rest.length + marker.gapEnd,
       });
-      rest = rest.slice(bullet[0].length);
+      rest = rest.slice(marker.gapEnd);
       depth += 1;
       kinds.push("list");
       explicitKinds.push("list");
@@ -1097,15 +1183,15 @@ function splitProtectedSpans(
 }
 
 const REFERENCE_DEFINITION_PATTERN =
-  /^((?:[ \t]{0,3}> ?|[ \t]{0,3}(?:[-+*]|\d+[.)]) +)*[ \t]{0,3})(\[[^\]\n\\]*(?:\\.[^\]\n\\]*)*\]:[ \t]*)(<[^>\n]+>|(?:[^\s()]|\([^()\s]*\))+)(?:(?=[ \t]*$)|(?=[ \t]+(?:"[^"\n\\]*(?:\\.[^"\n\\]*)*"|'[^'\n\\]*(?:\\.[^'\n\\]*)*'|\([^)\n\\]*(?:\\.[^)\n\\]*)*\))[ \t]*$))/gm;
+  /^((?:[ \t]{0,3}> ?|[ \t]{0,3}(?:[-+*]|\d{1,9}[.)])(?: {1,4}(?! )| *\t))*[ \t]{0,3})(\[[^\]\[\n\\]*(?:\\.[^\]\[\n\\]*)*\]:[ \t]*)(<[^>\n]+>|(?:[^\s()]|\([^()\s]*\))+)(?:(?=[ \t]*$)|(?=[ \t]+(?:"[^"\n\\]*(?:\\.[^"\n\\]*)*"|'[^'\n\\]*(?:\\.[^'\n\\]*)*'|\([^)\n\\]*(?:\\.[^)\n\\]*)*\))[ \t]*$))/gm;
 
 /** Matches a reference definition whose label spans two lines. */
 const MULTILINE_LABEL_DEFINITION_PATTERN =
-  /^((?:[ \t]{0,3}> ?|[ \t]{0,3}(?:[-+*]|\d+[.)]) +)*[ \t]{0,3})(\[(?:\\.|[^\]\\\r\n]|\r\n|\n(?!\n))*\]:[ \t]*)(<[^>\n]+>|(?:[^\s()]|\([^()\s]*\))+)(?:(?=[ \t]*$)|(?=[ \t]+(?:"[^"\n\\]*(?:\\.[^"\n\\]*)*"|'[^'\n\\]*(?:\\.[^'\n\\]*)*'|\([^)\n\\]*(?:\\.[^)\n\\]*)*\))[ \t]*$))/;
+  /^((?:[ \t]{0,3}> ?|[ \t]{0,3}(?:[-+*]|\d{1,9}[.)])(?: {1,4}(?! )| *\t))*[ \t]{0,3})(\[(?:\\.|[^\]\[\\\r\n]|\r\n|\n(?!\n))*\]:[ \t]*)(<[^>\n]+>|(?:[^\s()]|\([^()\s]*\))+)(?:(?=[ \t]*$)|(?=[ \t]+(?:"[^"\n\\]*(?:\\.[^"\n\\]*)*"|'[^'\n\\]*(?:\\.[^'\n\\]*)*'|\([^)\n\\]*(?:\\.[^)\n\\]*)*\))[ \t]*$))/;
 
 /** Matches a reference definition whose destination sits on the next line. */
 const MULTILINE_DEFINITION_PATTERN =
-  /^((?:[ \t]{0,3}> ?|[ \t]{0,3}(?:[-+*]|\d+[.)]) +)*[ \t]{0,3})(\[[^\]\n\\]*(?:\\.[^\]\n\\]*)*\]:[ \t]*\n[ \t]*)(<[^>\n]+>|(?:[^\s()]|\([^()\s]*\))+)(?:(?=[ \t]*$)|(?=[ \t]+(?:"[^"\n\\]*(?:\\.[^"\n\\]*)*"|'[^'\n\\]*(?:\\.[^'\n\\]*)*'|\([^)\n\\]*(?:\\.[^)\n\\]*)*\))[ \t]*$))/gm;
+  /^((?:[ \t]{0,3}> ?|[ \t]{0,3}(?:[-+*]|\d{1,9}[.)])(?: {1,4}(?! )| *\t))*[ \t]{0,3})(\[[^\]\[\n\\]*(?:\\.[^\]\[\n\\]*)*\]:[ \t]*\n[ \t]*)(<[^>\n]+>|(?:[^\s()]|\([^()\s]*\))+)(?:(?=[ \t]*$)|(?=[ \t]+(?:"[^"\n\\]*(?:\\.[^"\n\\]*)*"|'[^'\n\\]*(?:\\.[^'\n\\]*)*'|\([^)\n\\]*(?:\\.[^)\n\\]*)*\))[ \t]*$))/gm;
 
 interface InlineLinkMatch {
   readonly start: number;
@@ -1586,7 +1672,10 @@ function findReferenceDefinitions(
   // bracketed label plus its colon and trailing whitespace.
   const isValidLabelGroup = (labelGroup: string): boolean => {
     const inner = labelGroup.replace(/^\[/, "").replace(/\]:[\s\S]*$/, "");
-    const text = inner.replace(/\\(.)/g, "$1");
+    const text = inner.replace(
+      /\\([!"#$%&'()*+,./:;<=>?@[\\\]^_`{|}~-])/g,
+      "$1",
+    );
     return /\S/.test(text) && text.length <= 999;
   };
   const matchSingle = (
@@ -1601,6 +1690,7 @@ function findReferenceDefinitions(
     const container = probe[1] ?? "";
     const label = probe[2] ?? "";
     const destination = probe[3] ?? "";
+    if (!isValidContainerPrefix(container)) return null;
     if (!isValidLabelGroup(label)) return null;
     return {
       destination,
@@ -1614,6 +1704,7 @@ function findReferenceDefinitions(
     const probe = MULTILINE_DEFINITION_PATTERN.exec(candidate);
     MULTILINE_DEFINITION_PATTERN.lastIndex = 0;
     if (probe === null) return null;
+    if (!isValidContainerPrefix(probe[1] ?? "")) return null;
     if (!isValidLabelGroup(probe[2] ?? "")) return null;
     // Destination offsets resolve in original bytes at the call site:
     // only the destination text travels here.
@@ -1883,6 +1974,17 @@ function findReferenceDefinitions(
             const container = labelProbe[1] ?? "";
             const label = labelProbe[2] ?? "";
             const destination = labelProbe[3] ?? "";
+            if (!isValidContainerPrefix(container)) {
+              // A pseudo-container stays ordinary text.
+              para = trackParagraph(
+                para,
+                stripped,
+                kinds,
+                explicitKinds,
+                consumedBullet,
+              );
+              continue;
+            }
             if (!isValidLabelGroup(label)) {
               // Invalid labels stay ordinary text: no recording, no
               // consumption beyond normal paragraph tracking below.
@@ -2087,6 +2189,8 @@ function matchContinuedDefinition(
         cursorCol += 1;
         break;
       }
+      // An unescaped `[` never belongs to a label.
+      if (char === "[") return null;
       labelText += char;
       cursorCol += 1;
     }
@@ -2094,7 +2198,10 @@ function matchContinuedDefinition(
     if (!crossBreak()) return null;
     labelText += "\n";
   }
-  const labelContent = labelText.replace(/\\(.)/g, "$1");
+  const labelContent = labelText.replace(
+    /\\([!"#$%&'()*+,./:;<=>?@[\\\]^_`{|}~-])/g,
+    "$1",
+  );
   if (!/\S/.test(labelContent) || labelContent.length > 999) return null;
   // Colon immediately after the label.
   if (current.stripped[cursorCol] !== ":") return null;
@@ -2249,6 +2356,59 @@ function matchContinuedDefinition(
  * fragments definition recognition. Inline links splice only
  * destination-path bytes, so whitespace and titles round-trip exactly.
  */
+/**
+ * True when the inline range sits inside one block: continuation
+ * lines past the first may omit containers (lazy) or repeat a prefix
+ * of the opening line's, but never open a fence, an interrupting
+ * HTML block, a new list item, or any other block boundary. Links
+ * only span lines inside an open paragraph, so continuations strip
+ * with paragraph context while the opening line strips closed.
+ */
+function linkSpansSingleBlock(
+  text: string,
+  start: number,
+  end: number,
+): boolean {
+  const firstEnd = text.indexOf("\n", start);
+  const firstLine = text.slice(
+    start === 0 ? 0 : text.lastIndexOf("\n", start - 1) + 1,
+    firstEnd === -1 ? text.length : firstEnd,
+  );
+  const firstBare = firstLine.endsWith("\r")
+    ? firstLine.slice(0, -1)
+    : firstLine;
+  const first = stripContainers(firstBare, [], false).explicitKinds;
+  let lineStart = firstEnd === -1 ? text.length : firstEnd + 1;
+  while (lineStart < end) {
+    const lineEnd = text.indexOf("\n", lineStart);
+    const raw = text.slice(lineStart, lineEnd === -1 ? text.length : lineEnd);
+    const bare = raw.endsWith("\r") ? raw.slice(0, -1) : raw;
+    const stripped = stripContainers(bare, [], true);
+    // A new list item always starts a new block.
+    if (stripped.consumedBullet) return false;
+    // Omitted containers stay lazy; written ones must repeat the
+    // opening line's markers from the outside in.
+    if (stripped.explicitKinds.length > 0) {
+      if (stripped.explicitKinds.length > first.length) return false;
+      const prefix = stripped.explicitKinds.every(
+        (kind, index) => first[index] === kind,
+      );
+      if (!prefix) return false;
+    }
+    if (endsParagraph(stripped.content)) return false;
+    if (/^ {0,3}(`{3,}|~{3,})/.test(stripped.content)) return false;
+    const htmlOpen = htmlBlockStart(stripped.content);
+    if (
+      htmlOpen !== null &&
+      (htmlOpen === "line" || htmlOpen.end !== "blank" || htmlOpen.interrupt)
+    ) {
+      return false;
+    }
+    lineStart = lineEnd === -1 ? text.length : lineEnd + 1;
+  }
+  return true;
+}
+
 export function rewriteOutgoingLinks(
   markdown: string,
   planDir: string,
@@ -2275,7 +2435,7 @@ export function rewriteOutgoingLinks(
     (link) =>
       !definitionOwned.some(
         (owned) => link.start >= owned.start && link.end <= owned.end,
-      ),
+      ) && linkSpansSingleBlock(markdown, link.start, link.end),
   );
   const inProtectedBlock = (link: { start: number; end: number }): boolean =>
     blockSpans.some(

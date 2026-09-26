@@ -375,6 +375,34 @@ test("completion resumes a valid audit left by process interruption", () => {
   });
 });
 
+test("resume preserves sections after the completion record byte-for-byte", () => {
+  const later = "## Notes\n\nLater section stays.\n";
+  const interrupted =
+    "# Tasks: Fixture Plan\n\n" +
+    "- [x] T1 First task\n" +
+    "- [cross](../other-plan/plan.md)\n" +
+    "## Completion\n\n" +
+    "- Completed at: 2026-07-22T12:00:00.000Z\n" +
+    "- Mode: normal\n" +
+    later;
+  withRepository(interrupted, (root) => {
+    const other = join(root, "plans", "other-plan");
+    mkdirSync(other, { recursive: true });
+    writeFileSync(join(other, "plan.md"), "# Other Plan\n");
+    writeFileSync(join(other, "tasks.md"), "# Tasks: Other Plan\n");
+
+    const result = completePlanlet({
+      repositoryRoot: root,
+      slug: "fixture-plan",
+      dependencies: { now: () => new Date("2030-01-01T00:00:00Z") },
+    });
+
+    const archived = readFileSync(join(result.destination, "tasks.md"), "utf8");
+    assert.ok(archived.includes("- [cross](../../other-plan/plan.md)\n"));
+    assert.ok(archived.endsWith(later));
+  });
+});
+
 test("completion stages the moved planlet and git reports the rename", async () => {
   await withGitRepository(COMPLETE_TASKS, (root, source) => {
     commitAll(root, "base");

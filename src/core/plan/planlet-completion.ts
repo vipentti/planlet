@@ -137,7 +137,7 @@ function linkExistence(
 /** Warns about rewrites and skipped destinations in both plan files. */
 function linkRewriteWarnings(
   rewrittenPlan: LinkRewriteOutcome,
-  rewrittenTasks: LinkRewriteOutcome,
+  ...rewrittenTasks: readonly LinkRewriteOutcome[]
 ): string[] {
   const warnings: string[] = [];
   if (rewrittenPlan.rewritten > 0) {
@@ -145,28 +145,48 @@ function linkRewriteWarnings(
       `Rewrote ${rewrittenPlan.rewritten} relative link${rewrittenPlan.rewritten === 1 ? "" : "s"} in plan.md for the archived location`,
     );
   }
-  if (rewrittenTasks.rewritten > 0) {
+  const tasksRewritten = rewrittenTasks.reduce(
+    (sum, outcome) => sum + outcome.rewritten,
+    0,
+  );
+  if (tasksRewritten > 0) {
     warnings.push(
-      `Rewrote ${rewrittenTasks.rewritten} relative link${rewrittenTasks.rewritten === 1 ? "" : "s"} in tasks.md for the archived location`,
+      `Rewrote ${tasksRewritten} relative link${tasksRewritten === 1 ? "" : "s"} in tasks.md for the archived location`,
     );
   }
   for (const skipped of rewrittenPlan.skipped) {
     warnings.push(`plan.md link left unchanged (${skipped})`);
   }
-  for (const skipped of rewrittenTasks.skipped) {
-    warnings.push(`tasks.md link left unchanged (${skipped})`);
+  for (const rewritten of rewrittenTasks) {
+    for (const skipped of rewritten.skipped) {
+      warnings.push(`tasks.md link left unchanged (${skipped})`);
+    }
   }
   return warnings;
 }
 
-/** Removes the trailing `## Completion` audit record, if present. */
-function stripCompletionRecord(tasksMarkdown: string): string {
+/**
+ * Splits out the trailing `## Completion` audit record with exact
+ * section boundaries: `before` holds everything ahead of it, `section`
+ * the record itself (through the next H2 heading or EOF, mirroring
+ * completion parsing), and `after` whatever follows. Returns null when
+ * no CLI-shaped record is present.
+ */
+function splitCompletionRecord(
+  tasksMarkdown: string,
+): { before: string; section: string; after: string } | null {
   const marker = "\n## Completion";
   const index = tasksMarkdown.lastIndexOf(marker);
-  if (index === -1) return tasksMarkdown;
+  if (index === -1) return null;
   const tail = tasksMarkdown.slice(index + 1);
-  if (!/^## Completion\n\n- Completed at: /.test(tail)) return tasksMarkdown;
-  return tasksMarkdown.slice(0, index) + (index === 0 ? "" : "\n");
+  if (!/^## Completion\n\n- Completed at: /.test(tail)) return null;
+  const nextHeading = /\n## /.exec(tail);
+  const sectionEnd = nextHeading === null ? tail.length : nextHeading.index;
+  return {
+    before: tasksMarkdown.slice(0, index) + "\n",
+    section: tail.slice(0, sectionEnd),
+    after: tail.slice(sectionEnd),
+  };
 }
 
 /** Atomically publishes a rewritten plan file when it differs. */
@@ -289,28 +309,40 @@ function resumeRecordedCompletion(
     existence,
     options.repositoryRoot,
   );
-  const rewrittenTasks = rewriteOutgoingLinks(
-    stripCompletionRecord(tasksMarkdown),
+  // The audit record is a fixed anchor: links ahead of it and behind
+  // it rewrite independently while its own bytes splice back untouched,
+  // so later sections survive a retry byte-for-byte.
+  const split = splitCompletionRecord(tasksMarkdown);
+  const rewrittenBefore = rewriteOutgoingLinks(
+    split === null ? "" : split.before,
+    planDir,
+    existence,
+    options.repositoryRoot,
+  );
+  const rewrittenAfter = rewriteOutgoingLinks(
+    split === null ? "" : split.after,
     planDir,
     existence,
     options.repositoryRoot,
   );
   const linkWarnings: string[] = linkRewriteWarnings(
     rewrittenPlan,
-    rewrittenTasks,
+    rewrittenBefore,
+    rewrittenAfter,
   );
   const rewrittenPlanMarkdown = rewrittenPlan.text;
+  // A hand-edited record keeps validation's tolerant shape but not
+  // the CLI's exact bytes: rewriting cannot anchor there, so the
+  // retry moves tasks.md untouched rather than risking the audit.
+  if (split === null) {
+    linkWarnings.push(
+      "tasks.md completion record has an unexpected shape; links left unchanged",
+    );
+  }
   const rewrittenTasksMarkdown =
-    rewrittenTasks.text === stripCompletionRecord(tasksMarkdown)
+    split === null
       ? tasksMarkdown
-      : appendCompletionRecord(
-          rewrittenTasks.text,
-          completion.completedAt,
-          remainingTaskIds,
-          completion.mode === "incomplete override"
-            ? completion.reason
-            : undefined,
-        );
+      : rewrittenBefore.text + split.section + rewrittenAfter.text;
   const completedValidation = validatePlanletStructure({
     directoryName: archiveName,
     location: "completed",

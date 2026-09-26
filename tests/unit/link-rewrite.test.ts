@@ -860,6 +860,65 @@ test("empty and oversized labels stay ordinary text", () => {
   assert.equal(boundaryOutcome.rewritten, 1);
 });
 
+test("inline links never cross block boundaries", () => {
+  for (const input of [
+    "[a\n# H\nb](../other-plan/plan.md)\n",
+    "[a `code\n\nmore` b](../other-plan/plan.md)\n",
+    "[a\n```\nb](../other-plan/plan.md)\n",
+    "- [a\n- b](../other-plan/plan.md)\n",
+  ]) {
+    const outcome = rewrite(input);
+    assert.equal(outcome.text, input);
+    assert.equal(outcome.rewritten, 0);
+  }
+  // Lazy continuation and repeated containers stay one block.
+  for (const input of [
+    "[a\nb](../other-plan/plan.md)\n",
+    "> [a\n> b](../other-plan/plan.md)\n",
+    "> [a\nb](../other-plan/plan.md)\n",
+  ]) {
+    const outcome = rewrite(input);
+    assert.equal(outcome.rewritten, 1);
+    assert.ok(outcome.text.includes("../../other-plan/plan.md"));
+  }
+});
+
+test("labels reject raw brackets and honor escape punctuation", () => {
+  const nested = "[a[b]: ../other-plan/plan.md\n";
+  const nestedOutcome = rewrite(nested);
+  assert.equal(nestedOutcome.text, nested);
+  assert.equal(nestedOutcome.rewritten, 0);
+  // Escaped brackets and non-punctuation escapes stay valid labels.
+  for (const input of [
+    "[a\\[b]: ../other-plan/plan.md\n",
+    "[\\q]: ../other-plan/plan.md\n",
+  ]) {
+    const outcome = rewrite(input);
+    assert.equal(outcome.rewritten, 1);
+    assert.ok(outcome.text.includes("../../other-plan/plan.md"));
+  }
+});
+
+test("list markers follow CommonMark digit and indentation rules", () => {
+  // A 10-digit marker is paragraph text: definitions stay put while
+  // live inline links still rewrite.
+  const pseudo = "1234567890. [id]: ../other-plan/plan.md\n";
+  const pseudoOutcome = rewrite(pseudo);
+  assert.equal(pseudoOutcome.text, pseudo);
+  assert.equal(pseudoOutcome.rewritten, 0);
+  const pseudoInline = "1234567890. [x](../other-plan/plan.md)\n";
+  assert.equal(rewrite(pseudoInline).rewritten, 1);
+  // Nine digits still open an item.
+  assert.equal(rewrite("123456789. [x](../other-plan/plan.md)\n").rewritten, 1);
+  // Five columns after the marker start indented code: protected.
+  const coded = "1.     [x](../other-plan/plan.md)\n";
+  const codedOutcome = rewrite(coded);
+  assert.equal(codedOutcome.text, coded);
+  assert.equal(codedOutcome.rewritten, 0);
+  // Four columns stay an ordinary item.
+  assert.equal(rewrite("1.    [x](../other-plan/plan.md)\n").rewritten, 1);
+});
+
 test("resolveLinkPath is POSIX-only and reports root escapes", () => {
   assert.equal(
     resolveLinkPath("plans/a", "../other/plan.md"),
