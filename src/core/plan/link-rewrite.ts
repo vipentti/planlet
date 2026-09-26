@@ -1065,15 +1065,15 @@ function splitProtectedSpans(
 }
 
 const REFERENCE_DEFINITION_PATTERN =
-  /^((?:[ \t]{0,3}> ?|[ \t]{0,3}(?:[-+*]|\d+[.)]) +)*[ \t]{0,3})(\[[^\]\n\\]*(?:\\.[^\]\n\\]*)*\]:[ \t]*)(<[^>\n]+>|[^\s]+)(?:(?=[ \t]*$)|(?=[ \t]+(?:"[^"\n\\]*(?:\\.[^"\n\\]*)*"|'[^'\n\\]*(?:\\.[^'\n\\]*)*'|\([^)\n\\]*(?:\\.[^)\n\\]*)*\))[ \t]*$))/gm;
+  /^((?:[ \t]{0,3}> ?|[ \t]{0,3}(?:[-+*]|\d+[.)]) +)*[ \t]{0,3})(\[[^\]\n\\]*(?:\\.[^\]\n\\]*)*\]:[ \t]*)(<[^>\n]+>|(?:[^\s()]|\([^()\s]*\))+)(?:(?=[ \t]*$)|(?=[ \t]+(?:"[^"\n\\]*(?:\\.[^"\n\\]*)*"|'[^'\n\\]*(?:\\.[^'\n\\]*)*'|\([^)\n\\]*(?:\\.[^)\n\\]*)*\))[ \t]*$))/gm;
 
 /** Matches a reference definition whose label spans two lines. */
 const MULTILINE_LABEL_DEFINITION_PATTERN =
-  /^((?:[ \t]{0,3}> ?|[ \t]{0,3}(?:[-+*]|\d+[.)]) +)*[ \t]{0,3})(\[(?:\\.|[^\]\\\r\n]|\r\n|\n(?!\n))*\]:[ \t]*)(<[^>\n]+>|[^\s]+)(?:(?=[ \t]*$)|(?=[ \t]+(?:"[^"\n\\]*(?:\\.[^"\n\\]*)*"|'[^'\n\\]*(?:\\.[^'\n\\]*)*'|\([^)\n\\]*(?:\\.[^)\n\\]*)*\))[ \t]*$))/;
+  /^((?:[ \t]{0,3}> ?|[ \t]{0,3}(?:[-+*]|\d+[.)]) +)*[ \t]{0,3})(\[(?:\\.|[^\]\\\r\n]|\r\n|\n(?!\n))*\]:[ \t]*)(<[^>\n]+>|(?:[^\s()]|\([^()\s]*\))+)(?:(?=[ \t]*$)|(?=[ \t]+(?:"[^"\n\\]*(?:\\.[^"\n\\]*)*"|'[^'\n\\]*(?:\\.[^'\n\\]*)*'|\([^)\n\\]*(?:\\.[^)\n\\]*)*\))[ \t]*$))/;
 
 /** Matches a reference definition whose destination sits on the next line. */
 const MULTILINE_DEFINITION_PATTERN =
-  /^((?:[ \t]{0,3}> ?|[ \t]{0,3}(?:[-+*]|\d+[.)]) +)*[ \t]{0,3})(\[[^\]\n\\]*(?:\\.[^\]\n\\]*)*\]:[ \t]*\n[ \t]+)(<[^>\n]+>|[^\s]+)(?:(?=[ \t]*$)|(?=[ \t]+(?:"[^"\n\\]*(?:\\.[^"\n\\]*)*"|'[^'\n\\]*(?:\\.[^'\n\\]*)*'|\([^)\n\\]*(?:\\.[^)\n\\]*)*\))[ \t]*$))/gm;
+  /^((?:[ \t]{0,3}> ?|[ \t]{0,3}(?:[-+*]|\d+[.)]) +)*[ \t]{0,3})(\[[^\]\n\\]*(?:\\.[^\]\n\\]*)*\]:[ \t]*\n[ \t]*)(<[^>\n]+>|(?:[^\s()]|\([^()\s]*\))+)(?:(?=[ \t]*$)|(?=[ \t]+(?:"[^"\n\\]*(?:\\.[^"\n\\]*)*"|'[^'\n\\]*(?:\\.[^'\n\\]*)*'|\([^)\n\\]*(?:\\.[^)\n\\]*)*\))[ \t]*$))/gm;
 
 interface InlineLinkMatch {
   readonly start: number;
@@ -1584,6 +1584,28 @@ function findReferenceDefinitions(
     /^[ \t]+(?:"[^"\n\\]*(?:\\.[^"\n\\]*)*"|'[^'\n\\]*(?:\\.[^'\n\\]*)*'|\([^)\n\\]*(?:\\.[^)\n\\]*)*\))[ \t]*$/;
   const titleOnlyLength = (lineBare: string): number | null =>
     titleOnlyPattern.test(lineBare) ? lineBare.length : null;
+  // A title on the following original line belongs to the definition,
+  // in raw form or container-stripped without new bullets. Returns the
+  // line when owned, or null.
+  const titleContinuationLine = (
+    following: string | null | undefined,
+  ): string | null => {
+    if (following === null || following === undefined) return null;
+    const followingBare = following.endsWith("\r")
+      ? following.slice(0, -1)
+      : following;
+    if (titleOnlyLength(followingBare) !== null) return following;
+    const strippedNext = stripContainers(followingBare, contentColumn);
+    if (strippedNext.consumedBullet) return null;
+    const stripped = strippedNext.content;
+    if (
+      titleOnlyLength(stripped) !== null ||
+      titleOnlyLength(` ${stripped}`) !== null
+    ) {
+      return following;
+    }
+    return null;
+  };
   for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
     const line = lines[lineIndex] ?? "";
     const lineStart = offset;
@@ -1661,17 +1683,12 @@ function findReferenceDefinitions(
         const destinationStart = lineStart + singleFirst.destinationLength;
         let end = lineStart + line.length;
         // A title on the following line belongs to the definition.
-        const titleNext =
-          lineIndex + 1 < lines.length ? lines[lineIndex + 1] : null;
-        const titleNextBare =
-          titleNext === null || titleNext === undefined
-            ? null
-            : titleNext.endsWith("\r")
-              ? titleNext.slice(0, -1)
-              : titleNext;
-        if (titleNextBare !== null && titleOnlyLength(titleNextBare) !== null) {
-          end += 1 + (titleNext ?? "").length;
-          offset += (titleNext ?? "").length + 1;
+        const titleLine = titleContinuationLine(
+          lineIndex + 1 < lines.length ? lines[lineIndex + 1] : null,
+        );
+        if (titleLine !== null) {
+          end += 1 + titleLine.length;
+          offset += titleLine.length + 1;
           lineIndex += 1;
         }
         matches.push({
@@ -1687,8 +1704,10 @@ function findReferenceDefinitions(
       para = { open: false, signature: null };
       continue;
     }
-    // A definition destination may sit on the next line: join the pair
-    // for matching.
+    // A definition destination may sit on the next line, plain or
+    // container-continued: strip the next line (without committing
+    // columns) and require nonblank content. Destination offsets
+    // resolve in original bytes via prefix lengths.
     const next = lineIndex + 1 < lines.length ? lines[lineIndex + 1] : null;
     const nextBare =
       next === null || next === undefined
@@ -1696,9 +1715,13 @@ function findReferenceDefinitions(
         : next.endsWith("\r")
           ? next.slice(0, -1)
           : next;
+    const nextStripped =
+      nextBare === null
+        ? null
+        : stripContainers(nextBare, contentColumn).content;
     const joined =
-      nextBare !== null && /^[ \t]+\S/.test(nextBare)
-        ? `${bare}\n${nextBare}`
+      nextBare !== null && nextStripped !== null && /\S/.test(nextStripped)
+        ? `${bare}\n${nextStripped}`
         : null;
     if (joined !== null) {
       const found = matchMultiline(joined);
@@ -1715,12 +1738,19 @@ function findReferenceDefinitions(
           );
           continue;
         }
+        // Destination offsets in original bytes: the stripped line is
+        // a suffix of the original, so the stripped prefix length maps
+        // back exactly (any trailing CR sits past the destination).
+        const nextStart = lineStart + line.length + 1;
+        const strippedPrefix =
+          (nextBare ?? "").length - (nextStripped ?? "").length;
+        const indent = /^[ \t]+/.exec(nextStripped ?? "")?.[0] ?? "";
+        const destinationStart = nextStart + strippedPrefix + indent.length;
         // When nothing but whitespace follows the destination, a
         // title may start on a later line and span lines: parse the
         // complete definition first so title bytes stay owned.
-        const restAfterDest = (nextBare ?? "").slice(
-          (/^[ \t]+/.exec(nextBare ?? "")?.[0] ?? "").length +
-            found.destination.length,
+        const restAfterDest = (nextStripped ?? "").slice(
+          indent.length + found.destination.length,
         );
         if (/^[ \t]*$/.test(restAfterDest)) {
           const continued = matchContinuedDefinition(
@@ -1746,27 +1776,14 @@ function findReferenceDefinitions(
           }
         }
         {
-          // Destination offsets in original bytes: the destination
-          // opens the next line after its leading whitespace.
-          const nextStart = lineStart + line.length + 1;
-          const indent = /^[ \t]+/.exec(nextBare ?? "")?.[0] ?? "";
-          const destinationStart = nextStart + indent.length;
           let end = nextStart + (next ?? "").length;
           // A title on the third line belongs to the definition.
-          const titleThird =
-            lineIndex + 2 < lines.length ? lines[lineIndex + 2] : null;
-          const titleThirdBare =
-            titleThird === null || titleThird === undefined
-              ? null
-              : titleThird.endsWith("\r")
-                ? titleThird.slice(0, -1)
-                : titleThird;
-          if (
-            titleThirdBare !== null &&
-            titleOnlyLength(titleThirdBare) !== null
-          ) {
-            end += 1 + (titleThird ?? "").length;
-            offset += (titleThird ?? "").length + 1;
+          const titleLine = titleContinuationLine(
+            lineIndex + 2 < lines.length ? lines[lineIndex + 2] : null,
+          );
+          if (titleLine !== null) {
+            end += 1 + titleLine.length;
+            offset += titleLine.length + 1;
             lineIndex += 1;
           }
           matches.push({

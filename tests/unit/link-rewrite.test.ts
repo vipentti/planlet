@@ -792,6 +792,27 @@ test("a CRLF multi-line label keeps later offsets exact", () => {
   assert.equal(outcome.rewritten, 2);
 });
 
+test("next-line destinations need no indentation, even quoted", () => {
+  for (const [input, want] of [
+    ["[id]:\n../other-plan/plan.md\n", "[id]:\n../../other-plan/plan.md\n"],
+    [
+      "> [id]:\n> ../other-plan/plan.md\n",
+      "> [id]:\n> ../../other-plan/plan.md\n",
+    ],
+  ] as const) {
+    const outcome = rewrite(input);
+    assert.equal(outcome.text, want);
+    assert.equal(outcome.rewritten, 1);
+  }
+});
+
+test("an unbalanced destination is not a definition", () => {
+  const input = "[id]: ../other-plan/foo).md\n";
+  const outcome = rewrite(input);
+  assert.equal(outcome.text, input);
+  assert.equal(outcome.rewritten, 0);
+});
+
 test("resolveLinkPath is POSIX-only and reports root escapes", () => {
   assert.equal(
     resolveLinkPath("plans/a", "../other/plan.md"),
