@@ -339,6 +339,12 @@ test("a quoted reference definition is recognized", () => {
   assert.ok(outcome.text.includes("> [id]: ../../other-plan/plan.md"));
 });
 
+test("a sibling block after a list keeps its own depth", () => {
+  const outcome = rewrite("- a\n> quoted [x](../other-plan/plan.md)\n");
+  assert.equal(outcome.text, "- a\n> quoted [x](../../other-plan/plan.md)\n");
+  assert.equal(outcome.rewritten, 1);
+});
+
 test("a paragraph, heading, then indented code protects the link", () => {
   const input = "Foo\n# H\n    [x](../other-plan/plan.md)\n";
   const outcome = rewrite(input);
@@ -389,6 +395,7 @@ test("escaped fragment and query punctuation resolve semantically", () => {
 test("nested quote/list fences protect code links", () => {
   for (const input of [
     "> > ```\n> > [x](../other-plan/plan.md)\n> > ```\n",
+    "> - ```\n>   [x](../other-plan/plan.md)\n>   ```\n",
     "- ```\n  [x](../other-plan/plan.md)\n  ```\n",
     "- item\n\n      [x](../other-plan/plan.md)\n",
   ]) {

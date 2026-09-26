@@ -284,18 +284,26 @@ function endsParagraph(line: string): boolean {
  * share that depth, so nested fences and code classify correctly at any
  * nesting depth.
  */
+interface ContainerColumn {
+  /** Container depth at which the list item opened. */
+  readonly depth: number;
+  /** Absolute content column of the item body. */
+  readonly column: number;
+}
+
 function stripContainers(
   line: string,
-  contentColumn: readonly number[] = [],
+  contentColumn: readonly ContainerColumn[] = [],
 ): {
   depth: number;
   content: string;
   /** Updated open item content columns after consuming this line. */
-  columns: number[];
+  columns: ContainerColumn[];
 } {
   let rest = line;
   let depth = 0;
-  const columns = [...contentColumn];
+  let columns = [...contentColumn];
+  let consumedBullet = false;
   for (;;) {
     const quote = /^ {0,3}> ?/.exec(rest);
     if (quote !== null) {
@@ -305,23 +313,36 @@ function stripContainers(
     }
     const bullet = /^ {0,3}(?:[-+*]|\d+[.)]) +/.exec(rest);
     if (bullet !== null) {
-      columns.push(line.length - rest.length + bullet[0].length);
+      // A new item closes open items at its depth or deeper.
+      columns = columns.filter((entry) => entry.depth < depth);
+      columns.push({
+        depth,
+        column: line.length - rest.length + bullet[0].length,
+      });
       rest = rest.slice(bullet[0].length);
       depth += 1;
+      consumedBullet = true;
       continue;
     }
     break;
   }
-  if (depth === 0 && columns.length > 0) {
-    const indent = line.length - line.replace(/^ */, "").length;
-    let shared = 0;
-    for (const column of columns) {
-      if (indent >= column) shared += 1;
-      else break;
-    }
-    if (shared > 0) {
-      depth = shared;
-      rest = line.slice(columns[shared - 1] ?? 0);
+  // Continuation lines share open item depths even after explicit outer
+  // containers: `>   content` inside `> - item` aligns to the stored
+  // list column relative to the current position. Entries from deeper
+  // containers never apply to shallower lines, so a sibling block after
+  // a list stays at its own depth.
+  if (!consumedBullet) {
+    for (const entry of columns) {
+      const position = line.length - rest.length;
+      if (entry.depth < depth) continue;
+      if (entry.column <= position) continue;
+      const need = entry.column - position;
+      if (rest.startsWith(" ".repeat(need)) && rest.length > need) {
+        rest = rest.slice(need);
+        depth += 1;
+      } else {
+        break;
+      }
     }
   }
   return { depth, content: rest, columns };
@@ -339,7 +360,7 @@ function splitProtectedSpans(
   let fenceDepth = 0;
   let paragraphOpen = false;
   let previousWasCode = true;
-  let contentColumn: number[] = [];
+  let contentColumn: ContainerColumn[] = [];
   const canStartIndentedCode = (): boolean => !paragraphOpen || previousWasCode;
   const flush = (
     protected_: boolean,
