@@ -127,13 +127,18 @@ function classifyDestinationPath(
   if (isExternalDestination(encodedPath)) {
     return { rewritten: null };
   }
-  // Split the query/fragment suffix before decoding: `%23` in the path
-  // is data, while a literal `#` starts the fragment.
+  // Split the query/fragment suffix on semantic delimiters: a `#` or
+  // `?` preceded by a backslash is escaped data (`\\#` denotes `#`),
+  // while `%23` in the path is data and a bare literal starts the
+  // fragment. Scan for the first unescaped delimiter.
   let pathEnd = encodedPath.length;
-  const hashIndex = encodedPath.indexOf("#");
-  const queryIndex = encodedPath.indexOf("?");
-  if (hashIndex !== -1) pathEnd = Math.min(pathEnd, hashIndex);
-  if (queryIndex !== -1) pathEnd = Math.min(pathEnd, queryIndex);
+  for (let scan = 0; scan < encodedPath.length; scan += 1) {
+    const char = encodedPath[scan];
+    if ((char === "#" || char === "?") && !isEscaped(encodedPath, scan)) {
+      pathEnd = scan;
+      break;
+    }
+  }
   const pathOnly = encodedPath.slice(0, pathEnd);
   // Decode Markdown backslash escapes first (`\\(` denotes `(`), then
   // percent-encoding: the filesystem holds the semantic path.

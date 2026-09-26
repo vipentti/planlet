@@ -12,6 +12,7 @@ const PLAN_DIR = "plans/link-plan";
 const EXISTING: LinkTargetExistence = {
   exists: (absolutePath) =>
     absolutePath.endsWith("plans/other-plan/plan.md") ||
+    absolutePath.endsWith("plans/other-plan/plan.md#section") ||
     absolutePath.endsWith("plans/other-plan/foo(bar).md") ||
     absolutePath.endsWith("plans/my docs/x.md"),
 };
@@ -377,6 +378,12 @@ test("escaped punctuation resolves to the semantic target", () => {
   const outcome = rewrite("[x](../other-plan/foo\\(bar\\).md)");
   assert.equal(outcome.text, "[x](../../other-plan/foo\\(bar\\).md)");
   assert.equal(outcome.rewritten, 1);
+});
+
+test("escaped fragment and query punctuation resolve semantically", () => {
+  const frag = rewrite("[x](../other-plan/plan.md\\#section)");
+  assert.equal(frag.text, "[x](../../other-plan/plan.md\\#section)");
+  assert.equal(frag.rewritten, 1);
 });
 
 test("resolveLinkPath is POSIX-only and reports root escapes", () => {
