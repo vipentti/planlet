@@ -601,6 +601,29 @@ test("a linked image rewrites both destinations", () => {
   assert.equal(outcome.rewritten, 2);
 });
 
+test("a title on the third line stays definition-owned", () => {
+  const input =
+    '[id]:\n  ../other-plan/plan.md\n  "Title [x](../other-plan/plan.md)"\n';
+  const outcome = rewrite(input);
+  assert.equal(
+    outcome.text,
+    '[id]:\n  ../../other-plan/plan.md\n  "Title [x](../other-plan/plan.md)"\n',
+  );
+  assert.equal(outcome.rewritten, 1);
+});
+
+test("a title spanning lines owns the whole definition", () => {
+  for (const input of [
+    '[id]:\n  ../other-plan/plan.md "Ti\ntle"\n',
+    '[id]: ../other-plan/plan.md "Ti\ntle"\n',
+  ]) {
+    const outcome = rewrite(input);
+    assert.ok(outcome.text.includes("../../other-plan/plan.md"));
+    assert.ok(outcome.text.includes('"Ti\ntle"'));
+    assert.equal(outcome.rewritten, 1);
+  }
+});
+
 test("resolveLinkPath is POSIX-only and reports root escapes", () => {
   assert.equal(
     resolveLinkPath("plans/a", "../other/plan.md"),

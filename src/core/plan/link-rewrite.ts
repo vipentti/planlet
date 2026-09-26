@@ -644,6 +644,12 @@ const REFERENCE_DEFINITION_PATTERN =
 const MULTILINE_LABEL_DEFINITION_PATTERN =
   /^((?:[ \t]{0,3}> ?|[ \t]{0,3}(?:[-+*]|\d+[.)]) +)*[ \t]{0,3})(\[(?:\\.|[^\]\\\r\n]|\r\n|\n(?!\n))*\]:[ \t]*)(<[^>\n]+>|[^\s]+)(?:(?=[ \t]*$)|(?=[ \t]+(?:"[^"\n\\]*(?:\\.[^"\n\\]*)*"|'[^'\n\\]*(?:\\.[^'\n\\]*)*'|\([^)\n\\]*(?:\\.[^)\n\\]*)*\))[ \t]*$))/;
 
+/** Matches a definition whose title starts unclosed on the destination
+ * line and closes on a later nonblank line. Groups: (container)(label +
+ * colon)(separator)(destination)(separator)(title). */
+const CONTINUED_TITLE_DEFINITION_PATTERN =
+  /^((?:[ \t]{0,3}> ?|[ \t]{0,3}(?:[-+*]|\d+[.)]) +)*[ \t]{0,3})(\[(?:\\.|[^\]\\\r\n]|\r\n|\n(?!\n))*\]:)([ \t]*(?:\r\n|\n)?[ \t]*)(<[^>\n]+>|[^\s]+)([ \t]*(?:\r\n|\n)?[ \t]*)((?:"(?:\\.|[^"\n\\]|\r\n|\n(?!\n))*"|'(?:\\.|[^'\n\\]|\r\n|\n(?!\n))*'|\((?:\\.|[^)\n\\]|\r\n|\n(?!\n))*\)))(?=[ \t]*(?:\r\n|\n|$))/;
+
 /** Matches a reference definition whose destination sits on the next line. */
 const MULTILINE_DEFINITION_PATTERN =
   /^((?:[ \t]{0,3}> ?|[ \t]{0,3}(?:[-+*]|\d+[.)]) +)*[ \t]{0,3})(\[[^\]\n\\]*(?:\\.[^\]\n\\]*)*\]:[ \t]*\n[ \t]+)(<[^>\n]+>|[^\s]+)(?:(?=[ \t]*$)|(?=[ \t]+(?:"[^"\n\\]*(?:\\.[^"\n\\]*)*"|'[^'\n\\]*(?:\\.[^'\n\\]*)*'|\([^)\n\\]*(?:\\.[^)\n\\]*)*\))[ \t]*$))/gm;
@@ -1217,10 +1223,28 @@ function findReferenceDefinitions(
           const nextStart = lineStart + line.length + 1;
           const indent = /^[ \t]+/.exec(nextBare ?? "")?.[0] ?? "";
           const destinationStart = nextStart + indent.length;
+          let end = nextStart + (next ?? "").length;
+          // A title on the third line belongs to the definition.
+          const titleThird =
+            lineIndex + 2 < lines.length ? lines[lineIndex + 2] : null;
+          const titleThirdBare =
+            titleThird === null || titleThird === undefined
+              ? null
+              : titleThird.endsWith("\r")
+                ? titleThird.slice(0, -1)
+                : titleThird;
+          if (
+            titleThirdBare !== null &&
+            titleOnlyLength(titleThirdBare) !== null
+          ) {
+            end += 1 + (titleThird ?? "").length;
+            offset += (titleThird ?? "").length + 1;
+            lineIndex += 1;
+          }
           matches.push({
             start: lineStart,
             // Original bytes: both lines plus the line ending between.
-            end: nextStart + (next ?? "").length,
+            end,
             destinationStart,
             destinationEnd: destinationStart + found.destination.length,
             destination: found.destination,
@@ -1269,8 +1293,54 @@ function findReferenceDefinitions(
         }
       }
     }
-    // Shared endsParagraph model: headings, breaks, and blanks end
-    // the paragraph just like in the block splitter.
+    // A title that starts unclosed on the destination line and closes
+    // on a later nonblank line: match the whole block in original
+    // bytes so the title stays definition-owned. Runs only when the
+    // strict single/multiline paths above found nothing.
+    {
+      // Rebuild the tail in original bytes from this line onward
+      // (capped: titles cannot usefully span more).
+      let tail = lines[lineIndex] ?? "";
+      for (
+        let tailIndex = lineIndex + 1;
+        tailIndex < lines.length && tailIndex <= lineIndex + 8;
+        tailIndex += 1
+      ) {
+        const previous = lines[tailIndex - 1] ?? "";
+        tail += `${previous.endsWith("\r") ? "\r\n" : "\n"}${lines[tailIndex] ?? ""}`;
+      }
+      CONTINUED_TITLE_DEFINITION_PATTERN.lastIndex = 0;
+      const continued = CONTINUED_TITLE_DEFINITION_PATTERN.exec(tail);
+      CONTINUED_TITLE_DEFINITION_PATTERN.lastIndex = 0;
+      if (continued !== null) {
+        const matched = continued[0] ?? "";
+        if (!open) {
+          const container = continued[1] ?? "";
+          const label = continued[2] ?? "";
+          const separator = continued[3] ?? "";
+          const destination = continued[4] ?? "";
+          const destinationStart =
+            lineStart + container.length + label.length + separator.length;
+          matches.push({
+            start: lineStart,
+            end: lineStart + matched.length,
+            destinationStart,
+            destinationEnd: destinationStart + destination.length,
+            destination,
+          });
+        }
+        // Consume the covered lines (the current line was already
+        // counted at the top of the loop).
+        const covered = countLineEndings(tail, 0, matched.length);
+        for (let step = 0; step < covered; step += 1) {
+          lineIndex += 1;
+          const consumed = lines[lineIndex] ?? "";
+          offset += consumed.length + 1;
+        }
+        open = false;
+        continue;
+      }
+    }
     if (/^(?: {4}|\t)/.test(bare)) open = false;
     else if (endsParagraph(bare)) open = false;
     else open = true;
