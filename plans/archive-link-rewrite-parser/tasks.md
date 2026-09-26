@@ -1,6 +1,6 @@
 # Tasks: Archive Link Rewrite With a Markdown Parser
 
-- [ ] T1 Add the pinned parser devDependencies and the pure `link-rewrite.ts` module with the unit test matrix.
+- [x] T1 Add the pinned parser devDependencies and the pure `link-rewrite.ts` module with the unit test matrix.
   - Verify: `npx tsx --test tests/unit/link-rewrite.test.ts` and `npm run knip`.
 - [ ] T2 Wire the rewrite into fresh and resume completion with atomic publishes, warnings, and integration tests.
   - Verify: `npx tsx --test tests/integration/completion.test.ts`.
