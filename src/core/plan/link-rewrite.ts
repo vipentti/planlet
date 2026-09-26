@@ -1936,6 +1936,10 @@ function matchContinuedDefinition(
   destination: string;
   extraLines: number;
 } | null {
+  interface View {
+    readonly stripped: string;
+    readonly prefix: number;
+  }
   const bareAt = (index: number): string | null => {
     const raw = lines[index];
     if (raw === undefined) return null;
@@ -1948,72 +1952,67 @@ function matchContinuedDefinition(
     }
     return start;
   };
-  const isBlank = (bare: string): boolean => /^[ \t]*$/.test(bare);
-  // Strip one line for grammar with fresh columns (explicit markers
-  // only). Returns null when the line opens a new list item, which
-  // ends any continued construct. Prefix maps stripped columns back
-  // to bare columns (both CR-free, so identical widths).
-  const stripLine = (
-    index: number,
-  ): { stripped: string; prefix: number } | null => {
+  const isBlank = (stripped: string): boolean => /^[ \t]*$/.test(stripped);
+  // Container-stripped view of one line with fresh columns (explicit
+  // markers only). Unlike stripView below, bullets are kept: the
+  // caller decides whether they abort.
+  const stripFresh = (index: number): (View & { bullet: boolean }) | null => {
     const bare = bareAt(index);
     if (bare === null) return null;
     const stripped = stripContainers(bare, []);
-    if (stripped.consumedBullet) return null;
     return {
       stripped: stripped.content,
       prefix: bare.length - stripped.content.length,
+      bullet: stripped.consumedBullet,
     };
   };
-  // Cursor over (line, bare column); original offsets derive from
-  // origStart plus the same column (content never spans the CR).
+  // Cursor over stripped lines with original-byte mapping.
   let cursorLine = lineIndex;
+  let current = stripFresh(cursorLine);
+  if (current === null) return null;
   let cursorCol = 0;
-  // Cross exactly one nonblank line ending; false at EOF or blanks.
+  // Cross exactly one nonblank line ending; false at EOF, blanks, or
+  // lines opening a new list item (which ends the construct).
   const crossBreak = (): boolean => {
-    const bare = bareAt(cursorLine);
-    if (bare === null || cursorCol < bare.length) return false;
-    const nextBare = bareAt(cursorLine + 1);
-    if (nextBare === null || isBlank(nextBare)) return false;
+    const next = stripFresh(cursorLine + 1);
+    if (next === null || next.bullet) return false;
+    if (isBlank(next.stripped)) return false;
     cursorLine += 1;
+    current = next;
     cursorCol = 0;
     return true;
   };
   // Skip spaces, tabs, and single nonblank breaks.
   const skipSeparators = (): boolean => {
     for (;;) {
-      const bare = bareAt(cursorLine);
-      if (bare === null) return false;
+      // Re-read through a guarded local: crossBreak reassigns the
+      // shared cursor view below.
+      const currentView = current;
+      if (currentView === null) return false;
       while (
-        cursorCol < bare.length &&
-        (bare[cursorCol] === " " || bare[cursorCol] === "\t")
+        cursorCol < currentView.stripped.length &&
+        (currentView.stripped[cursorCol] === " " ||
+          currentView.stripped[cursorCol] === "\t")
       ) {
         cursorCol += 1;
       }
-      if (cursorCol < bare.length) return true;
+      if (cursorCol < currentView.stripped.length) return true;
       if (!crossBreak()) return false;
     }
   };
-  // First line containers come from the caller-visible strip; redo
-  // cheaply here for grammar (bullets allowed on the first line).
-  const first = stripLine(cursorLine);
-  if (first === null) return null;
-  cursorCol = first.prefix;
-  const firstBare = bareAt(cursorLine);
-  if (firstBare === null) return null;
   // Up to three spaces before the label (deeper is indented code,
   // handled by the caller skipping code lines).
-  const indent = /^ {0,3}/.exec(firstBare.slice(cursorCol))?.[0] ?? "";
-  cursorCol += indent.length;
+  {
+    const indent = /^ {0,3}/.exec(current.stripped.slice(cursorCol))?.[0] ?? "";
+    cursorCol += indent.length;
+  }
   // Label: '[' ... ']' with escapes and soft breaks (never blanks).
-  if ((bareAt(cursorLine) ?? "")[cursorCol] !== "[") return null;
+  if (current.stripped[cursorCol] !== "[") return null;
   cursorCol += 1;
   let closedLabel = false;
   for (;;) {
-    const bare = bareAt(cursorLine);
-    if (bare === null) return null;
-    while (cursorCol < bare.length) {
-      const char = bare[cursorCol] ?? "";
+    while (cursorCol < current.stripped.length) {
+      const char = current.stripped[cursorCol] ?? "";
       if (char === "\\") {
         cursorCol += 2;
         continue;
@@ -2029,27 +2028,25 @@ function matchContinuedDefinition(
     if (!crossBreak()) return null;
   }
   // Colon immediately after the label.
-  const colonBare = bareAt(cursorLine);
-  if (colonBare === null || colonBare[cursorCol] !== ":") return null;
+  if (current.stripped[cursorCol] !== ":") return null;
   cursorCol += 1;
   if (!skipSeparators()) return null;
   // Destination: angled (same line only) or a balanced-paren run
-  // (unbounded depth, single line).
-  const destBare = bareAt(cursorLine);
-  if (destBare === null) return null;
+  // (unbounded depth, single line). Snapshot its original range now.
   const destLine = cursorLine;
+  const destPrefix = current.prefix;
   let destinationStartCol = cursorCol;
   let destinationEndCol = cursorCol;
-  if (destBare[cursorCol] === "<") {
-    const close = destBare.indexOf(">", cursorCol + 1);
+  if (current.stripped[cursorCol] === "<") {
+    const close = current.stripped.indexOf(">", cursorCol + 1);
     if (close === -1) return null;
     destinationStartCol = cursorCol + 1;
     destinationEndCol = close;
     cursorCol = close + 1;
   } else {
     let depth = 0;
-    while (cursorCol < destBare.length) {
-      const char = destBare[cursorCol] ?? "";
+    while (cursorCol < current.stripped.length) {
+      const char = current.stripped[cursorCol] ?? "";
       if (char === " " || char === "\t") break;
       if (char === "\\") {
         cursorCol += 2;
@@ -2065,74 +2062,77 @@ function matchContinuedDefinition(
     if (cursorCol === destinationStartCol || depth !== 0) return null;
     destinationEndCol = cursorCol;
   }
-  const destStart = origStart(destLine) + destinationStartCol;
-  const destEnd = origStart(destLine) + destinationEndCol;
-  const destination = destBare.slice(destinationStartCol, destinationEndCol);
-  // Title or end of line: if only whitespace remains on this line, a
-  // title may start on a later nonblank line; otherwise an opener
-  // must start here. Either way the title (when present) scans to
-  // its closer across nonblank lines plus whitespace-only to EOL.
-  const restBare = bareAt(cursorLine) ?? "";
+  const destinationStart =
+    origStart(destLine) + destPrefix + destinationStartCol;
+  const destinationEnd = origStart(destLine) + destPrefix + destinationEndCol;
+  const destination = current.stripped.slice(
+    destinationStartCol,
+    destinationEndCol,
+  );
+  // Title or end of definition: if only whitespace remains on this
+  // line, a title may start on a later nonblank line; otherwise an
+  // opener must start here. Without a title ahead, the title-less
+  // definition ends at the destination line.
   const restIsWs =
-    cursorCol >= restBare.length || /^[ \t]*$/.test(restBare.slice(cursorCol));
+    cursorCol >= current.stripped.length ||
+    /^[ \t]*$/.test(current.stripped.slice(cursorCol));
   if (restIsWs) {
     // Peek a later line for a title opener without consuming yet.
     let peekLine = cursorLine;
+    let peekView = current;
     let peekCol = cursorCol;
     for (;;) {
-      const peekBare = bareAt(peekLine);
-      if (peekBare === null) break;
       while (
-        peekCol < peekBare.length &&
-        (peekBare[peekCol] === " " || peekBare[peekCol] === "\t")
+        peekCol < peekView.stripped.length &&
+        (peekView.stripped[peekCol] === " " ||
+          peekView.stripped[peekCol] === "\t")
       ) {
         peekCol += 1;
       }
-      if (peekCol < peekBare.length) break;
-      const peekNext = bareAt(peekLine + 1);
-      if (peekNext === null || /^[ \t]*$/.test(peekNext)) break;
+      if (peekCol < peekView.stripped.length) break;
+      const peekNext = stripFresh(peekLine + 1);
+      if (peekNext === null || peekNext.bullet) break;
+      if (isBlank(peekNext.stripped)) break;
       peekLine += 1;
+      peekView = peekNext;
       peekCol = 0;
     }
-    const peekBare = bareAt(peekLine);
-    const peekOpener =
-      peekBare !== null && peekCol < peekBare.length
-        ? (peekBare[peekCol] ?? "")
-        : "";
+    const peekOpener = peekView.stripped[peekCol] ?? "";
     if (peekOpener !== '"' && peekOpener !== "'" && peekOpener !== "(") {
-      // No title ahead: title-less definition ends at the destination
-      // line (whose remainder is whitespace-only by construction).
       const end = origStart(cursorLine) + (lines[cursorLine] ?? "").length;
       return {
         end,
-        destinationStart: destStart,
-        destinationEnd: destEnd,
+        destinationStart,
+        destinationEnd,
         destination,
         extraLines: cursorLine - lineIndex,
       };
     }
     cursorLine = peekLine;
+    current = peekView;
     cursorCol = peekCol;
   }
-  const titleBare = bareAt(cursorLine);
-  if (titleBare === null) return null;
   while (
-    cursorCol < titleBare.length &&
-    (titleBare[cursorCol] === " " || titleBare[cursorCol] === "\t")
+    cursorCol < current.stripped.length &&
+    (current.stripped[cursorCol] === " " ||
+      current.stripped[cursorCol] === "\t")
   ) {
     cursorCol += 1;
   }
-  if (cursorCol >= titleBare.length) return null;
-  const opener = titleBare[cursorCol] ?? "";
-  if (opener !== '"' && opener !== "'" && opener !== "(") return null;
+  if (
+    current.stripped[cursorCol] !== '"' &&
+    current.stripped[cursorCol] !== "'" &&
+    current.stripped[cursorCol] !== "("
+  ) {
+    return null;
+  }
+  const opener = current.stripped[cursorCol] ?? "";
   const closer = opener === "(" ? ")" : opener;
   cursorCol += 1;
   let closedTitle = false;
   for (;;) {
-    const bare = bareAt(cursorLine);
-    if (bare === null) return null;
-    while (cursorCol < bare.length) {
-      const char = bare[cursorCol] ?? "";
+    while (cursorCol < current.stripped.length) {
+      const char = current.stripped[cursorCol] ?? "";
       if (char === "\\") {
         cursorCol += 2;
         continue;
@@ -2147,26 +2147,25 @@ function matchContinuedDefinition(
     if (closedTitle) break;
     if (!crossBreak()) return null;
   }
-  // After the closer, only whitespace may remain on the line: the
-  // title must end its line (no crossing needed here).
-  const endBare = bareAt(cursorLine);
-  if (endBare === null) return null;
+  // After the closer, only whitespace may remain on the line.
   while (
-    cursorCol < endBare.length &&
-    (endBare[cursorCol] === " " || endBare[cursorCol] === "\t")
+    cursorCol < current.stripped.length &&
+    (current.stripped[cursorCol] === " " ||
+      current.stripped[cursorCol] === "\t")
   ) {
     cursorCol += 1;
   }
-  if (cursorCol < endBare.length) return null;
+  if (cursorCol < current.stripped.length) return null;
   const end = origStart(cursorLine) + (lines[cursorLine] ?? "").length;
   return {
     end,
-    destinationStart: destStart,
-    destinationEnd: destEnd,
+    destinationStart,
+    destinationEnd,
     destination,
     extraLines: cursorLine - lineIndex,
   };
 }
+
 /**
  * Rewrites escaping relative link destinations for the archived depth.
  * `planDir` is the repository-relative active plan directory
