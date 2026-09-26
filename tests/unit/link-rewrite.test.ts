@@ -993,6 +993,36 @@ test("destinations resolve escapes and entities before lookup", () => {
   assert.equal(rewrite(rawInner).text, rawInner);
 });
 
+test("item columns count visual columns with tab stops", () => {
+  // `- ` plus a tab puts content at visual column 4: a seven-space
+  // continuation is paragraph text, not code.
+  const tabbed = "- \titem\n       [x](../other-plan/plan.md)\n";
+  const tabbedOutcome = rewrite(tabbed);
+  assert.equal(tabbedOutcome.rewritten, 1);
+  assert.ok(tabbedOutcome.text.includes("[x](../../other-plan/plan.md)"));
+  // Blank-first content aligns at marker width plus one: a six-space
+  // continuation past `- ` is indented code.
+  const blankFirst = "-   \n      [x](../other-plan/plan.md)\n";
+  const blankFirstOutcome = rewrite(blankFirst);
+  assert.equal(blankFirstOutcome.text, blankFirst);
+  assert.equal(blankFirstOutcome.rewritten, 0);
+});
+
+test("blank lines suspend lists but end quotes", () => {
+  // Loose-list continuation stays paragraph content in the item.
+  const loose = "- item\n\n    [x](../other-plan/plan.md)\n";
+  const looseOutcome = rewrite(loose);
+  assert.equal(looseOutcome.rewritten, 1);
+  assert.ok(looseOutcome.text.includes("[x](../../other-plan/plan.md)"));
+  // An unmarked blank ends the quote, so its fence dies with it.
+  const quote = "> ```\n\n> [x](../other-plan/plan.md)\n> ```\n";
+  const quoteOutcome = rewrite(quote);
+  assert.equal(quoteOutcome.rewritten, 1);
+  // An unindented paragraph still ends the list for later code.
+  const ended = "- item\n\nfoo\n\n    [x](../other-plan/plan.md)\n";
+  assert.equal(rewrite(ended).text, ended);
+});
+
 test("resolveLinkPath is POSIX-only and reports root escapes", () => {
   assert.equal(
     resolveLinkPath("plans/a", "../other/plan.md"),

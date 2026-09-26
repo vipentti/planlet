@@ -10,6 +10,8 @@
  * archived-depth links, and dangling links are left byte-identical.
  */
 
+import { HTML_ENTITIES } from "./html-entities.js";
+
 export interface LinkRewriteOutcome {
   readonly text: string;
   /** Number of link destinations rewritten. */
@@ -128,46 +130,36 @@ function findAngledEnd(text: string, from: number): number {
   return -1;
 }
 
-// Common named entities for destination lookup (HTML5 defines thousands;
-// these cover the paths and punctuation links meet in practice).
-const NAMED_ENTITIES: Record<string, string> = {
-  amp: "&",
-  lt: "<",
-  gt: ">",
-  quot: '"',
-  apos: "'",
-  nbsp: "\u00a0",
-  copy: "\u00a9",
-  reg: "\u00ae",
-  trade: "\u2122",
-  hellip: "\u2026",
-  mdash: "\u2014",
-  ndash: "\u2013",
-  laquo: "\u00ab",
-  raquo: "\u00bb",
-  deg: "\u00b0",
-  plusmn: "\u00b1",
-  times: "\u00d7",
-  divide: "\u00f7",
-  frac12: "\u00bd",
-  frac14: "\u00bc",
-  frac34: "\u00be",
-  iexcl: "\u00a1",
-  iquest: "\u00bf",
-  sect: "\u00a7",
-  para: "\u00b6",
-  middot: "\u00b7",
-  bull: "\u2022",
-  dagger: "\u2020",
-  Dagger: "\u2021",
-  prime: "\u2032",
-  Prime: "\u2033",
-  lsquo: "\u2018",
-  rsquo: "\u2019",
-  ldquo: "\u201c",
-  rdquo: "\u201d",
-  sbquo: "\u201a",
-  bdquo: "\u201e",
+// HTML numeric-reference replacements for the C1 control range:
+// these code points decode to Windows-1252 characters instead.
+const NUMERIC_REPLACEMENTS: Record<number, string> = {
+  0x80: "\u20ac",
+  0x82: "\u201a",
+  0x83: "\u0192",
+  0x84: "\u201e",
+  0x85: "\u2026",
+  0x86: "\u2020",
+  0x87: "\u2021",
+  0x88: "\u02c6",
+  0x89: "\u2030",
+  0x8a: "\u0160",
+  0x8b: "\u2039",
+  0x8c: "\u0152",
+  0x8e: "\u017d",
+  0x91: "\u2018",
+  0x92: "\u2019",
+  0x93: "\u201c",
+  0x94: "\u201d",
+  0x95: "\u2022",
+  0x96: "\u2013",
+  0x97: "\u2014",
+  0x98: "\u02dc",
+  0x99: "\u2122",
+  0x9a: "\u0161",
+  0x9b: "\u203a",
+  0x9c: "\u0153",
+  0x9e: "\u017e",
+  0x9f: "\u0178",
 };
 
 /** Decodes one numeric entity body (`#38`, `#x26`) to its character. */
@@ -176,12 +168,12 @@ function decodeNumericEntity(body: string): string | null {
     body.startsWith("#x") || body.startsWith("#X")
       ? Number.parseInt(body.slice(2), 16)
       : Number.parseInt(body.slice(1), 10);
-  if (
-    Number.isNaN(code) ||
-    code <= 0 ||
-    code > 0x10ffff ||
-    (code >= 0xd800 && code <= 0xdfff)
-  ) {
+  if (Number.isNaN(code) || code === 0) {
+    return "\uFFFD";
+  }
+  const replacement = NUMERIC_REPLACEMENTS[code];
+  if (replacement !== undefined) return replacement;
+  if (code > 0x10ffff || (code >= 0xd800 && code <= 0xdfff)) {
     return "\uFFFD";
   }
   try {
@@ -219,7 +211,7 @@ function decodeDestinationText(encodedPath: string): string {
         // unknown named references stay literal text.
         const decoded = body.startsWith("#")
           ? decodeNumericEntity(body)
-          : (NAMED_ENTITIES[body] ?? null);
+          : (HTML_ENTITIES[`${body};`] ?? null);
         if (decoded !== null) {
           out += decoded;
           index += entity[0].length;
@@ -744,8 +736,17 @@ function isValidContainerPrefix(container: string): boolean {
 interface ContainerColumn {
   /** Container depth at which the list item opened. */
   readonly depth: number;
-  /** Absolute content column of the item body. */
+  /** Visual content column of the item body (tabs expand to stops). */
   readonly column: number;
+}
+
+/** Visual column of `line` at `index`: tabs advance to 4-stops. */
+function visualColumn(line: string, index: number): number {
+  let column = 0;
+  for (let i = 0; i < index && i < line.length; i += 1) {
+    column += line[i] === "\t" ? 4 - (column % 4) : 1;
+  }
+  return column;
 }
 
 /**
@@ -839,7 +840,7 @@ function stripContainers(
         const contentSkip = marker.gapStart + 1;
         columns.push({
           depth,
-          column: line.length - rest.length + contentSkip,
+          column: visualColumn(line, line.length - rest.length + contentSkip),
         });
         rest = rest.slice(contentSkip);
         depth += 1;
@@ -848,9 +849,14 @@ function stripContainers(
         consumedBullet = true;
         break;
       }
+      // An empty item aligns its content at marker width plus one,
+      // whatever trailing whitespace the marker line holds.
+      const emptyItem = /^[ \t]*$/.test(rest.slice(marker.gapEnd));
       columns.push({
         depth,
-        column: line.length - rest.length + marker.gapEnd,
+        column: emptyItem
+          ? visualColumn(line, line.length - rest.length + marker.gapStart) + 1
+          : visualColumn(line, line.length - rest.length + marker.gapEnd),
       });
       rest = rest.slice(marker.gapEnd);
       depth += 1;
@@ -867,18 +873,28 @@ function stripContainers(
   // containers never apply to shallower lines, so a sibling block after
   // a list stays at its own depth.
   if (!consumedBullet) {
+    let visualPos = visualColumn(line, line.length - rest.length);
     for (const entry of columns) {
-      const position = line.length - rest.length;
       if (entry.depth < depth) continue;
-      if (entry.column <= position) continue;
-      const need = entry.column - position;
-      if (rest.startsWith(" ".repeat(need)) && rest.length > need) {
-        rest = rest.slice(need);
-        depth += 1;
-        kinds.push("list");
-      } else {
+      if (entry.column <= visualPos) continue;
+      // Consume spaces and tabs by columns; a straddling tab counts
+      // whole, erring toward the item.
+      let consumed = 0;
+      let reached = visualPos;
+      while (
+        reached < entry.column &&
+        (rest[consumed] === " " || rest[consumed] === "\t")
+      ) {
+        reached += rest[consumed] === "\t" ? 4 - (reached % 4) : 1;
+        consumed += 1;
+      }
+      if (reached < entry.column || rest.length <= consumed) {
         break;
       }
+      rest = rest.slice(consumed);
+      visualPos = reached;
+      depth += 1;
+      kinds.push("list");
     }
   }
   return {
@@ -890,6 +906,29 @@ function stripContainers(
     consumedBullet,
     bulletColumn,
   };
+}
+
+/**
+ * True when list ownership survives a blank line: the next nonblank
+ * line, stripped with the live columns, must align strictly deeper
+ * than with fresh ones. Quotes always end at a bare blank (their
+ * markers are explicit or absent), so only lists suspend.
+ */
+function blankKeepsColumns(
+  lines: readonly string[],
+  lineIndex: number,
+  contentColumn: readonly ContainerColumn[],
+): boolean {
+  if (contentColumn.length === 0) return false;
+  for (let next = lineIndex + 1; next < lines.length; next += 1) {
+    const raw = lines[next] ?? "";
+    const bare = raw.endsWith("\r") ? raw.slice(0, -1) : raw;
+    if (/^[ \t]*$/.test(bare)) continue;
+    const fresh = stripContainers(bare, [], false).content;
+    const live = stripContainers(bare, contentColumn, false).content;
+    return live.length < fresh.length;
+  }
+  return false;
 }
 
 function splitProtectedSpans(
@@ -913,12 +952,18 @@ function splitProtectedSpans(
   let previousWasCode = true;
   let contentColumn: ContainerColumn[] = [];
   const canStartIndentedCode = (): boolean => !para.open || previousWasCode;
-  /** Content column of the innermost list item enclosing a marker
-   * column: the greatest open item column at or before it, if any. */
-  const enclosingItemColumn = (markerColumn: number): number | null => {
+  /** Visual content column of the innermost list item enclosing a
+   * marker: the greatest open item column at or before it, if any.
+   * Marker columns stay char-based (markers live in the tab-free
+   * prefix zone, where chars and columns coincide). */
+  const enclosingItemColumn = (
+    line: string,
+    markerColumn: number,
+  ): number | null => {
+    const visual = visualColumn(line, markerColumn);
     let found: number | null = null;
     for (const entry of contentColumn) {
-      if (entry.column <= markerColumn) found = entry.column;
+      if (entry.column <= visual) found = entry.column;
       else break;
     }
     return found;
@@ -1023,11 +1068,21 @@ function splitProtectedSpans(
         continue;
       }
     }
-    // A blank line never closes a fenced block: it stays literal
-    // content with ownership retained.
+    // A blank line keeps a fenced block only with its containers:
+    // bare blanks end quotes (closing quote-contained fences) while
+    // lists suspend, and marked blanks must still align.
     if (inFence && bare.trim().length === 0) {
-      current += withNewline;
-      continue;
+      const quoteInFence = fenceKinds.includes("quote");
+      const keepsQuotes = explicitKinds.includes("quote");
+      const kindsMatch =
+        containerPrefixMatches(kinds, fenceKinds) && depth >= fenceKinds.length;
+      const survive = quoteInFence
+        ? keepsQuotes && kindsMatch
+        : explicitKinds.length === 0 || kindsMatch;
+      if (survive) {
+        current += withNewline;
+        continue;
+      }
     }
     // Fence openers allow at most three leading spaces past the
     // container; deeper indentation is indented code, never a fence.
@@ -1050,7 +1105,10 @@ function splitProtectedSpans(
         inFence = true;
         fenceMarker = marker;
         fenceKinds = [...kinds];
-        fenceItemColumn = enclosingItemColumn(bare.length - stripped.length);
+        fenceItemColumn = enclosingItemColumn(
+          bare,
+          bare.length - stripped.length,
+        );
         flush(false, current);
         current = withNewline;
         para = { open: false, signature: null };
@@ -1130,7 +1188,10 @@ function splitProtectedSpans(
       inFence = true;
       fenceMarker = marker;
       fenceKinds = [...kinds];
-      fenceItemColumn = enclosingItemColumn(bare.length - stripped.length);
+      fenceItemColumn = enclosingItemColumn(
+        bare,
+        bare.length - stripped.length,
+      );
       flush(false, current);
       current = withNewline;
       para = { open: false, signature: null };
@@ -1159,7 +1220,10 @@ function splitProtectedSpans(
         flush(false, current);
         current = withNewline;
         inHtmlBlock = htmlOpen;
-        htmlItemColumn = enclosingItemColumn(bare.length - stripped.length);
+        htmlItemColumn = enclosingItemColumn(
+          bare,
+          bare.length - stripped.length,
+        );
         htmlKinds = [...kinds];
         htmlDepth = depth;
         para = { open: false, signature: null };
@@ -1201,9 +1265,15 @@ function splitProtectedSpans(
       );
       previousWasCode = false;
     }
-    // A blank line closes open list items; other boundaries keep the
-    // item open for lazy continuation lines.
-    if (bare.trim().length === 0) contentColumn = [];
+    // A blank line ends lists unless the next nonblank line still
+    // aligns into an open item; other boundaries keep the item open
+    // for lazy continuation lines.
+    if (
+      bare.trim().length === 0 &&
+      !blankKeepsColumns(lines, index, contentColumn)
+    ) {
+      contentColumn = [];
+    }
     current += withNewline;
   }
   flush(
@@ -1961,7 +2031,12 @@ function findReferenceDefinitions(
     // continuation text, while a new list item starts fresh.
     const strippedContainers = stripContainers(bare, contentColumn, para.open);
     contentColumn = strippedContainers.columns;
-    if (bare.trim().length === 0) contentColumn = [];
+    if (
+      bare.trim().length === 0 &&
+      !blankKeepsColumns(lines, lineIndex, contentColumn)
+    ) {
+      contentColumn = [];
+    }
     const stripped = strippedContainers.content;
     const kinds = strippedContainers.kinds;
     const explicitKinds = strippedContainers.explicitKinds;

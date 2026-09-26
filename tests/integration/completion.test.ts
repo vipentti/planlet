@@ -463,6 +463,37 @@ test("completion rewrites entity and escaped-fragment links against real files",
   });
 });
 
+test("completion decodes entities and numeric references against real files", () => {
+  withRepository(COMPLETE_TASKS, (root) => {
+    const other = join(root, "plans", "oth\u00e9r-plan");
+    mkdirSync(other, { recursive: true });
+    writeFileSync(join(other, "plan.md"), "# Other Plan\n");
+    const euro = join(root, "plans", "\u20ac-plan");
+    mkdirSync(euro, { recursive: true });
+    writeFileSync(join(euro, "plan.md"), "# Euro Plan\n");
+    const source = join(root, "plans", "fixture-plan");
+    writeFileSync(
+      join(source, "plan.md"),
+      PLAN.replace(
+        "Tests.\n",
+        "Tests.\n\n- [named](../oth&eacute;r-plan/plan.md)\n- [num](../&#128;-plan/plan.md)\n",
+      ),
+    );
+
+    const result = completePlanlet({
+      repositoryRoot: root,
+      slug: "fixture-plan",
+      dependencies: { now: () => new Date("2027-01-02T00:00:00.125Z") },
+    });
+
+    const archived = readFileSync(join(result.destination, "plan.md"), "utf8");
+    assert.ok(
+      archived.includes("- [named](../../oth&eacute;r-plan/plan.md)\n"),
+    );
+    assert.ok(archived.includes("- [num](../../&#128;-plan/plan.md)\n"));
+  });
+});
+
 test("completion stages the moved planlet and git reports the rename", async () => {
   await withGitRepository(COMPLETE_TASKS, (root, source) => {
     commitAll(root, "base");
