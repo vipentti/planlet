@@ -451,3 +451,120 @@ test("completion stages the destination for a never-tracked planlet", async () =
     ]);
   });
 });
+
+test("completion rewrites escaping relative links for the archived depth", () => {
+  withRepository(COMPLETE_TASKS, (root, source) => {
+    const other = join(root, "plans", "other-plan");
+    mkdirSync(other, { recursive: true });
+    writeFileSync(join(other, "plan.md"), "# Other Plan\n");
+    writeFileSync(join(other, "tasks.md"), "# Tasks: Other Plan\n");
+    const linkedPlan = PLAN.replace(
+      "Tests.\n",
+      "Tests.\n\n- [sibling](tasks.md)\n- [cross](../other-plan/plan.md)\n- [external](https://example.com/docs)\n",
+    );
+    writeFileSync(join(source, "plan.md"), linkedPlan);
+    const linkedTasks = COMPLETE_TASKS.replace(
+      "- [x] T1 First task\n",
+      "- [x] T1 First task, see [other](../other-plan/plan.md)\n",
+    );
+    writeFileSync(join(source, "tasks.md"), linkedTasks);
+
+    const result = completePlanlet({
+      repositoryRoot: root,
+      slug: "fixture-plan",
+      dependencies: { now: () => new Date("2027-01-02T00:00:00.125Z") },
+    });
+
+    const archivedPlan = readFileSync(
+      join(result.destination, "plan.md"),
+      "utf8",
+    );
+    const archivedTasks = readFileSync(
+      join(result.destination, "tasks.md"),
+      "utf8",
+    );
+    assert.ok(archivedPlan.includes("- [sibling](tasks.md)\n"));
+    assert.ok(archivedPlan.includes("- [cross](../../other-plan/plan.md)\n"));
+    assert.ok(
+      archivedPlan.includes("- [external](https://example.com/docs)\n"),
+    );
+    assert.ok(archivedTasks.includes("[other](../../other-plan/plan.md)"));
+    assert.deepEqual(result.summary.warnings, [
+      "Rewrote 1 relative link in plan.md for the archived location",
+      "Rewrote 1 relative link in tasks.md for the archived location",
+    ]);
+
+    const validated = validatePlanletStructure({
+      directoryName: result.archiveName,
+      location: "completed",
+      planMarkdown: archivedPlan,
+      tasksMarkdown: archivedTasks,
+    });
+    assert.equal(validated.state, "completed");
+  });
+});
+
+test("completion leaves internal-only plans byte-identical without warnings", () => {
+  withRepository(COMPLETE_TASKS, (root, source) => {
+    const linkedPlan = PLAN.replace(
+      "Tests.\n",
+      "Tests.\n\n- [sibling](tasks.md)\n- [anchor](#summary)\n",
+    );
+    writeFileSync(join(source, "plan.md"), linkedPlan);
+
+    const result = completePlanlet({
+      repositoryRoot: root,
+      slug: "fixture-plan",
+      dependencies: { now: () => new Date("2027-01-02T00:00:00.125Z") },
+    });
+
+    assert.equal(
+      readFileSync(join(result.destination, "plan.md"), "utf8"),
+      linkedPlan,
+    );
+    assert.deepEqual(result.summary.warnings, []);
+  });
+});
+
+test("a link rewrite survives a movement failure without double-rewriting on resume", () => {
+  withRepository(COMPLETE_TASKS, (root, source) => {
+    const other = join(root, "plans", "other-plan");
+    mkdirSync(other, { recursive: true });
+    writeFileSync(join(other, "plan.md"), "# Other Plan\n");
+    writeFileSync(join(other, "tasks.md"), "# Tasks: Other Plan\n");
+    const linkedPlan = PLAN.replace(
+      "Tests.\n",
+      "Tests.\n\n- [cross](../other-plan/plan.md)\n",
+    );
+    writeFileSync(join(source, "plan.md"), linkedPlan);
+
+    assert.throws(
+      () =>
+        completePlanlet({
+          repositoryRoot: root,
+          slug: "fixture-plan",
+          dependencies: {
+            now: () => new Date("2026-07-22T12:00:00Z"),
+            moveDirectory: () => {
+              throw new Error("simulated move failure");
+            },
+          },
+        }),
+      (error) => {
+        assert.ok(error instanceof PlanletError);
+        assert.equal(error.code, "write_conflict");
+        assert.equal(error.details.auditRecorded, true);
+        return true;
+      },
+    );
+
+    const retried = completePlanlet({
+      repositoryRoot: root,
+      slug: "fixture-plan",
+      dependencies: { now: () => new Date("2030-01-01T00:00:00Z") },
+    });
+    const archived = readFileSync(join(retried.destination, "plan.md"), "utf8");
+    assert.ok(archived.includes("- [cross](../../other-plan/plan.md)\n"));
+    assert.ok(!archived.includes("../../../other-plan/plan.md"));
+  });
+});

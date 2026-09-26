@@ -246,7 +246,10 @@ The Complete skill should:
 6. Warn the user that the planlet is incomplete and ask for explicit confirmation before overriding the check.
 7. If confirmed, provide an explicit reason to the CLI and archive with the incomplete-task override.
 8. Capture one UTC completion timestamp and derive the `YYYY-MM-DD` archive date from it.
-9. Move the planlet to `plans/completed/<YYYY-MM-DD>-<slug>`.
+9. Rewrite relative Markdown links in `plan.md` and `tasks.md` that resolve
+   inside `plans/` but outside the planlet directory so they keep resolving
+   from the one-level-deeper archive path, then move the planlet to
+   `plans/completed/<YYYY-MM-DD>-<slug>`.
 10. Report the logical slug, final destination, and whether completion was normal or forced.
 
 The CLI itself should remain non-interactive. On incomplete work it returns a structured error and non-zero exit code. The skill owns the human confirmation conversation and then, if approved, calls an explicit override such as:

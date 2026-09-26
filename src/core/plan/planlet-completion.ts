@@ -16,6 +16,7 @@ import {
   type PlanletLockDependencies,
 } from "../planlet-lock.js";
 import { assertActivePlanletDirectory, readMarkdown } from "./planlet-files.js";
+import { rewriteOutgoingLinks } from "./link-rewrite.js";
 import { atomicPublish, resolveSafePath, tryLstat } from "../paths.js";
 import { tryStageMove } from "../git.js";
 import {
@@ -347,8 +348,36 @@ function completePlanletLocked(
   // prepared. The lexical entry remains the only directory we ever move.
   assertActivePlanletDirectory(source, slug);
 
+  // The archive directory sits one level deeper than the active planlet, so
+  // relative links that escape the plan directory break by exactly one
+  // `../` level. Rewrite those destinations before the move; internal links
+  // stay byte-identical. Pre-written archived-depth links and links escaping
+  // above the repository root are left untouched.
+  const planDir = `plans/${slug}`;
+  const rewrittenPlan = rewriteOutgoingLinks(planMarkdown, planDir);
+  const rewrittenTasks = rewriteOutgoingLinks(tasksMarkdown, planDir);
+  const linkWarnings: string[] = [];
+  if (rewrittenPlan.rewritten > 0) {
+    linkWarnings.push(
+      `Rewrote ${rewrittenPlan.rewritten} relative link${rewrittenPlan.rewritten === 1 ? "" : "s"} in plan.md for the archived location`,
+    );
+  }
+  if (rewrittenTasks.rewritten > 0) {
+    linkWarnings.push(
+      `Rewrote ${rewrittenTasks.rewritten} relative link${rewrittenTasks.rewritten === 1 ? "" : "s"} in tasks.md for the archived location`,
+    );
+  }
+  for (const skipped of rewrittenPlan.skipped) {
+    linkWarnings.push(`plan.md link left unchanged (${skipped})`);
+  }
+  for (const skipped of rewrittenTasks.skipped) {
+    linkWarnings.push(`tasks.md link left unchanged (${skipped})`);
+  }
+  const rewrittenPlanMarkdown = rewrittenPlan.text;
+  const rewrittenTasksMarkdown = rewrittenTasks.text;
+
   const updatedTasks = appendCompletionRecord(
-    tasksMarkdown,
+    rewrittenTasksMarkdown,
     completedAt,
     remainingTaskIds,
     reason,
@@ -356,7 +385,7 @@ function completePlanletLocked(
   validatePlanletStructure({
     directoryName: archiveName,
     location: "completed",
-    planMarkdown,
+    planMarkdown: rewrittenPlanMarkdown,
     tasksMarkdown: updatedTasks,
   });
 
@@ -364,6 +393,8 @@ function completePlanletLocked(
     source,
     dependencies.temporaryName(slug),
   );
+  // Publish tasks.md first: the audit write is the crash-recovery point and
+  // the resume path must observe the rewritten text, never the original.
   atomicPublish({
     temporaryPath,
     targetPath: tasksPath,
@@ -386,6 +417,40 @@ function completePlanletLocked(
     },
   });
 
+  // Publish plan.md through a second atomic write so a crash between the
+  // two publishes resumes with the tasks.md audit already in place.
+  if (rewrittenPlanMarkdown !== planMarkdown) {
+    const planTemporaryPath = resolveSafePath(
+      source,
+      dependencies.temporaryName(`${slug}-plan`),
+    );
+    atomicPublish({
+      temporaryPath: planTemporaryPath,
+      targetPath: planPath,
+      createTemporary: () => {
+        const mode = statSync(planPath).mode & 0o777;
+        dependencies.writeFile(planTemporaryPath, rewrittenPlanMarkdown, mode);
+      },
+      rename: dependencies.replaceFile,
+      remove: dependencies.remove,
+      onFailure: (error) =>
+        asWriteConflict(error, `Could not complete planlet: ${slug}`, {
+          slug,
+          auditRecorded: true,
+        }),
+      cleanupFailure: {
+        code: "write_conflict",
+        message: `Could not clean up failed completion rewrite: ${slug}`,
+        details: {
+          slug,
+          temporaryPath: planTemporaryPath,
+          cleanupFailed: true,
+        },
+        fatal: true,
+      },
+    });
+  }
+
   try {
     // Recheck after recording the audit and immediately before movement.
     assertNoCompletionCollision(completedPath, slug, destination);
@@ -405,7 +470,7 @@ function completePlanletLocked(
 
   const completedTasks = validated.tasks.length - remainingTaskIds.length;
   const mode = reason === undefined ? "normal" : "incomplete override";
-  const warnings = [...validated.warnings];
+  const warnings = [...validated.warnings, ...linkWarnings];
   if (mode === "incomplete override") {
     warnings.push("Completed planlet contains an incomplete-task override");
   }

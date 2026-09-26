@@ -81,8 +81,9 @@ the CLI for discovery, validation, progress, and archiving.
    and CI systems, so a planlet records verification evidence only in the rare
    case that ordinary history cannot reconstruct it.
 3. **Complete** — `planlet-complete` validates the planlet and archives it to
-   `plans/completed/<YYYY-MM-DD>-<slug>/`. Unfinished tasks require an explicit
-   override with a recorded reason.
+   `plans/completed/<YYYY-MM-DD>-<slug>/`, rewriting relative links that point
+   outside the planlet so they keep resolving from the deeper archive path.
+   Unfinished tasks require an explicit override with a recorded reason.
 
 A typical session: ask for a plan, review the two Markdown files yourself, then
 ask for implementation, then completion. Nothing is hidden from review — the
