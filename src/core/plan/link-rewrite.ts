@@ -486,11 +486,14 @@ function stripContainers(
   kinds: ContainerKind[];
   /** True when this line opened a new list item. */
   consumedBullet: boolean;
+  /** Absolute column of the last consumed bullet, if any. */
+  bulletColumn: number | null;
 } {
   let rest = line;
   let depth = 0;
   let columns = [...contentColumn];
   let consumedBullet = false;
+  let bulletColumn: number | null = null;
   const kinds: ContainerKind[] = [];
   for (;;) {
     const quote = /^ {0,3}> ?/.exec(rest);
@@ -504,6 +507,14 @@ function stripContainers(
     if (bullet !== null) {
       // A new item closes open items at its depth or deeper.
       columns = columns.filter((entry) => entry.depth < depth);
+      const markerColumn =
+        line.length - rest.length + (/^ */.exec(bullet[0])?.[0].length ?? 0);
+      // Any new item outside the fence's item scope ends it; keep the
+      // outermost (minimum) column for that comparison.
+      bulletColumn =
+        bulletColumn === null
+          ? markerColumn
+          : Math.min(bulletColumn, markerColumn);
       columns.push({
         depth,
         column: line.length - rest.length + bullet[0].length,
@@ -536,7 +547,7 @@ function stripContainers(
       }
     }
   }
-  return { depth, content: rest, columns, kinds, consumedBullet };
+  return { depth, content: rest, columns, kinds, consumedBullet, bulletColumn };
 }
 
 function splitProtectedSpans(
@@ -549,13 +560,27 @@ function splitProtectedSpans(
   let inFence = false;
   let fenceMarker = "";
   let fenceKinds: ContainerKind[] = [];
+  /** Content column of the fence's enclosing list item, if any. */
+  let fenceItemColumn: number | null = null;
   let inHtmlBlock: HtmlBlockState | null = null;
   let htmlKinds: ContainerKind[] = [];
   let htmlDepth = 0;
+  /** Content column of the HTML block's enclosing list item, if any. */
+  let htmlItemColumn: number | null = null;
   let para: ParagraphState = { open: false, signature: null };
   let previousWasCode = true;
   let contentColumn: ContainerColumn[] = [];
   const canStartIndentedCode = (): boolean => !para.open || previousWasCode;
+  /** Content column of the innermost list item enclosing a marker
+   * column: the greatest open item column at or before it, if any. */
+  const enclosingItemColumn = (markerColumn: number): number | null => {
+    let found: number | null = null;
+    for (const entry of contentColumn) {
+      if (entry.column <= markerColumn) found = entry.column;
+      else break;
+    }
+    return found;
+  };
   const flush = (
     protected_: boolean,
     chunk: string,
@@ -597,10 +622,8 @@ function splitProtectedSpans(
     // it and is reprocessed below. Indented code is relative to the
     // container: four spaces beyond the container indent is code at any
     // nesting depth.
-    const { depth, content, columns, kinds, consumedBullet } = stripContainers(
-      bare,
-      contentColumn,
-    );
+    const { depth, content, columns, kinds, consumedBullet, bulletColumn } =
+      stripContainers(bare, contentColumn);
     contentColumn = columns;
     const stripped = content;
     // Raw HTML blocks own their lines before fence detection: their
@@ -620,13 +643,21 @@ function splitProtectedSpans(
       previousWasCode = true;
       // Fall through to ordinary handling of the blank line.
     } else if (inHtmlBlock !== null) {
-      if (!containerPrefixMatches(kinds, htmlKinds) || depth < htmlDepth) {
+      if (
+        !containerPrefixMatches(kinds, htmlKinds) ||
+        depth < htmlDepth ||
+        (consumedBullet &&
+          bulletColumn !== null &&
+          htmlItemColumn !== null &&
+          bulletColumn < htmlItemColumn)
+      ) {
         // The container ended: close the block and reprocess this line.
         flush(true, current, "htmlblock");
         current = "";
         inHtmlBlock = null;
         htmlKinds = [];
         htmlDepth = 0;
+        htmlItemColumn = null;
         para = { open: false, signature: null };
         previousWasCode = true;
       } else {
@@ -664,6 +695,7 @@ function splitProtectedSpans(
         inFence = true;
         fenceMarker = marker;
         fenceKinds = [...kinds];
+        fenceItemColumn = enclosingItemColumn(bare.length - stripped.length);
         flush(false, current);
         current = withNewline;
         para = { open: false, signature: null };
@@ -671,7 +703,11 @@ function splitProtectedSpans(
         continue;
       } else if (
         !containerPrefixMatches(kinds, fenceKinds) ||
-        depth < fenceKinds.length
+        depth < fenceKinds.length ||
+        (consumedBullet &&
+          bulletColumn !== null &&
+          fenceItemColumn !== null &&
+          bulletColumn < fenceItemColumn)
       ) {
         // The container changed identity or ended: close the fence
         // and reprocess this line below (it may open a new fence).
@@ -680,6 +716,7 @@ function splitProtectedSpans(
         inFence = false;
         fenceMarker = "";
         fenceKinds = [];
+        fenceItemColumn = null;
         para = { open: false, signature: null };
         previousWasCode = true;
       } else if (
@@ -696,6 +733,7 @@ function splitProtectedSpans(
         inFence = false;
         fenceMarker = "";
         fenceKinds = [];
+        fenceItemColumn = null;
         // A fenced block ends the paragraph; later indented code may
         // start fresh.
         para = { open: false, signature: null };
@@ -709,7 +747,11 @@ function splitProtectedSpans(
     if (inFence) {
       if (
         !containerPrefixMatches(kinds, fenceKinds) ||
-        depth < fenceKinds.length
+        depth < fenceKinds.length ||
+        (consumedBullet &&
+          bulletColumn !== null &&
+          fenceItemColumn !== null &&
+          bulletColumn < fenceItemColumn)
       ) {
         // The container ended: close the fence and reprocess this line
         // as ordinary Markdown.
@@ -718,6 +760,7 @@ function splitProtectedSpans(
         inFence = false;
         fenceMarker = "";
         fenceKinds = [];
+        fenceItemColumn = null;
         para = { open: false, signature: null };
         previousWasCode = true;
       } else {
@@ -732,6 +775,7 @@ function splitProtectedSpans(
       inFence = true;
       fenceMarker = marker;
       fenceKinds = [...kinds];
+      fenceItemColumn = enclosingItemColumn(bare.length - stripped.length);
       flush(false, current);
       current = withNewline;
       para = { open: false, signature: null };
@@ -756,6 +800,7 @@ function splitProtectedSpans(
         flush(false, current);
         current = withNewline;
         inHtmlBlock = htmlOpen;
+        htmlItemColumn = enclosingItemColumn(bare.length - stripped.length);
         htmlKinds = [...kinds];
         htmlDepth = depth;
         para = { open: false, signature: null };
@@ -783,14 +828,9 @@ function splitProtectedSpans(
       continue;
     }
     // A fence-looking line with an invalid info string reaches here:
-    // it is ordinary text and ends any open paragraph like a fence.
-    if (fenceMatch !== null) {
-      para = { open: false, signature: null };
-      previousWasCode = false;
-    } else {
-      para = trackParagraph(para, stripped, kinds, consumedBullet);
-      previousWasCode = false;
-    }
+    // it is ordinary paragraph text, not a block boundary.
+    para = trackParagraph(para, stripped, kinds, consumedBullet);
+    previousWasCode = false;
     // A blank line closes open list items; other boundaries keep the
     // item open for lazy continuation lines.
     if (bare.trim().length === 0) contentColumn = [];

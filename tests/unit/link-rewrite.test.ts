@@ -406,6 +406,17 @@ test("nested quote/list fences protect code links", () => {
   }
 });
 
+test("a sibling item ends the previous item fence", () => {
+  const outcome = rewrite(
+    "> ```\n> code\n> ```\n- ```\n- [x](../other-plan/plan.md)\n- ```\n",
+  );
+  assert.equal(
+    outcome.text,
+    "> ```\n> code\n> ```\n- ```\n- [x](../../other-plan/plan.md)\n- ```\n",
+  );
+  assert.equal(outcome.rewritten, 1);
+});
+
 test("a paragraph, heading, then indented code protects the link", () => {
   const input = "Foo\n# H\n    [x](../other-plan/plan.md)\n";
   const outcome = rewrite(input);
@@ -655,14 +666,6 @@ test("a backtick fence with a backtick info string is not a fence", () => {
 
 test("a quoted paragraph swallows definition-looking text", () => {
   const input = "> Foo\n> [id]: ../other-plan/plan.md\n";
-  const outcome = rewrite(input);
-  assert.equal(outcome.text, input);
-  assert.equal(outcome.rewritten, 0);
-});
-
-test("a list fence after a quoted fence stays protected", () => {
-  const input =
-    "> ```\n> code\n> ```\n- ```\n- [x](../other-plan/plan.md)\n- ```\n";
   const outcome = rewrite(input);
   assert.equal(outcome.text, input);
   assert.equal(outcome.rewritten, 0);
