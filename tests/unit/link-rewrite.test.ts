@@ -433,6 +433,29 @@ test("definitions after setext headings, lists, and quotes are recognized", () =
   }
 });
 
+test("definition titles holding link text stay byte-identical", () => {
+  const input = '[id]: notes.md "[x](../other-plan/plan.md)"\n';
+  const outcome = rewrite(input);
+  assert.equal(outcome.text, input);
+  assert.equal(outcome.rewritten, 0);
+});
+
+test("a destination matching the label splices only the destination", () => {
+  const outcome = rewrite("[../other-plan/plan.md]: ../other-plan/plan.md\n");
+  assert.equal(
+    outcome.text,
+    "[../other-plan/plan.md]: ../../other-plan/plan.md\n",
+  );
+  assert.equal(outcome.rewritten, 1);
+});
+
+test("a definition after an inline-code-ended paragraph stays text", () => {
+  const input = "Foo `code`\n[id]: ../other-plan/plan.md\n";
+  const outcome = rewrite(input);
+  assert.equal(outcome.text, input);
+  assert.equal(outcome.rewritten, 0);
+});
+
 test("resolveLinkPath is POSIX-only and reports root escapes", () => {
   assert.equal(
     resolveLinkPath("plans/a", "../other/plan.md"),

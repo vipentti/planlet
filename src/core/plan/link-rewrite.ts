@@ -1014,96 +1014,101 @@ function rewriteOwnedLinks(
   return { text: parts.join(""), rewritten };
 }
 
-function rewriteReferenceDefinitions(
-  text: string,
-  planDir: string,
-  repositoryRoot: string,
-  existence: LinkTargetExistence,
-  skipped: string[],
-  paragraphOpen = false,
-): { text: string; rewritten: number; paragraphOpen: boolean } {
-  let rewritten = 0;
-  const rewriteOne = (whole: string, destination: string): string => {
-    const outcome = rewriteDestination(
-      destination,
-      planDir,
-      repositoryRoot,
-      existence,
+interface DefinitionMatch {
+  /** Byte range of the whole owned definition (label, destination, title). */
+  readonly start: number;
+  readonly end: number;
+  /** Byte range of the destination path only. */
+  readonly destinationStart: number;
+  readonly destinationEnd: number;
+  readonly destination: string;
+}
+
+/**
+ * Recognizes reference definitions against the original block stream
+ * and records exact destination byte offsets. Runs before inline
+ * code/HTML splitting, so titles holding paired backticks never
+ * fragment recognition, and definition-owned ranges (including titles)
+ * are excluded from inline-link recognition. A definition line
+ * continuing an open paragraph is lazy continuation text and never
+ * matches. Lines inside fenced/indented blocks are code, never
+ * definitions.
+ */
+function findReferenceDefinitions(
+  markdown: string,
+  blockSpans: readonly ProtectedSpan[],
+): DefinitionMatch[] {
+  const matches: DefinitionMatch[] = [];
+  const lines = markdown.split("\n");
+  let offset = 0;
+  let open = false;
+  const lineIsCode = (lineStart: number): boolean =>
+    blockSpans.some(
+      (span) =>
+        (span.kind === "fence" || span.kind === "indented") &&
+        lineStart >= span.offset &&
+        lineStart < span.offset + span.text.length,
     );
-    if (outcome.skipped !== undefined) skipped.push(outcome.skipped);
-    if (!outcome.rewritten) return whole;
-    rewritten += 1;
-    // The patterns consume no trailing title bytes (lookahead only), so
-    // swap just the destination bytes and keep titles byte-identical.
-    return whole.replace(destination, outcome.destination);
-  };
-  // Reference definitions are block-level: a definition line that
-  // continues an open paragraph is lazy continuation text, not a
-  // definition, and stays byte-identical.
-  const lines = text.split("\n");
-  const out: string[] = [];
-  let open = paragraphOpen;
-  const replaceLine = (
-    line: string,
-    pattern: RegExp,
-  ): { line: string; matched: boolean } => {
-    pattern.lastIndex = 0;
-    const probe = pattern.exec(line);
-    pattern.lastIndex = 0;
-    if (probe === null) return { line, matched: false };
-    // Paragraph gate before any rewrite side effect: a definition line
-    // continuing a paragraph is lazy continuation text. The count must
-    // not move when the bytes do not.
-    if (open) return { line, matched: true };
-    let matched = false;
-    const replaced = line.replace(
-      pattern,
-      (
-        whole: string,
-        _container: string,
-        _prefix: string,
-        destination: string,
-      ) => {
-        matched = true;
-        return rewriteOne(whole, destination);
-      },
-    );
-    pattern.lastIndex = 0;
-    return { line: replaced, matched };
+  const matchPatterns = (
+    candidate: string,
+  ): { destination: string; destinationLength: number } | null => {
+    for (const pattern of [
+      MULTILINE_DEFINITION_PATTERN,
+      REFERENCE_DEFINITION_PATTERN,
+    ]) {
+      pattern.lastIndex = 0;
+      const probe = pattern.exec(candidate);
+      pattern.lastIndex = 0;
+      if (probe === null) continue;
+      // Groups: (container)(label+colon)(destination). The patterns
+      // consume no trailing title bytes (lookahead only).
+      const container = probe[1] ?? "";
+      const label = probe[2] ?? "";
+      const destination = probe[3] ?? "";
+      return {
+        destination,
+        destinationLength: container.length + label.length,
+      };
+    }
+    return null;
   };
   for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
     const line = lines[lineIndex] ?? "";
+    const lineStart = offset;
+    offset += line.length + 1;
+    if (lineIsCode(lineStart)) {
+      continue;
+    }
     // A definition destination may sit on the next line: join the pair
-    // for matching, then split the rewrite back across both lines.
+    // for matching.
     const next = lineIndex + 1 < lines.length ? lines[lineIndex + 1] : null;
     const joined =
       next !== null && next !== undefined && /^[ \t]+\S/.test(next)
         ? `${line}\n${next}`
         : null;
     if (joined !== null) {
-      const probe = replaceLine(joined, MULTILINE_DEFINITION_PATTERN);
-      if (probe.matched) {
-        if (open) {
-          out.push(line);
-          // Reprocess the next line on its own below.
-        } else {
-          const parts = probe.line.split("\n");
-          out.push(parts[0] ?? line);
-          out.push(parts[1] ?? next ?? "");
-          lineIndex += 1;
-          open = false;
+      const found = matchPatterns(joined);
+      if (found !== null) {
+        if (!open) {
+          const destinationStart = lineStart + found.destinationLength;
+          matches.push({
+            start: lineStart,
+            end: lineStart + joined.length,
+            destinationStart,
+            destinationEnd: destinationStart + found.destination.length,
+            destination: found.destination,
+          });
         }
-        if (open) {
-          if (line.trim().length === 0) open = false;
-          else if (!/^(?: {4}|\t)/.test(line)) open = true;
-          continue;
-        }
+        // Consume the pair: the destination line cannot start a
+        // paragraph of its own.
+        open = false;
+        offset += (next ?? "").length + 1;
+        lineIndex += 1;
         continue;
       }
     }
-    const single = replaceLine(line, REFERENCE_DEFINITION_PATTERN);
-    if (!single.matched) {
-      out.push(line);
+    const single = matchPatterns(line);
+    if (single === null) {
       // Shared endsParagraph model: headings, breaks, and blanks end
       // the paragraph just like in the block splitter.
       if (/^(?: {4}|\t)/.test(line)) open = false;
@@ -1111,14 +1116,61 @@ function rewriteReferenceDefinitions(
       else open = true;
       continue;
     }
-    if (open) {
-      out.push(line);
-      continue;
+    if (!open) {
+      const destinationStart = lineStart + single.destinationLength;
+      matches.push({
+        start: lineStart,
+        // Own the whole line so titles stay definition-owned.
+        end: lineStart + line.length,
+        destinationStart,
+        destinationEnd: destinationStart + single.destination.length,
+        destination: single.destination,
+      });
     }
-    out.push(single.line);
     open = false;
   }
-  return { text: out.join("\n"), rewritten, paragraphOpen: open };
+  return matches;
+}
+
+function rewriteReferenceDefinitions(
+  text: string,
+  planDir: string,
+  repositoryRoot: string,
+  existence: LinkTargetExistence,
+  skipped: string[],
+  owned: readonly DefinitionMatch[],
+  spanOffset: number,
+): { text: string; rewritten: number } {
+  let rewritten = 0;
+  let cursor = 0;
+  const parts: string[] = [];
+  for (const definition of owned) {
+    const outcome = rewriteDestination(
+      definition.destination,
+      planDir,
+      repositoryRoot,
+      existence,
+    );
+    if (outcome.skipped !== undefined) skipped.push(outcome.skipped);
+    const start = definition.start - spanOffset;
+    const destinationStart = definition.destinationStart - spanOffset;
+    const destinationEnd = definition.destinationEnd - spanOffset;
+    const end = definition.end - spanOffset;
+    parts.push(text.slice(cursor, start));
+    if (!outcome.rewritten) {
+      parts.push(text.slice(start, end));
+    } else {
+      // Splice only the recorded destination bytes: labels and titles
+      // (which may hold link-looking text) stay byte-identical.
+      parts.push(text.slice(start, destinationStart));
+      parts.push(outcome.destination);
+      parts.push(text.slice(destinationEnd, end));
+      rewritten += 1;
+    }
+    cursor = end;
+  }
+  parts.push(text.slice(cursor));
+  return { text: parts.join(""), rewritten };
 }
 
 /**
@@ -1127,11 +1179,13 @@ function rewriteReferenceDefinitions(
  * (for example `plans/my-feature`). Only links whose target exists on disk
  * are rewritten; dangling links are left untouched with a skip note.
  *
- * Deliberate scope limits: fence detection handles top-level and
- * single block-quote containers only (deeper list/quote nesting stays
- * rewritable); raw-HTML tag detection is narrow (`<...>` with no newline,
- * so exotic markup stays rewritable). Both limits fail safe toward
- * rewriting a real link rather than hiding one behind fake protection.
+ * Recognition order is definition-first: reference definitions are
+ * recognized against the original block stream with exact destination
+ * offsets, and their owned ranges are excluded from inline-link
+ * recognition. Definition titles holding link-looking text are therefore
+ * never treated as real links, and inline code inside titles never
+ * fragments definition recognition. Inline links splice only
+ * destination-path bytes, so whitespace and titles round-trip exactly.
  */
 export function rewriteOutgoingLinks(
   markdown: string,
@@ -1142,18 +1196,27 @@ export function rewriteOutgoingLinks(
   const skipped: string[] = [];
   let rewritten = 0;
   const parts: string[] = [];
-  let definitionsParagraphOpen = false;
-  // Inline code spans and raw HTML may appear inside link labels, so all
-  // inline links are recognized against the whole document first.
-  // Block-level protection (fences, indented code) wins over inline
-  // recognition: links fully inside a protected block span are dropped
-  // from the exclusions, so code content never punches protection holes.
-  // Only links in rewritable inline regions punch holes for their labels.
-  // Block spans also drive definition tracking: a protected fence or
-  // indented span ends the paragraph exactly like the block splitter's
-  // endsParagraph model (one shared rule, two call sites).
-  const documentLinks = findInlineLinks(markdown);
+  // Block spans come from one unexcluded split; definitions derive from
+  // the same stream, so fence/indented ownership is exact.
   const blockSpans = splitProtectedSpans(markdown);
+  const definitions = findReferenceDefinitions(markdown, blockSpans);
+  const definitionOwned = definitions.map((definition) => ({
+    start: definition.start,
+    end: definition.end,
+  }));
+  // Inline code spans and raw HTML may appear inside link labels, so all
+  // inline links are recognized against the whole document first, but
+  // never inside definition-owned ranges. Block-level protection
+  // (fences, indented code) wins over inline recognition: links fully
+  // inside a protected block span are dropped from the exclusions, so
+  // code content never punches protection holes. Only links in
+  // rewritable inline regions punch holes for their labels.
+  const documentLinks = findInlineLinks(markdown).filter(
+    (link) =>
+      !definitionOwned.some(
+        (owned) => link.start >= owned.start && link.end <= owned.end,
+      ),
+  );
   const inProtectedBlock = (link: { start: number; end: number }): boolean =>
     blockSpans.some(
       (span) =>
@@ -1167,11 +1230,6 @@ export function rewriteOutgoingLinks(
   for (const span of splitProtectedSpans(markdown, exclusions)) {
     if (span.protected_) {
       parts.push(span.text);
-      // Block spans end paragraphs (same endsParagraph model as the
-      // block splitter); inline code/HTML spans never do.
-      if (span.kind === "fence" || span.kind === "indented") {
-        definitionsParagraphOpen = false;
-      }
       continue;
     }
     const spanEnd = span.offset + span.text.length;
@@ -1187,20 +1245,23 @@ export function rewriteOutgoingLinks(
       existence,
       skipped,
     );
-    // Paragraph state carries across spans: protection splits never end
-    // a paragraph, so a definition after a paragraph line in an
-    // earlier span stays lazy continuation text.
-    const definitions = rewriteReferenceDefinitions(
+    // Definitions owned by this span splice their recorded destination
+    // bytes; filter to definitions fully inside the span.
+    const ownedDefinitions = definitions.filter(
+      (definition) =>
+        definition.start >= span.offset && definition.end <= spanEnd,
+    );
+    const rewrittenDefinitions = rewriteReferenceDefinitions(
       inline.text,
       planDir,
       repositoryRoot,
       existence,
       skipped,
-      definitionsParagraphOpen,
+      ownedDefinitions,
+      span.offset,
     );
-    definitionsParagraphOpen = definitions.paragraphOpen;
-    rewritten += inline.rewritten + definitions.rewritten;
-    parts.push(definitions.text);
+    rewritten += inline.rewritten + rewrittenDefinitions.rewritten;
+    parts.push(rewrittenDefinitions.text);
   }
   return { text: parts.join(""), rewritten, skipped };
 }
