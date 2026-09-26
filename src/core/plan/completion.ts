@@ -42,6 +42,32 @@ function parseRemainingTaskIds(value: string): readonly PlanletTask["id"][] {
   return ids as PlanletTask["id"][];
 }
 
+/**
+ * Byte offset where the completion section ends: the start of the next
+ * line-oriented `## ` heading after the heading line at `fromOffset`
+ * (which must sit at a line start), or EOF. Shared with resume
+ * splitting so both agree on section boundaries, including
+ * tab-separated headings and CRLF.
+ */
+export function findCompletionSectionEnd(
+  markdown: string,
+  fromOffset: number,
+): number {
+  let cursor = fromOffset;
+  while (cursor < markdown.length) {
+    const lineEnd = markdown.indexOf("\n", cursor);
+    const end = lineEnd === -1 ? markdown.length : lineEnd;
+    const line =
+      end > cursor && markdown[end - 1] === "\r"
+        ? markdown.slice(cursor, end - 1)
+        : markdown.slice(cursor, end);
+    if (cursor > fromOffset && /^##\s/.test(line)) return cursor;
+    if (lineEnd === -1) break;
+    cursor = lineEnd + 1;
+  }
+  return markdown.length;
+}
+
 export function parseCompletionRecord(
   markdown: string,
 ): CompletionRecord | null {

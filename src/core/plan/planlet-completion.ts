@@ -17,6 +17,7 @@ import {
   type PlanletLockDependencies,
 } from "../planlet-lock.js";
 import { assertActivePlanletDirectory, readMarkdown } from "./planlet-files.js";
+import { findCompletionSectionEnd } from "./completion.js";
 import {
   rewriteOutgoingLinks,
   type LinkRewriteOutcome,
@@ -180,8 +181,9 @@ function splitCompletionRecord(
   if (index === -1) return null;
   const tail = tasksMarkdown.slice(index + 1);
   if (!/^## Completion\n\n- Completed at: /.test(tail)) return null;
-  const nextHeading = /\n## /.exec(tail);
-  const sectionEnd = nextHeading === null ? tail.length : nextHeading.index;
+  // The section ends at the next H2 by the same line-oriented rule
+  // completion parsing uses (the tail starts at its own heading).
+  const sectionEnd = findCompletionSectionEnd(tail, 0);
   return {
     before: tasksMarkdown.slice(0, index) + "\n",
     section: tail.slice(0, sectionEnd),

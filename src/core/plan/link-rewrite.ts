@@ -522,6 +522,8 @@ interface ListMarkerMatch {
   digits: string | null;
   /** Absolute column of the marker start (after up-to-3-space indent). */
   markerColumn: number;
+  /** Offset of the gap start (past lead and marker) within the text. */
+  gapStart: number;
   /** Offset past the marker and its gap within the scanned text. */
   gapEnd: number;
   /** True when the gap spans five or more columns: the item's first
@@ -559,9 +561,39 @@ function matchListMarker(
   return {
     digits: bullet[1] !== undefined ? null : (bullet[2] ?? ""),
     markerColumn,
+    gapStart: bullet[0].length,
     gapEnd,
     code: gapColumn - markerEndColumn >= 5,
   };
+}
+
+/**
+ * True when a definition continuation line stays in the opener's
+ * block: it opens no new list item, repeats at most the opener's
+ * containers from the outside in, and is no other block boundary.
+ * `openerKinds` are the stripped container kinds of the label line.
+ */
+function isDefinitionContinuation(
+  stripped: {
+    explicitKinds: readonly string[];
+    consumedBullet: boolean;
+    content: string;
+  },
+  openerKinds: readonly string[],
+): boolean {
+  if (stripped.consumedBullet) return false;
+  if (stripped.explicitKinds.length > 0) {
+    if (stripped.explicitKinds.length > openerKinds.length) return false;
+    const prefix = stripped.explicitKinds.every(
+      (kind, index) => openerKinds[index] === kind,
+    );
+    if (!prefix) return false;
+  }
+  return (
+    !endsParagraph(stripped.content) &&
+    !/^ {0,3}(`{3,}|~{3,})/.test(stripped.content) &&
+    !isInterruptingHtmlBlock(stripped.content)
+  );
 }
 
 /**
@@ -665,16 +697,17 @@ function stripContainers(
         bulletColumn === null
           ? marker.markerColumn
           : Math.min(bulletColumn, marker.markerColumn);
-      // An indented-code first block consumes the marker, then
-      // re-indents four spaces so fences, HTML, headings, lazy
-      // checks, and definitions all see code. Stored columns keep
-      // true positions for alignment.
+      // An indented-code first block consumes the marker plus one
+      // padding column; the remaining gap stays code indentation, so
+      // fences, HTML, headings, lazy checks, and definitions all see
+      // code while continuations align at the item content column.
       if (marker.code) {
+        const contentSkip = marker.gapStart + 1;
         columns.push({
           depth,
-          column: line.length - rest.length + marker.gapEnd,
+          column: line.length - rest.length + contentSkip,
         });
-        rest = `    ${rest.slice(marker.gapEnd)}`;
+        rest = rest.slice(contentSkip);
         depth += 1;
         kinds.push("list");
         explicitKinds.push("list");
@@ -1118,20 +1151,52 @@ function splitProtectedSpans(
         ([start, end]) =>
           [start, end, "html"] as [number, number, ProtectedSpan["kind"]],
       );
-    // Pending openers stay eligible until an equal-length whole run
-    // closes them: different-length runs never match, so `` [x] ` ``
-    // protects its link while an unmatched opener stays literal. The
-    // most recent matching opener pairs first, mirroring CommonMark.
-    // This shares the whole-run rule with label scanning.
-    const openers: Array<{ start: number; length: number }> = [];
+    // Code spans never cross block boundaries: blank lines,
+    // headings, fences, and interrupting HTML all start a new pairing
+    // group, so backticks on opposite sides of a boundary stay literal
+    // instead of manufacturing protection that would hide a live link.
+    // Over-splitting fails safe (a real link stays rewritable).
+    const boundaryStarts: number[] = [];
+    {
+      let offset = 0;
+      for (const line of span.text.split("\n")) {
+        const bare = line.endsWith("\r") ? line.slice(0, -1) : line;
+        const content = stripContainers(bare, [], true).content;
+        if (
+          offset > 0 &&
+          (endsParagraph(content) ||
+            /^ {0,3}(`{3,}|~{3,})/.test(content) ||
+            isInterruptingHtmlBlock(content))
+        ) {
+          boundaryStarts.push(offset);
+        }
+        offset += line.length + 1;
+      }
+    }
+    const runGroup = (position: number): number => {
+      const lineStart = span.text.lastIndexOf("\n", position - 1) + 1;
+      let group = 0;
+      for (const boundary of boundaryStarts) {
+        if (boundary < lineStart) group += 1;
+        else break;
+      }
+      return group;
+    };
+    // Pending openers stay eligible until an equal-length whole run in
+    // the same group closes them: different-length runs never match,
+    // so `` [x] ` `` protects its link while an unmatched opener stays
+    // literal. The most recent matching opener pairs first, mirroring
+    // CommonMark. This shares the whole-run rule with label scanning.
+    const openers: Array<{ start: number; length: number; group: number }> = [];
     for (const run of runs) {
       const start = run.index ?? 0;
       const length = run[0].length;
+      const group = runGroup(start);
       const matchIndex = openers.findLastIndex(
-        (opener) => opener.length === length,
+        (opener) => opener.length === length && opener.group === group,
       );
       if (matchIndex === -1) {
-        openers.push({ start, length });
+        openers.push({ start, length, group });
         continue;
       }
       const opener = openers[matchIndex];
@@ -1850,12 +1915,18 @@ function findReferenceDefinitions(
         : next.endsWith("\r")
           ? next.slice(0, -1)
           : next;
-    const nextStripped =
-      nextBare === null
-        ? null
-        : stripContainers(nextBare, contentColumn).content;
+    const nextStrip =
+      nextBare === null ? null : stripContainers(nextBare, contentColumn, true);
+    const nextStripped = nextStrip === null ? null : nextStrip.content;
+    // A newly opened list item, quote, or other boundary starts a new
+    // block instead of completing this definition.
+    const continues =
+      nextStrip !== null && isDefinitionContinuation(nextStrip, kinds);
     const joined =
-      nextBare !== null && nextStripped !== null && /\S/.test(nextStripped)
+      continues &&
+      nextBare !== null &&
+      nextStripped !== null &&
+      /\S/.test(nextStripped)
         ? `${bare}\n${nextStripped}`
         : null;
     if (joined !== null) {
@@ -1953,9 +2024,21 @@ function findReferenceDefinitions(
         const labelNextBare = labelNext.endsWith("\r")
           ? labelNext.slice(0, -1)
           : labelNext;
-        const pair = `${bare}\n${labelNextBare}`;
+        // The label's second line must continue the opener's block:
+        // a new item, quote, or boundary starts a new block instead.
+        const labelNextStrip = stripContainers(
+          labelNextBare,
+          contentColumn,
+          true,
+        );
+        const pair =
+          isDefinitionContinuation(labelNextStrip, kinds) &&
+          /\S/.test(labelNextStrip.content)
+            ? `${bare}\n${labelNextBare}`
+            : null;
         MULTILINE_LABEL_DEFINITION_PATTERN.lastIndex = 0;
-        const labelProbe = MULTILINE_LABEL_DEFINITION_PATTERN.exec(pair);
+        const labelProbe =
+          pair === null ? null : MULTILINE_LABEL_DEFINITION_PATTERN.exec(pair);
         MULTILINE_LABEL_DEFINITION_PATTERN.lastIndex = 0;
         if (labelProbe !== null) {
           if (lazy) {
@@ -2120,7 +2203,9 @@ function matchContinuedDefinition(
   // Container-stripped view of one line with fresh columns (explicit
   // markers only). Unlike stripView below, bullets are kept: the
   // caller decides whether they abort.
-  const stripFresh = (index: number): (View & { bullet: boolean }) | null => {
+  const stripFresh = (
+    index: number,
+  ): (View & { bullet: boolean; explicit: readonly string[] }) | null => {
     const bare = bareAt(index);
     if (bare === null) return null;
     const stripped = stripContainers(bare, []);
@@ -2128,19 +2213,35 @@ function matchContinuedDefinition(
       stripped: stripped.content,
       prefix: bare.length - stripped.content.length,
       bullet: stripped.consumedBullet,
+      explicit: stripped.explicitKinds,
     };
   };
   // Cursor over stripped lines with original-byte mapping.
   let cursorLine = lineIndex;
   let current = stripFresh(cursorLine);
   if (current === null) return null;
+  // The opener's containers anchor every crossing: continuation lines
+  // repeat at most those markers, never open new ones.
+  const openerKinds: readonly string[] = current.explicit;
   let cursorCol = 0;
-  // Cross exactly one nonblank line ending; false at EOF, blanks, or
-  // lines opening a new list item (which ends the construct).
+  // Cross exactly one nonblank line ending in the same block; false at
+  // EOF, blanks, new list items, new containers, and other boundaries.
   const crossBreak = (): boolean => {
     const next = stripFresh(cursorLine + 1);
     if (next === null || next.bullet) return false;
     if (isBlank(next.stripped)) return false;
+    if (
+      !isDefinitionContinuation(
+        {
+          explicitKinds: next.explicit,
+          consumedBullet: false,
+          content: next.stripped,
+        },
+        openerKinds,
+      )
+    ) {
+      return false;
+    }
     cursorLine += 1;
     current = next;
     cursorCol = 0;
@@ -2357,6 +2458,19 @@ function matchContinuedDefinition(
  * destination-path bytes, so whitespace and titles round-trip exactly.
  */
 /**
+ * True when a continuation line opens an interrupting HTML block:
+ * single-line constructs and type 1-6 blocks break the paragraph,
+ * while a lone type-7 tag stays inline-handled.
+ */
+function isInterruptingHtmlBlock(content: string): boolean {
+  const htmlOpen = htmlBlockStart(content);
+  return (
+    htmlOpen !== null &&
+    (htmlOpen === "line" || htmlOpen.end !== "blank" || htmlOpen.interrupt)
+  );
+}
+
+/**
  * True when the inline range sits inside one block: continuation
  * lines past the first may omit containers (lazy) or repeat a prefix
  * of the opening line's, but never open a fence, an interrupting
@@ -2377,7 +2491,19 @@ function linkSpansSingleBlock(
   const firstBare = firstLine.endsWith("\r")
     ? firstLine.slice(0, -1)
     : firstLine;
-  const first = stripContainers(firstBare, [], false).explicitKinds;
+  const firstStripped = stripContainers(firstBare, [], false);
+  const first = firstStripped.explicitKinds;
+  // A heading, fence, or HTML block ends on its line: an apparent
+  // link starting there never reaches the following paragraph.
+  if (firstEnd !== -1 && firstEnd < end) {
+    if (
+      endsParagraph(firstStripped.content) ||
+      /^ {0,3}(`{3,}|~{3,})/.test(firstStripped.content) ||
+      isInterruptingHtmlBlock(firstStripped.content)
+    ) {
+      return false;
+    }
+  }
   let lineStart = firstEnd === -1 ? text.length : firstEnd + 1;
   while (lineStart < end) {
     const lineEnd = text.indexOf("\n", lineStart);
@@ -2397,13 +2523,7 @@ function linkSpansSingleBlock(
     }
     if (endsParagraph(stripped.content)) return false;
     if (/^ {0,3}(`{3,}|~{3,})/.test(stripped.content)) return false;
-    const htmlOpen = htmlBlockStart(stripped.content);
-    if (
-      htmlOpen !== null &&
-      (htmlOpen === "line" || htmlOpen.end !== "blank" || htmlOpen.interrupt)
-    ) {
-      return false;
-    }
+    if (isInterruptingHtmlBlock(stripped.content)) return false;
     lineStart = lineEnd === -1 ? text.length : lineEnd + 1;
   }
   return true;

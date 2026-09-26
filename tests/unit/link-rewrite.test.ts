@@ -919,6 +919,41 @@ test("list markers follow CommonMark digit and indentation rules", () => {
   assert.equal(rewrite("1.    [x](../other-plan/plan.md)\n").rewritten, 1);
 });
 
+test("multiline links cannot start on a boundary line", () => {
+  const input = "# [a\nb](../other-plan/plan.md)\n";
+  const outcome = rewrite(input);
+  assert.equal(outcome.text, input);
+  assert.equal(outcome.rewritten, 0);
+  // Single-line heading links stay live.
+  assert.equal(rewrite("# [a](../other-plan/plan.md)\n").rewritten, 1);
+});
+
+test("backticks across a blank line never manufacture code", () => {
+  const outcome = rewrite("`open\n\n[x](../other-plan/plan.md) `\n");
+  assert.equal(outcome.rewritten, 1);
+  assert.ok(outcome.text.includes("[x](../../other-plan/plan.md)"));
+});
+
+test("definition destinations stay in the opener's block", () => {
+  for (const input of [
+    "[id]:\n- ../other-plan/plan.md\n",
+    "[id]:\n> ../other-plan/plan.md\n",
+    "[id]:\n# ../other-plan/plan.md\n",
+  ]) {
+    const outcome = rewrite(input);
+    assert.equal(outcome.text, input);
+    assert.equal(outcome.rewritten, 0);
+  }
+  const continued = "[id]:\n../other-plan/plan.md\n";
+  assert.equal(rewrite(continued).rewritten, 1);
+});
+
+test("indented-code-first items align continuations at content", () => {
+  const outcome = rewrite("1.     code\n    [x](../other-plan/plan.md)\n");
+  assert.equal(outcome.rewritten, 1);
+  assert.ok(outcome.text.includes("[x](../../other-plan/plan.md)"));
+});
+
 test("resolveLinkPath is POSIX-only and reports root escapes", () => {
   assert.equal(
     resolveLinkPath("plans/a", "../other/plan.md"),
