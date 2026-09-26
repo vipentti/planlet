@@ -251,19 +251,75 @@ function excludeRanges(
 }
 
 /**
- * Shared block-boundary rule: ATX headings, thematic breaks, and blank
- * lines end a paragraph. Used by both the block splitter (indented-code
- * starts) and reference-definition tracking (lazy continuation), so the
- * two models cannot disagree.
+ * Shared block-boundary rule: blank lines, ATX headings, setext
+ * underlines, thematic breaks, list items, and block quotes end a
+ * paragraph. Used by both the block splitter (indented-code starts)
+ * and reference-definition tracking (lazy continuation), so the two
+ * models cannot disagree.
  */
 function endsParagraph(line: string): boolean {
   return (
     line.trim().length === 0 ||
     /^(?: {0,3}> ?)? {0,3}#{1,6}(?:\s|$)/.test(line) ||
+    /^(?: {0,3}> ?)? {0,3}(?:=+[ \t]*)$/.test(line) ||
+    /^(?: {0,3}> ?)? {0,3}(?:-+[ \t]*)$/.test(line) ||
     /^(?: {0,3}> ?)? {0,3}(?:\*[ \t]*){3,}$/.test(line) ||
     /^(?: {0,3}> ?)? {0,3}(?:-[ \t]*){3,}$/.test(line) ||
-    /^(?: {0,3}> ?)? {0,3}(?:_[ \t]*){3,}$/.test(line)
+    /^(?: {0,3}> ?)? {0,3}(?:_[ \t]*){3,}$/.test(line) ||
+    /^(?: {0,3}> ?)? {0,3}(?:[-+*]|\d+[.)]) /.test(line) ||
+    /^(?: {0,3}> ?)/.test(line)
   );
+}
+
+/**
+ * Strips block-quote markers (`>`) and list markers (`-`, `+`, `*`,
+ * `1.`) with their container indentation, returning the container depth
+ * and the remaining content. List-item content aligns at the marker
+ * column: continuation lines indented to an open item content column
+ * share that depth, so nested fences and code classify correctly at any
+ * nesting depth.
+ */
+function stripContainers(
+  line: string,
+  contentColumn: readonly number[] = [],
+): {
+  depth: number;
+  content: string;
+  /** Updated open item content columns after consuming this line. */
+  columns: number[];
+} {
+  let rest = line;
+  let depth = 0;
+  const columns = [...contentColumn];
+  for (;;) {
+    const quote = /^ {0,3}> ?/.exec(rest);
+    if (quote !== null) {
+      rest = rest.slice(quote[0].length);
+      depth += 1;
+      continue;
+    }
+    const bullet = /^ {0,3}(?:[-+*]|\d+[.)]) +/.exec(rest);
+    if (bullet !== null) {
+      columns.push(line.length - rest.length + bullet[0].length);
+      rest = rest.slice(bullet[0].length);
+      depth += 1;
+      continue;
+    }
+    break;
+  }
+  if (depth === 0 && columns.length > 0) {
+    const indent = line.length - line.replace(/^ */, "").length;
+    let shared = 0;
+    for (const column of columns) {
+      if (indent >= column) shared += 1;
+      else break;
+    }
+    if (shared > 0) {
+      depth = shared;
+      rest = line.slice(columns[shared - 1] ?? 0);
+    }
+  }
+  return { depth, content: rest, columns };
 }
 
 function splitProtectedSpans(
@@ -275,9 +331,10 @@ function splitProtectedSpans(
   let current = "";
   let inFence = false;
   let fenceMarker = "";
-  let fenceQuoted = false;
+  let fenceDepth = 0;
   let paragraphOpen = false;
   let previousWasCode = true;
+  let contentColumn: number[] = [];
   const canStartIndentedCode = (): boolean => !paragraphOpen || previousWasCode;
   const flush = (
     protected_: boolean,
@@ -305,18 +362,18 @@ function splitProtectedSpans(
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index] ?? "";
     const withNewline = index < lines.length - 1 ? `${line}\n` : line;
-    // Fence state retains its container context: a fence opened inside a
-    // block quote only closes on a quoted closer, and a top-level fence
-    // only closes on a top-level closer, so a literal `> ``` line inside
-    // top-level code can never terminate the block. A quoted fence ends
-    // when its quote container ends: an unquoted line terminates it and
-    // is reprocessed below. Deeper container nesting (lists inside quotes
-    // and beyond) stays out of scope and is documented on
-    // rewriteOutgoingLinks.
-    const quoteMatch = /^ {0,3}> ?/.exec(line);
-    const quoted = quoteMatch !== null;
-    const stripped =
-      quoteMatch === null ? line : line.slice(quoteMatch[0].length);
+    // Fence state retains its container depth: a fence opened at depth N
+    // only closes at depth N, where depth counts arbitrary quote/list
+    // nesting via stripContainers. A literal `> ``` line inside
+    // top-level code can never terminate the block, and nested quoted
+    // or list-contained fences classify like top-level ones. A fence
+    // ends early when its container ends: a shallower line terminates
+    // it and is reprocessed below. Indented code is relative to the
+    // container: four spaces beyond the container indent is code at any
+    // nesting depth.
+    const { depth, content, columns } = stripContainers(line, contentColumn);
+    contentColumn = columns;
+    const stripped = content;
     // Fence openers allow at most three leading spaces; deeper indentation
     // is an indented code block, never a fence. Closing runs need the same
     // character, at least the opening length, and only spaces/tabs after.
@@ -327,11 +384,11 @@ function splitProtectedSpans(
       if (!inFence) {
         inFence = true;
         fenceMarker = marker;
-        fenceQuoted = quoted;
+        fenceDepth = depth;
         flush(false, current);
         current = withNewline;
       } else if (
-        quoted === fenceQuoted &&
+        depth === fenceDepth &&
         markerChar === (fenceMarker[0] ?? "") &&
         marker.length >= fenceMarker.length &&
         /^[ \t]*$/.test(
@@ -343,36 +400,43 @@ function splitProtectedSpans(
         current = "";
         inFence = false;
         fenceMarker = "";
-        fenceQuoted = false;
+        fenceDepth = 0;
+        // A fenced block ends the paragraph; later indented code may
+        // start fresh.
+        paragraphOpen = false;
+        previousWasCode = true;
       } else {
         current += withNewline;
       }
       continue;
     }
     if (inFence) {
-      if (fenceQuoted && !quoted) {
-        // The quote container ended: close the quoted fence and
-        // reprocess this line as ordinary Markdown.
+      if (depth < fenceDepth) {
+        // The container ended: close the fence and reprocess this line
+        // as ordinary Markdown.
         flush(true, current, "fence");
         current = "";
         inFence = false;
         fenceMarker = "";
-        fenceQuoted = false;
+        fenceDepth = 0;
+        paragraphOpen = false;
+        previousWasCode = true;
       } else {
         current += withNewline;
         continue;
       }
     }
-    // Indented code starts only where CommonMark permits a block start:
-    // at the document start, after a blank line, or after another code
-    // block. A four-space line continuing a paragraph is lazy
-    // continuation text, never code, so links there stay rewritable.
-    if (/^(?: {4}|\t)/.test(line) && !canStartIndentedCode()) {
+    // Indented code is relative to the container: content indented four
+    // or more spaces past the container starts code only where CommonMark
+    // permits a block start. A four-space line continuing a paragraph is
+    // lazy continuation text, never code, so links there stay rewritable.
+    const contentIndented = /^(?: {4}|\t)/.test(stripped);
+    if (contentIndented && !canStartIndentedCode()) {
       paragraphOpen = true;
       current += withNewline;
       continue;
     }
-    if (/^(?: {4}|\t)/.test(line)) {
+    if (contentIndented) {
       flush(false, current);
       current = "";
       flush(true, withNewline, "indented");
@@ -383,6 +447,9 @@ function splitProtectedSpans(
     if (endsParagraph(line)) {
       paragraphOpen = false;
       previousWasCode = false;
+      // A blank line closes open list items; other boundaries keep the
+      // item open for lazy continuation lines.
+      if (line.trim().length === 0) contentColumn = [];
     } else if (fenceMatch === null) {
       paragraphOpen = true;
       previousWasCode = false;

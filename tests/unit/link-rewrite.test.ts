@@ -386,6 +386,53 @@ test("escaped fragment and query punctuation resolve semantically", () => {
   assert.equal(frag.rewritten, 1);
 });
 
+test("nested quote/list fences protect code links", () => {
+  for (const input of [
+    "> > ```\n> > [x](../other-plan/plan.md)\n> > ```\n",
+    "- ```\n  [x](../other-plan/plan.md)\n  ```\n",
+    "- item\n\n      [x](../other-plan/plan.md)\n",
+  ]) {
+    const outcome = rewrite(input);
+    assert.equal(outcome.text, input);
+    assert.equal(outcome.rewritten, 0);
+  }
+});
+
+test("a paragraph, heading, then indented code protects the link", () => {
+  const input = "Foo\n# H\n    [x](../other-plan/plan.md)\n";
+  const outcome = rewrite(input);
+  assert.equal(outcome.text, input);
+  assert.equal(outcome.rewritten, 0);
+});
+
+test("indented code right after a fenced block stays protected", () => {
+  const input = "Foo\n\n```\ncode\n```\n    [x](../other-plan/plan.md)\n";
+  const outcome = rewrite(input);
+  assert.equal(outcome.text, input);
+  assert.equal(outcome.rewritten, 0);
+});
+
+test("definitions after setext headings, lists, and quotes are recognized", () => {
+  for (const [input, want] of [
+    [
+      "Heading\n=======\n[id]: ../other-plan/plan.md\n",
+      "Heading\n=======\n[id]: ../../other-plan/plan.md\n",
+    ],
+    [
+      "- item\n[id]: ../other-plan/plan.md\n",
+      "- item\n[id]: ../../other-plan/plan.md\n",
+    ],
+    [
+      "> quote\n[id]: ../other-plan/plan.md\n",
+      "> quote\n[id]: ../../other-plan/plan.md\n",
+    ],
+  ] as const) {
+    const outcome = rewrite(input);
+    assert.equal(outcome.text, want);
+    assert.equal(outcome.rewritten, 1);
+  }
+});
+
 test("resolveLinkPath is POSIX-only and reports root escapes", () => {
   assert.equal(
     resolveLinkPath("plans/a", "../other/plan.md"),
