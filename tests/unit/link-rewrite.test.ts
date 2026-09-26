@@ -12,6 +12,7 @@ const PLAN_DIR = "plans/link-plan";
 const EXISTING: LinkTargetExistence = {
   exists: (absolutePath) =>
     absolutePath.endsWith("plans/other-plan/plan.md") ||
+    absolutePath.endsWith("plans/other-plan/foo(bar).md") ||
     absolutePath.endsWith("plans/my docs/x.md"),
 };
 
@@ -136,6 +137,45 @@ test("rewriting is idempotent", () => {
   const twice = rewriteOutgoingLinks(once.text, PLAN_DIR, EXISTING, "/repo");
   assert.equal(twice.rewritten, 0);
   assert.equal(twice.text, once.text);
+});
+
+test("balanced-parenthesis destinations are rewritten", () => {
+  const outcome = rewrite("[x](../other-plan/foo(bar).md)");
+  assert.equal(outcome.text, "[x](../../other-plan/foo(bar).md)");
+  assert.equal(outcome.rewritten, 1);
+  const image = rewrite("![a](../other-plan/foo(bar).md)");
+  assert.equal(image.text, "![a](../../other-plan/foo(bar).md)");
+});
+
+test("escaped brackets are not links", () => {
+  const input = "\\[x](../other-plan/plan.md)";
+  const outcome = rewrite(input);
+  assert.equal(outcome.text, input);
+  assert.equal(outcome.rewritten, 0);
+});
+
+test("indented fence-looking text is indented code, not a fence", () => {
+  const input = "    ```\n    [x](../other-plan/plan.md)\n";
+  const outcome = rewrite(input);
+  assert.equal(outcome.text, input);
+  assert.equal(outcome.rewritten, 0);
+});
+
+test("fence close with trailing text does not close the fence", () => {
+  const input =
+    "```\ncode\n```not-a-close\n[x](../other-plan/plan.md)\n```\n\n[after](../other-plan/plan.md)\n";
+  const outcome = rewrite(input);
+  assert.equal(outcome.rewritten, 1);
+  assert.ok(outcome.text.includes("[x](../other-plan/plan.md)"));
+  assert.ok(outcome.text.includes("[after](../../other-plan/plan.md)"));
+});
+
+test("shorter backtick runs inside longer inline spans stay protected", () => {
+  const input = "`` `a` and `b` `` then [y](../other-plan/plan.md)\n";
+  const outcome = rewrite(input);
+  assert.equal(outcome.rewritten, 1);
+  assert.ok(outcome.text.includes("`` `a` and `b` ``"));
+  assert.ok(outcome.text.includes("[y](../../other-plan/plan.md)"));
 });
 
 test("resolveLinkPath is POSIX-only and reports root escapes", () => {
