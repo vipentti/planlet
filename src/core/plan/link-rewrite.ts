@@ -50,7 +50,7 @@ function splitDestination(
   const trimmed = destination.trim();
   if (trimmed.length === 0) return null;
   if (trimmed.startsWith("<")) {
-    const close = trimmed.indexOf(">");
+    const close = findAngledEnd(trimmed, 1);
     if (close === -1) return null;
     const path = trimmed.slice(1, close);
     if (path.length === 0) return null;
@@ -111,11 +111,126 @@ function rewritePath(encodedPath: string): string {
   return `../${encodedPath}`;
 }
 
-function unescapeMarkdownPath(encodedPath: string): string {
-  // Markdown backslash escapes: a backslash before escapable punctuation
-  // denotes the punctuation itself. Only ASCII punctuation is escapable;
-  // other backslashes (for example Windows separators) stay literal.
-  return encodedPath.replace(/\\([!"#$%&'()*+,./:;<=>?@[\\\]^_`{|}~-])/g, "$1");
+/**
+ * Finds the `<...>` closer from `from` (just past `<`): skips backslash
+ * escapes and rejects a raw inner `<`. Returns -1 for both failures.
+ */
+function findAngledEnd(text: string, from: number): number {
+  for (let index = from; index < text.length; index += 1) {
+    const char = text[index];
+    if (char === "\\") {
+      index += 1;
+      continue;
+    }
+    if (char === "<") return -1;
+    if (char === ">") return index;
+  }
+  return -1;
+}
+
+// Common named entities for destination lookup (HTML5 defines thousands;
+// these cover the paths and punctuation links meet in practice).
+const NAMED_ENTITIES: Record<string, string> = {
+  amp: "&",
+  lt: "<",
+  gt: ">",
+  quot: '"',
+  apos: "'",
+  nbsp: "\u00a0",
+  copy: "\u00a9",
+  reg: "\u00ae",
+  trade: "\u2122",
+  hellip: "\u2026",
+  mdash: "\u2014",
+  ndash: "\u2013",
+  laquo: "\u00ab",
+  raquo: "\u00bb",
+  deg: "\u00b0",
+  plusmn: "\u00b1",
+  times: "\u00d7",
+  divide: "\u00f7",
+  frac12: "\u00bd",
+  frac14: "\u00bc",
+  frac34: "\u00be",
+  iexcl: "\u00a1",
+  iquest: "\u00bf",
+  sect: "\u00a7",
+  para: "\u00b6",
+  middot: "\u00b7",
+  bull: "\u2022",
+  dagger: "\u2020",
+  Dagger: "\u2021",
+  prime: "\u2032",
+  Prime: "\u2033",
+  lsquo: "\u2018",
+  rsquo: "\u2019",
+  ldquo: "\u201c",
+  rdquo: "\u201d",
+  sbquo: "\u201a",
+  bdquo: "\u201e",
+};
+
+/** Decodes one numeric entity body (`#38`, `#x26`) to its character. */
+function decodeNumericEntity(body: string): string | null {
+  const code =
+    body.startsWith("#x") || body.startsWith("#X")
+      ? Number.parseInt(body.slice(2), 16)
+      : Number.parseInt(body.slice(1), 10);
+  if (
+    Number.isNaN(code) ||
+    code <= 0 ||
+    code > 0x10ffff ||
+    (code >= 0xd800 && code <= 0xdfff)
+  ) {
+    return "\uFFFD";
+  }
+  try {
+    return String.fromCodePoint(code);
+  } catch {
+    return "\uFFFD";
+  }
+}
+
+/**
+ * Semantic destination text for filesystem lookup: Markdown backslash
+ * escapes (ASCII punctuation only) and entity/numeric references
+ * resolve in one pass, so an escaped `&` never starts an entity.
+ */
+function decodeDestinationText(encodedPath: string): string {
+  const entityPattern =
+    /^&(#\d{1,7}|#[xX][0-9a-fA-F]{1,6}|[A-Za-z][A-Za-z0-9]{1,31});/;
+  let out = "";
+  let index = 0;
+  while (index < encodedPath.length) {
+    const char = encodedPath[index] ?? "";
+    if (
+      char === "\\" &&
+      /[!"#$%&'()*+,./:;<=>?@[\\\]^_`{|}~-]/.test(encodedPath[index + 1] ?? "")
+    ) {
+      out += encodedPath[index + 1] ?? "";
+      index += 2;
+      continue;
+    }
+    if (char === "&") {
+      const entity = entityPattern.exec(encodedPath.slice(index));
+      if (entity !== null) {
+        const body = entity[1] ?? "";
+        // Numeric references always decode (invalid becomes U+FFFD);
+        // unknown named references stay literal text.
+        const decoded = body.startsWith("#")
+          ? decodeNumericEntity(body)
+          : (NAMED_ENTITIES[body] ?? null);
+        if (decoded !== null) {
+          out += decoded;
+          index += entity[0].length;
+          continue;
+        }
+      }
+    }
+    out += char;
+    index += 1;
+  }
+  return out;
 }
 
 /**
@@ -132,27 +247,25 @@ function classifyDestinationPath(
   if (isExternalDestination(encodedPath)) {
     return { rewritten: null };
   }
-  // Split the query/fragment suffix on semantic delimiters: a `#` or
-  // `?` preceded by a backslash is escaped data (`\\#` denotes `#`),
-  // while `%23` in the path is data and a bare literal starts the
-  // fragment. Scan for the first unescaped delimiter.
-  let pathEnd = encodedPath.length;
-  for (let scan = 0; scan < encodedPath.length; scan += 1) {
-    const char = encodedPath[scan];
-    if ((char === "#" || char === "?") && !isEscaped(encodedPath, scan)) {
+  // Resolve escapes and entities first: an escaped `#` still starts
+  // the fragment in the semantic URI, while `%23` stays path data
+  // until percent-decoding below.
+  const semantic = decodeDestinationText(encodedPath);
+  let pathEnd = semantic.length;
+  for (let scan = 0; scan < semantic.length; scan += 1) {
+    const char = semantic[scan];
+    if (char === "#" || char === "?") {
       pathEnd = scan;
       break;
     }
   }
-  const pathOnly = encodedPath.slice(0, pathEnd);
-  // Decode Markdown backslash escapes first (`\\(` denotes `(`), then
-  // percent-encoding: the filesystem holds the semantic path.
-  const unescaped = unescapeMarkdownPath(pathOnly);
-  let decoded = unescaped;
+  const pathOnly = semantic.slice(0, pathEnd);
+  // The filesystem holds the percent-decoded path.
+  let decoded = pathOnly;
   try {
-    decoded = decodeURIComponent(unescaped);
+    decoded = decodeURIComponent(pathOnly);
   } catch {
-    decoded = unescaped;
+    decoded = pathOnly;
   }
   const oldResolved = resolveLinkPath(planDir, decoded);
   // Links escaping above the repository root are never guessed at.
@@ -535,8 +648,8 @@ interface ListMarkerMatch {
  * Tokenizes one CommonMark list marker at the start of `rest`:
  * at most three leading spaces, `-`/`+`/`*` or 1-to-9 digits plus
  * `.`/`)`, then a space/tab gap (tabs expand to 4-column stops from
- * the marker end). Returns null for pseudo-markers (`1234567890.`,
- * `1.foo`) and markers with no gap at all. Shared by container
+ * the marker end) or EOL for an empty item. Returns null for
+ * pseudo-markers (`1234567890.`, `1.foo`). Shared by container
  * stripping and definition-prefix validation so both agree on
  * ownership.
  */
@@ -557,7 +670,6 @@ function matchListMarker(
     gapColumn += rest[gapEnd] === "\t" ? 4 - (gapColumn % 4) : 1;
     gapEnd += 1;
   }
-  if (gapEnd === bullet[0].length) return null;
   return {
     digits: bullet[1] !== undefined ? null : (bullet[2] ?? ""),
     markerColumn,
@@ -636,6 +748,17 @@ interface ContainerColumn {
   readonly column: number;
 }
 
+/**
+ * True for a thematic break leaf (`***`, `- - -`, `___` with up to
+ * three leading spaces): it wins over list-item tokenization and ends
+ * paragraphs. Setext underlines (`===`) match endsParagraph instead.
+ */
+function isThematicBreak(content: string): boolean {
+  return /^ {0,3}(?:(?:\*[ \t]*){3,}|(?:-[ \t]*){3,}|(?:_[ \t]*){3,})$/.test(
+    content,
+  );
+}
+
 function stripContainers(
   line: string,
   contentColumn: readonly ContainerColumn[] = [],
@@ -673,6 +796,10 @@ function stripContainers(
       explicitKinds.push("quote");
       continue;
     }
+    // A thematic break wins over list markers at this level.
+    if (isThematicBreak(rest)) {
+      break;
+    }
     const marker = matchListMarker(rest, line.length - rest.length);
     if (marker !== null) {
       // An ordered marker opens an item only for start number 1 when
@@ -682,6 +809,13 @@ function stripContainers(
         Number.parseInt(marker.digits, 10) !== 1 &&
         paragraphOpen
       ) {
+        break;
+      }
+      // A marker with no content never interrupts an open
+      // paragraph: `-` may underline it (setext), the rest stays lazy
+      // continuation text. With no open paragraph it opens an empty
+      // item whose content follows at marker width plus one.
+      if (marker.gapEnd === marker.gapStart && paragraphOpen) {
         break;
       }
       // An empty item never interrupts an open paragraph: without
@@ -889,6 +1023,12 @@ function splitProtectedSpans(
         continue;
       }
     }
+    // A blank line never closes a fenced block: it stays literal
+    // content with ownership retained.
+    if (inFence && bare.trim().length === 0) {
+      current += withNewline;
+      continue;
+    }
     // Fence openers allow at most three leading spaces past the
     // container; deeper indentation is indented code, never a fence.
     // Closing runs need the same character, at least the opening
@@ -1049,7 +1189,7 @@ function splitProtectedSpans(
     // A fence-looking line with an invalid info string reaches here:
     // it is ordinary paragraph text, not a block boundary. An empty
     // list item never opens nor closes a paragraph either way.
-    if (/^[ \t]{0,3}(?:[-+*]|\d+[.)])[ \t]*$/.test(stripped)) {
+    if (/^[ \t]{0,3}(?:[-+*]|\d{1,9}[.)])[ \t]+$/.test(stripped)) {
       previousWasCode = false;
     } else {
       para = trackParagraph(
@@ -1592,7 +1732,7 @@ function scanInlineLinks(text: string): InlineLinkMatch[] {
     let end = -1;
     let angled = false;
     if (text[destStart] === "<") {
-      const close = text.indexOf(">", destStart + 1);
+      const close = findAngledEnd(text, destStart + 1);
       // A link destination never contains a line ending: angled
       // destinations with newlines stay byte-identical.
       if (close !== -1 && countLineEndings(text, destStart, close) === 0) {
@@ -1834,7 +1974,7 @@ function findReferenceDefinitions(
       explicitKinds,
       consumedBullet,
     );
-    const singleFirst = matchSingle(bare);
+    const singleFirst = isThematicBreak(stripped) ? null : matchSingle(bare);
     if (singleFirst !== null) {
       if (lazy) {
         // Lazy paragraph text, not a definition: normal tracking, and
@@ -2145,7 +2285,7 @@ function findReferenceDefinitions(
     if (/^(?: {4}|\t)/.test(stripped)) {
       continue;
     }
-    if (/^[ \t]{0,3}(?:[-+*]|\d+[.)])[ \t]*$/.test(stripped)) {
+    if (/^[ \t]{0,3}(?:[-+*]|\d{1,9}[.)])[ \t]+$/.test(stripped)) {
       continue;
     }
     para = trackParagraph(para, stripped, kinds, explicitKinds, consumedBullet);
@@ -2315,7 +2455,7 @@ function matchContinuedDefinition(
   let destinationStartCol = cursorCol;
   let destinationEndCol = cursorCol;
   if (current.stripped[cursorCol] === "<") {
-    const close = current.stripped.indexOf(">", cursorCol + 1);
+    const close = findAngledEnd(current.stripped, cursorCol + 1);
     if (close === -1) return null;
     destinationStartCol = cursorCol + 1;
     destinationEndCol = close;

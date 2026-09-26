@@ -954,6 +954,45 @@ test("indented-code-first items align continuations at content", () => {
   assert.ok(outcome.text.includes("[x](../../other-plan/plan.md)"));
 });
 
+test("blank-first list items keep their content live", () => {
+  for (const input of [
+    "-\n    [x](../other-plan/plan.md)\n",
+    "-   \n    [x](../other-plan/plan.md)\n",
+  ]) {
+    const outcome = rewrite(input);
+    assert.equal(outcome.rewritten, 1);
+    assert.ok(outcome.text.includes("[x](../../other-plan/plan.md)"));
+  }
+  // A blank line never closes a fenced block inside an item.
+  const fenced = "- ```\n\n  [x](../other-plan/plan.md)\n  ```\n";
+  const fencedOutcome = rewrite(fenced);
+  assert.equal(fencedOutcome.text, fenced);
+  assert.equal(fencedOutcome.rewritten, 0);
+});
+
+test("thematic breaks win over list markers", () => {
+  const outcome = rewrite("See [id].\n* * *\n[id]: ../other-plan/plan.md\n");
+  assert.equal(outcome.rewritten, 1);
+  assert.ok(outcome.text.includes("[id]: ../../other-plan/plan.md"));
+  // A bare dash still underlines setext; indented code stays put.
+  const setext = "foo\n-\nbar\n";
+  assert.equal(rewrite(setext).text, setext);
+  const coded = "See [id].\n* * *\n    code\n";
+  assert.equal(rewrite(coded).text, coded);
+});
+
+test("destinations resolve escapes and entities before lookup", () => {
+  // An escaped fragment still addresses the file beside it.
+  const escaped = rewrite("[x](../other-plan/plan.md\\#section)\n");
+  assert.equal(escaped.rewritten, 1);
+  assert.ok(escaped.text.includes("[x](../../other-plan/plan.md\\#section)"));
+  // Angled destinations honor escapes and reject raw brackets.
+  const angled = rewrite("[x](<../other-plan/plan.md>)\n");
+  assert.equal(angled.rewritten, 1);
+  const rawInner = "[x](<../other-plan/plan.md<x>)\n";
+  assert.equal(rewrite(rawInner).text, rawInner);
+});
+
 test("resolveLinkPath is POSIX-only and reports root escapes", () => {
   assert.equal(
     resolveLinkPath("plans/a", "../other/plan.md"),

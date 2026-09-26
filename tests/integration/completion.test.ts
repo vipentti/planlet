@@ -432,6 +432,37 @@ test("resume splits the audit at tab-separated H2 headings too", () => {
   });
 });
 
+test("completion rewrites entity and escaped-fragment links against real files", () => {
+  withRepository(COMPLETE_TASKS, (root) => {
+    const other = join(root, "plans", "other&plan");
+    mkdirSync(other, { recursive: true });
+    writeFileSync(join(other, "plan.md"), "# Other Plan\n");
+    const sibling = join(root, "plans", "sibling-plan");
+    mkdirSync(sibling, { recursive: true });
+    writeFileSync(join(sibling, "plan.md"), "# Sibling Plan\n");
+    const source = join(root, "plans", "fixture-plan");
+    writeFileSync(
+      join(source, "plan.md"),
+      PLAN.replace(
+        "Tests.\n",
+        "Tests.\n\n- [amp](../other&amp;plan/plan.md)\n- [frag](../sibling-plan/plan.md\\#part)\n",
+      ),
+    );
+
+    const result = completePlanlet({
+      repositoryRoot: root,
+      slug: "fixture-plan",
+      dependencies: { now: () => new Date("2027-01-02T00:00:00.125Z") },
+    });
+
+    const archived = readFileSync(join(result.destination, "plan.md"), "utf8");
+    assert.ok(archived.includes("- [amp](../../other&amp;plan/plan.md)\n"));
+    assert.ok(
+      archived.includes("- [frag](../../sibling-plan/plan.md\\#part)\n"),
+    );
+  });
+});
+
 test("completion stages the moved planlet and git reports the rename", async () => {
   await withGitRepository(COMPLETE_TASKS, (root, source) => {
     commitAll(root, "base");
