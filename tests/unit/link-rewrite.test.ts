@@ -178,6 +178,40 @@ test("shorter backtick runs inside longer inline spans stay protected", () => {
   assert.ok(outcome.text.includes("[y](../../other-plan/plan.md)"));
 });
 
+test("multiline code spans stay protected", () => {
+  const input =
+    "`start\n[x](../other-plan/plan.md)\nend` then [y](../other-plan/plan.md)\n";
+  const outcome = rewrite(input);
+  assert.equal(outcome.rewritten, 1);
+  assert.ok(outcome.text.includes("[x](../other-plan/plan.md)"));
+  assert.ok(outcome.text.includes("[y](../../other-plan/plan.md)"));
+});
+
+test("a longer unmatched run does not protect the link", () => {
+  const outcome = rewrite("`` opener\n\n[x](../other-plan/plan.md)\n\n```\n");
+  assert.equal(outcome.rewritten, 1);
+  assert.ok(outcome.text.includes("[x](../../other-plan/plan.md)"));
+});
+
+test("backslash parity decides escaped brackets", () => {
+  const real = rewrite("\\\\[x](../other-plan/plan.md)");
+  assert.equal(real.rewritten, 1);
+  const escaped = rewrite("\\[x](../other-plan/plan.md)");
+  assert.equal(escaped.rewritten, 0);
+});
+
+test("angle destinations keep their optional title", () => {
+  const outcome = rewrite('[x](<../other-plan/plan.md> "Title")');
+  assert.equal(outcome.text, '[x](<../../other-plan/plan.md> "Title")');
+  assert.equal(outcome.rewritten, 1);
+});
+
+test("nested label brackets balance", () => {
+  const outcome = rewrite("[a [b] c](../other-plan/plan.md)");
+  assert.equal(outcome.text, "[a [b] c](../../other-plan/plan.md)");
+  assert.equal(outcome.rewritten, 1);
+});
+
 test("resolveLinkPath is POSIX-only and reports root escapes", () => {
   assert.equal(
     resolveLinkPath("plans/a", "../other/plan.md"),

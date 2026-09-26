@@ -188,11 +188,14 @@ function publishRewrittenFile(options: {
       `${options.slug}${options.temporarySuffix}`,
     ),
   );
-  const mode = statSync(options.filePath).mode & 0o777;
   atomicPublish({
     temporaryPath,
     targetPath: options.filePath,
     createTemporary: () => {
+      // Mode lookup stays inside the publish error boundary so a missing
+      // or inaccessible file maps to write_conflict like every other
+      // completion write failure.
+      const mode = statSync(options.filePath).mode & 0o777;
       options.dependencies.writeFile(temporaryPath, options.rewritten, mode);
     },
     rename: options.dependencies.replaceFile,

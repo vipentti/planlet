@@ -234,63 +234,54 @@ function splitProtectedSpans(
   }
   flush(inFence, current);
   // Split inline code spans and HTML comments out of rewritable spans.
-  // Inline spans match equal backtick runs; the body may hold shorter
-  // runs but never the opener length (CommonMark code-span rule).
+  // Backtick runs scan as whole delimiters per CommonMark: a span closes
+  // only on a run of exactly the opener length, and spans may cross line
+  // breaks. Runs with no exact-length closer are literal text.
   const result: { protected_: boolean; text: string }[] = [];
   for (const span of spans) {
     if (span.protected_) {
       result.push(span);
       continue;
     }
-    const inlinePattern = /(`+)|<!--[\s\S]*?-->/g;
+    const runs = [...span.text.matchAll(/`+/g)];
+    // commentMatches holds [start, end] pairs; code spans resolve below.
+    const commentMatches = [...span.text.matchAll(/<!--[\s\S]*?-->/g)];
+    const protectedRanges: Array<[number, number]> = commentMatches.map(
+      (comment) => [
+        comment.index ?? 0,
+        (comment.index ?? 0) + comment[0].length,
+      ],
+    );
+    let openStart = -1;
+    let openLength = 0;
+    for (const run of runs) {
+      const start = run.index ?? 0;
+      const length = run[0].length;
+      if (openStart === -1) {
+        openStart = start;
+        openLength = length;
+        continue;
+      }
+      if (length === openLength) {
+        protectedRanges.push([openStart, start + length]);
+        openStart = -1;
+        openLength = 0;
+      }
+      // A longer or shorter run does not close the span: it becomes part
+      // of the span body and scanning continues for an exact-length close.
+    }
+    // An unmatched opener protects nothing; its run stays rewritable.
+    protectedRanges.sort((left, right) => left[0] - right[0]);
     let cursor = 0;
-    let match: RegExpExecArray | null;
-    while ((match = inlinePattern.exec(span.text)) !== null) {
-      if (match[1] === undefined) {
-        // HTML comment.
-        if (match.index > cursor) {
-          result.push({
-            protected_: false,
-            text: span.text.slice(cursor, match.index),
-          });
-        }
-        result.push({ protected_: true, text: match[0] });
-        cursor = match.index + match[0].length;
-        continue;
-      }
-      // Backtick run: find the matching equal-length close on this line.
-      const run = match[1];
-      const bodyStart = match.index + run.length;
-      const lineEnd = span.text.indexOf("\n", bodyStart);
-      const lineLimit = lineEnd === -1 ? span.text.length : lineEnd;
-      const close = span.text.indexOf(run, bodyStart);
-      if (close === -1 || close >= lineLimit) {
-        // No in-line closer: lone backticks are literal text. Skip only
-        // the run itself so a later opener on the line still protects.
-        if (match.index > cursor) {
-          result.push({
-            protected_: false,
-            text: span.text.slice(cursor, match.index),
-          });
-        }
-        result.push({ protected_: true, text: run });
-        cursor = bodyStart;
-        inlinePattern.lastIndex = bodyStart;
-        continue;
-      }
-      if (match.index > cursor) {
+    for (const [start, end] of protectedRanges) {
+      if (start > cursor) {
         result.push({
           protected_: false,
-          text: span.text.slice(cursor, match.index),
+          text: span.text.slice(cursor, start),
         });
       }
-      const end = close + run.length;
-      result.push({
-        protected_: true,
-        text: span.text.slice(match.index, end),
-      });
-      cursor = end;
-      inlinePattern.lastIndex = end;
+      result.push({ protected_: true, text: span.text.slice(start, end) });
+      cursor = Math.max(cursor, end);
     }
     if (cursor < span.text.length) {
       result.push({ protected_: false, text: span.text.slice(cursor) });
@@ -309,13 +300,30 @@ interface InlineLinkMatch {
   readonly label: string;
   readonly destination: string;
   readonly angled: boolean;
+  /** Title text after an angle destination, including leading space. */
+  readonly angledTitle: string;
+}
+
+/**
+ * True when the character at `position` is backslash-escaped: preceded by
+ * an odd run of consecutive backslashes.
+ */
+function isEscaped(text: string, position: number): boolean {
+  let backslashes = 0;
+  let cursor = position - 1;
+  while (cursor >= 0 && text[cursor] === "\\") {
+    backslashes += 1;
+    cursor -= 1;
+  }
+  return backslashes % 2 === 1;
 }
 
 /**
  * Finds inline links `[label](destination)` and `![alt](destination)` with
- * a small scanner: backslash escapes are honored, and destinations may
- * hold balanced parentheses or one `<...>` group. Returns byte offsets so
- * the caller preserves every untouched byte.
+ * a small scanner: backslash-escape parity is honored, labels balance
+ * nested brackets, and destinations may hold balanced parentheses or one
+ * `<...>` group with an optional title. Returns byte offsets so the caller
+ * preserves every untouched byte.
  */
 function findInlineLinks(text: string): InlineLinkMatch[] {
   const matches: InlineLinkMatch[] = [];
@@ -323,13 +331,18 @@ function findInlineLinks(text: string): InlineLinkMatch[] {
   while (index < text.length) {
     const open = text.indexOf("[", index);
     if (open === -1) break;
-    if (open > 0 && text[open - 1] === "\\") {
+    if (isEscaped(text, open)) {
       index = open + 1;
       continue;
     }
-    const bang = open > 0 && text[open - 1] === "!" ? "!" : "";
-    // Find the closing bracket, honoring escapes and excluding newlines.
+    const bang =
+      open > 0 && text[open - 1] === "!" && !isEscaped(text, open - 1)
+        ? "!"
+        : "";
+    // Find the closing bracket, balancing nested brackets and excluding
+    // newlines.
     let cursor = open + 1;
+    let depth = 0;
     let closeBracket = -1;
     while (cursor < text.length) {
       const char = text[cursor];
@@ -338,9 +351,13 @@ function findInlineLinks(text: string): InlineLinkMatch[] {
         cursor += 2;
         continue;
       }
+      if (char === "[") depth += 1;
       if (char === "]") {
-        closeBracket = cursor;
-        break;
+        if (depth === 0) {
+          closeBracket = cursor;
+          break;
+        }
+        depth -= 1;
       }
       cursor += 1;
     }
@@ -352,21 +369,37 @@ function findInlineLinks(text: string): InlineLinkMatch[] {
       index = open + 1;
       continue;
     }
-    // Parse the destination: `<...>` group or balanced parentheses.
+    // Parse the destination: `<...>` group (with optional title) or
+    // balanced parentheses.
     const destStart = closeBracket + 2;
     let destEnd = -1;
     let end = -1;
     let angled = false;
     if (text[destStart] === "<") {
       const close = text.indexOf(">", destStart + 1);
-      if (
-        close !== -1 &&
-        text[close + 1] === ")" &&
-        !text.slice(destStart, close).includes("\n")
-      ) {
-        destEnd = close;
-        end = close + 2;
-        angled = true;
+      if (close !== -1 && !text.slice(destStart, close).includes("\n")) {
+        const after = text.slice(close + 1);
+        const tail =
+          /^(?:[ \t]+(?:"[^"\n]*"|'[^'\n]*'|\([^)\n]*\)))?[ \t]*\)/.exec(after);
+        if (tail !== undefined && tail !== null) {
+          // Keep the optional title: the tail ends at the link paren, so
+          // everything before its final `)` is title text.
+          const title = tail[0].slice(0, -1);
+          destEnd = close;
+          end = close + 1 + tail[0].length;
+          angled = true;
+          matches.push({
+            start: bang.length === 0 ? open : open - 1,
+            end,
+            bang,
+            label: text.slice(open + 1, closeBracket),
+            destination: text.slice(destStart + 1, close),
+            angled,
+            angledTitle: title,
+          });
+          index = end;
+          continue;
+        }
       }
     } else {
       let depth = 0;
@@ -404,6 +437,7 @@ function findInlineLinks(text: string): InlineLinkMatch[] {
         ? text.slice(destStart + 1, destEnd)
         : text.slice(destStart, destEnd),
       angled,
+      angledTitle: "",
     });
     index = end;
   }
@@ -431,6 +465,13 @@ function rewriteInlineLinks(
     parts.push(text.slice(cursor, found.start));
     if (!outcome.rewritten) {
       parts.push(text.slice(found.start, found.end));
+    } else if (found.angledTitle.length > 0) {
+      // Rebuild the angled link with its title: the rewrite output holds
+      // only the `<path>` destination.
+      parts.push(
+        `${found.bang}[${found.label}](${outcome.destination}${found.angledTitle})`,
+      );
+      rewritten += 1;
     } else {
       parts.push(`${found.bang}[${found.label}](${outcome.destination})`);
       rewritten += 1;
