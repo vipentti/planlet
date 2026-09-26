@@ -171,23 +171,63 @@ function rewriteDestination(
  * code blocks, inline code spans, HTML comments) and rewritable spans.
  * Only rewritable spans are link-rewritten.
  */
+interface ProtectedSpan {
+  readonly protected_: boolean;
+  readonly text: string;
+  /** Byte offset of the span start within the source document. */
+  readonly offset: number;
+}
+
+/**
+ * Excludes byte ranges (document-level link spans) from protection:
+ * any protected interval intersecting an exclusion is dropped, because
+ * the link owns those bytes (a label may hold inline code or HTML).
+ * Links partly inside fenced/indented blocks never reach this stage:
+ * block splitting runs first and document recognition only feeds ranges
+ * for hole-punching at the inline level.
+ */
+function excludeRanges(
+  intervals: Array<[number, number]>,
+  exclusions: readonly { start: number; end: number }[],
+): Array<[number, number]> {
+  return intervals.filter(
+    ([start, end]) =>
+      !exclusions.some(
+        (exclusion) => exclusion.start < end && exclusion.end > start,
+      ),
+  );
+}
+
 function splitProtectedSpans(
   text: string,
-): readonly { protected_: boolean; text: string }[] {
-  const spans: { protected_: boolean; text: string }[] = [];
+  exclude: readonly { start: number; end: number }[] = [],
+): readonly ProtectedSpan[] {
+  const spans: ProtectedSpan[] = [];
   const lines = text.split("\n");
   let current = "";
   let inFence = false;
   let fenceMarker = "";
   let fenceQuoted = false;
+  // Paragraph/block-start tracking for the indented-code rule: an
+  // indented code block interrupts a paragraph, so only blank lines,
+  // code blocks, and non-paragraph lines reset it.
+  let paragraphOpen = false;
+  let previousWasCode = true;
+  const canStartIndentedCode = (): boolean => !paragraphOpen || previousWasCode;
+  const isNonParagraphLine = (line: string): boolean =>
+    /^(?: {0,3}> ?)? {0,3}#{1,6}(?:\s|$)/.test(line);
 
   const flush = (protected_: boolean, chunk: string): void => {
     if (chunk.length === 0) return;
     const last = spans[spans.length - 1];
     if (last !== undefined && last.protected_ === protected_) {
-      last.text += chunk;
+      spans[spans.length - 1] = {
+        protected_: last.protected_,
+        text: last.text + chunk,
+        offset: last.offset,
+      };
     } else {
-      spans.push({ protected_, text: chunk });
+      spans.push({ protected_, text: chunk, offset: -1 });
     }
   };
 
@@ -197,9 +237,11 @@ function splitProtectedSpans(
     // Fence state retains its container context: a fence opened inside a
     // block quote only closes on a quoted closer, and a top-level fence
     // only closes on a top-level closer, so a literal `> ``` line inside
-    // top-level code can never terminate the block. Deeper container
-    // nesting (lists inside quotes and beyond) stays out of scope and is
-    // documented on rewriteOutgoingLinks.
+    // top-level code can never terminate the block. A quoted fence ends
+    // when its quote container ends: an unquoted line terminates it and
+    // is reprocessed below. Deeper container nesting (lists inside quotes
+    // and beyond) stays out of scope and is documented on
+    // rewriteOutgoingLinks.
     const quoteMatch = /^ {0,3}> ?/.exec(line);
     const quoted = quoteMatch !== null;
     const stripped =
@@ -237,6 +279,25 @@ function splitProtectedSpans(
       continue;
     }
     if (inFence) {
+      if (fenceQuoted && !quoted) {
+        // The quote container ended: close the quoted fence and
+        // reprocess this line as ordinary Markdown.
+        flush(true, current);
+        current = "";
+        inFence = false;
+        fenceMarker = "";
+        fenceQuoted = false;
+      } else {
+        current += withNewline;
+        continue;
+      }
+    }
+    // Indented code starts only where CommonMark permits a block start:
+    // at the document start, after a blank line, or after another code
+    // block. A four-space line continuing a paragraph is lazy
+    // continuation text, never code, so links there stay rewritable.
+    if (/^(?: {4}|\t)/.test(line) && !canStartIndentedCode()) {
+      paragraphOpen = true;
       current += withNewline;
       continue;
     }
@@ -244,11 +305,35 @@ function splitProtectedSpans(
       flush(false, current);
       current = "";
       flush(true, withNewline);
+      paragraphOpen = false;
+      previousWasCode = true;
       continue;
+    }
+    if (line.trim().length === 0) {
+      paragraphOpen = false;
+      previousWasCode = false;
+    } else if (fenceMatch === null && !isNonParagraphLine(line)) {
+      paragraphOpen = true;
+      previousWasCode = false;
+    } else if (fenceMatch !== null) {
+      previousWasCode = false;
     }
     current += withNewline;
   }
   flush(inFence, current);
+  // Resolve block-span offsets in document order.
+  let blockBase = 0;
+  for (let spanIndex = 0; spanIndex < spans.length; spanIndex += 1) {
+    const span = spans[spanIndex];
+    if (span !== undefined) {
+      spans[spanIndex] = {
+        protected_: span.protected_,
+        text: span.text,
+        offset: blockBase,
+      };
+      blockBase += span.text.length;
+    }
+  }
   // Split inline code spans and HTML comments out of rewritable spans.
   // Raw HTML owns its bytes first: comment (and other tag) ranges are
   // excluded before backtick pairing, so a backtick inside HTML can never
@@ -256,12 +341,37 @@ function splitProtectedSpans(
   // whole delimiters per CommonMark: a span closes only on a run of
   // exactly the opener length, and spans may cross line breaks. Runs with
   // no exact-length closer are literal text.
-  const result: { protected_: boolean; text: string }[] = [];
+  const result: ProtectedSpan[] = [];
+  let inlineBase = 0;
+  const emitSpan = (protected_: boolean, chunk: string): void => {
+    if (chunk.length === 0) return;
+    const last = result[result.length - 1];
+    if (last !== undefined && last.protected_ === protected_) {
+      result[result.length - 1] = {
+        protected_: last.protected_,
+        text: last.text + chunk,
+        offset: last.offset,
+      };
+    } else {
+      result.push({ protected_, text: chunk, offset: inlineBase });
+    }
+    inlineBase += chunk.length;
+  };
   for (const span of spans) {
     if (span.protected_) {
-      result.push(span);
+      emitSpan(true, span.text);
       continue;
     }
+    // Translate document-level link ranges into span coordinates: any
+    // inline-code or HTML interval touching a link is dropped, so the
+    // link stays whole. Links fully inside fenced blocks are excluded
+    // from `exclude` by the caller (block protection wins there).
+    const localExclusions = exclude
+      .map((range) => ({
+        start: range.start - span.offset,
+        end: range.end - span.offset,
+      }))
+      .filter((range) => range.end > 0 && range.start < span.text.length);
     // Raw HTML ranges: comments plus inline tags on one line. Tag
     // detection is deliberately narrow (a `<` run to the next `>` with no
     // newline); anything exotic stays rewritable, which fails safe toward
@@ -298,9 +408,12 @@ function splitProtectedSpans(
     // An unmatched opener protects nothing; its run stays rewritable.
     // Coalesce overlapping ranges (a comment nested inside a code span is
     // owned by the span) so slicing never duplicates or drops bytes.
-    protectedRanges.sort((left, right) => left[0] - right[0]);
+    // Document-level link ranges punch holes: a link label may hold
+    // inline code or HTML, and protection must not split the link.
+    const punched = excludeRanges(protectedRanges, localExclusions);
+    punched.sort((left, right) => left[0] - right[0]);
     const coalesced: Array<[number, number]> = [];
-    for (const [start, end] of protectedRanges) {
+    for (const [start, end] of punched) {
       const last = coalesced[coalesced.length - 1];
       if (last !== undefined && start <= last[1]) {
         last[1] = Math.max(last[1], end);
@@ -311,27 +424,24 @@ function splitProtectedSpans(
     let cursor = 0;
     for (const [start, end] of coalesced) {
       if (start > cursor) {
-        result.push({
-          protected_: false,
-          text: span.text.slice(cursor, start),
-        });
+        emitSpan(false, span.text.slice(cursor, start));
       }
-      result.push({ protected_: true, text: span.text.slice(start, end) });
+      emitSpan(true, span.text.slice(start, end));
       cursor = Math.max(cursor, end);
     }
     if (cursor < span.text.length) {
-      result.push({ protected_: false, text: span.text.slice(cursor) });
+      emitSpan(false, span.text.slice(cursor));
     }
   }
   return result;
 }
 
 const REFERENCE_DEFINITION_PATTERN =
-  /^([ \t]{0,3}\[[^\]\n]+\]:[ \t]*)(<[^>\n]+>|[^\s]+)(?:(?=[ \t]*$)|(?=[ \t]+(?:"[^"\n]*"|'[^'\n]*'|\([^)\n]*\))[ \t]*$))/gm;
+  /^(?:([ \t]{0,3}> ?)?)(\[[^\]\n\\]*(?:\\.[^\]\n\\]*)*\]:[ \t]*)(<[^>\n]+>|[^\s]+)(?:(?=[ \t]*$)|(?=[ \t]+(?:"[^"\n\\]*(?:\\.[^"\n\\]*)*"|'[^'\n\\]*(?:\\.[^'\n\\]*)*'|\([^)\n\\]*(?:\\.[^)\n\\]*)*\))[ \t]*$))/gm;
 
 /** Matches a reference definition whose destination sits on the next line. */
 const MULTILINE_DEFINITION_PATTERN =
-  /^([ \t]{0,3}\[[^\]\n]+\]:[ \t]*\n[ \t]+)(<[^>\n]+>|[^\s]+)(?:(?=[ \t]*$)|(?=[ \t]+(?:"[^"\n]*"|'[^'\n]*'|\([^)\n]*\))[ \t]*$))/gm;
+  /^(?:([ \t]{0,3}> ?)?)(\[[^\]\n\\]*(?:\\.[^\]\n\\]*)*\]:[ \t]*\n[ \t]+)(<[^>\n]+>|[^\s]+)(?:(?=[ \t]*$)|(?=[ \t]+(?:"[^"\n\\]*(?:\\.[^"\n\\]*)*"|'[^'\n\\]*(?:\\.[^'\n\\]*)*'|\([^)\n\\]*(?:\\.[^)\n\\]*)*\))[ \t]*$))/gm;
 
 interface InlineLinkMatch {
   readonly start: number;
@@ -391,6 +501,80 @@ function allowOneLineEnding(
 }
 
 /**
+ * Matches an optional title plus the link-closing paren at the start of
+ * `text`: `"..."`, `'...'`, or `(...)` with backslash-escaped delimiters
+ * honored, spanning at most one line ending, then optional whitespace
+ * and `)`. Returns the full match (title plus paren) or null. A bare
+ * suffix never matches, so non-title text is rejected. Only `[0]` of the
+ * returned array is read by callers.
+ */
+function parseTitleTail(text: string): RegExpExecArray | null {
+  let cursor = 0;
+  let lineBreaks = 0;
+  while (cursor < text.length) {
+    const char = text[cursor];
+    if (char === " " || char === "\t") {
+      cursor += 1;
+      continue;
+    }
+    if (char === "\n") {
+      lineBreaks += 1;
+      if (lineBreaks > 1) return null;
+      cursor += 1;
+      continue;
+    }
+    break;
+  }
+  if (cursor < text.length) {
+    const char = text[cursor];
+    if (char === '"' || char === "'" || char === "(") {
+      const closer = char === "(" ? ")" : char;
+      cursor += 1;
+      let breaks = 0;
+      let closed = false;
+      while (cursor < text.length) {
+        const inner = text[cursor];
+        if (inner === "\\") {
+          cursor += 2;
+          continue;
+        }
+        if (inner === "\n") {
+          breaks += 1;
+          if (breaks > 1) return null;
+          cursor += 1;
+          continue;
+        }
+        if (inner === closer) {
+          closed = true;
+          cursor += 1;
+          break;
+        }
+        cursor += 1;
+      }
+      if (!closed) return null;
+    }
+  }
+  let trailingBreaks = lineBreaks;
+  while (cursor < text.length) {
+    const char = text[cursor];
+    if (char === " " || char === "\t") {
+      cursor += 1;
+      continue;
+    }
+    if (char === "\n") {
+      trailingBreaks += 1;
+      if (trailingBreaks > 1) return null;
+      cursor += 1;
+      continue;
+    }
+    break;
+  }
+  if (text[cursor] !== ")") return null;
+  const matched = text.slice(0, cursor + 1);
+  return [matched] as unknown as RegExpExecArray;
+}
+
+/**
  * Finds inline links `[label](destination)` and `![alt](destination)` with
  * a small scanner: backslash-escape parity is honored, labels balance
  * nested brackets, and destinations may hold balanced parentheses or one
@@ -413,14 +597,39 @@ function findInlineLinks(text: string): InlineLinkMatch[] {
       open > 0 && text[open - 1] === "!" && !isEscaped(text, open - 1)
         ? "!"
         : "";
-    // Find the closing bracket, balancing nested brackets. One line
-    // ending is allowed inside the label run.
+    // Find the closing bracket, balancing nested brackets while
+    // skipping inline code spans and raw HTML inside the label: backtick
+    // runs pair by exact length and tags span to `>`, so `]` bytes
+    // inside them never close the label. One line ending is allowed.
     let cursor = open + 1;
     let depth = 0;
     let closeBracket = -1;
     let lineBreaks = 0;
     while (cursor < text.length) {
       const char = text[cursor];
+      if (char === "`") {
+        const run = /`+/.exec(text.slice(cursor))?.[0] ?? "`";
+        const closer = text.indexOf(run, cursor + run.length);
+        if (closer === -1) break;
+        cursor = closer + run.length;
+        continue;
+      }
+      if (char === "<" && !isEscaped(text, cursor)) {
+        if (text.startsWith("<!--", cursor)) {
+          const commentClose = text.indexOf("-->", cursor + 4);
+          if (commentClose === -1) break;
+          cursor = commentClose + 3;
+          continue;
+        }
+        if (/^<\/?[A-Za-z]/.test(text.slice(cursor, cursor + 3))) {
+          const tagClose = text.indexOf(">", cursor + 1);
+          const newline = text.indexOf("\n", cursor + 1);
+          if (tagClose !== -1 && (newline === -1 || tagClose < newline)) {
+            cursor = tagClose + 1;
+            continue;
+          }
+        }
+      }
       if (char === "\n") {
         lineBreaks += 1;
         if (lineBreaks > 1) break;
@@ -441,23 +650,27 @@ function findInlineLinks(text: string): InlineLinkMatch[] {
       }
       cursor += 1;
     }
-    const afterBracket =
-      closeBracket === -1
-        ? null
-        : allowOneLineEnding(text.slice(closeBracket + 1));
+    // The opening paren must immediately follow the label close:
+    // CommonMark forbids whitespace between `]` and `(`. Whitespace is
+    // allowed inside the parentheses instead (parsed below).
     if (
       closeBracket === -1 ||
-      afterBracket === null ||
-      !afterBracket.text.startsWith("(")
+      closeBracket + 1 >= text.length ||
+      text[closeBracket + 1] !== "("
     ) {
       index = open + 1;
       continue;
     }
     // Parse the destination: `<...>` group (with optional title) or
-    // balanced parentheses. A single line ending may precede the
-    // destination and separate it from the title.
-    const parenOffset = closeBracket + 1 + afterBracket.prefix;
-    const destStart = parenOffset + 1;
+    // balanced parentheses. Spaces, tabs, and one line ending may follow
+    // the opening paren and surround the title.
+    const inner = allowOneLineEnding(text.slice(closeBracket + 2));
+    if (inner === null) {
+      index = open + 1;
+      continue;
+    }
+    const parenOffset = closeBracket + 1;
+    const destStart = parenOffset + 1 + inner.prefix;
     let destEnd = -1;
     let end = -1;
     let angled = false;
@@ -465,12 +678,7 @@ function findInlineLinks(text: string): InlineLinkMatch[] {
       const close = text.indexOf(">", destStart + 1);
       if (close !== -1 && countLineEndings(text, destStart, close) <= 1) {
         const after = allowOneLineEnding(text.slice(close + 1));
-        const tail =
-          after === null
-            ? null
-            : /^(?:(?:"[^"\n]*(?:\n[ \t]*[^"\n]*)*"|'[^'\n]*(?:\n[ \t]*[^'\n]*)*'|\([^)\n]*(?:\n[ \t]*[^)\n]*)*\))?[ \t\n]*\))/.exec(
-                after.text,
-              );
+        const tail = after === null ? null : parseTitleTail(after.text);
         if (tail !== undefined && tail !== null && after !== null) {
           // Keep the optional title: the tail ends at the link paren, so
           // everything before its final `)` is title text.
@@ -533,12 +741,7 @@ function findInlineLinks(text: string): InlineLinkMatch[] {
         // link close, allowing one line ending between components. A bare
         // non-whitespace suffix is not a title and never matches.
         const after = allowOneLineEnding(text.slice(pathEnd));
-        const titleClose =
-          after === null
-            ? null
-            : /^(?:(?:"[^"\n]*(?:\n[ \t]*[^"\n]*)*"|'[^'\n]*(?:\n[ \t]*[^'\n]*)*'|\([^)\n]*(?:\n[ \t]*[^)\n]*)*\))?[ \t\n]*\))/.exec(
-                after.text,
-              );
+        const titleClose = after === null ? null : parseTitleTail(after.text);
         if (titleClose !== undefined && titleClose !== null) {
           destEnd = pathEnd;
           end =
@@ -572,8 +775,14 @@ function findInlineLinks(text: string): InlineLinkMatch[] {
   return matches;
 }
 
-function rewriteInlineLinks(
+/**
+ * Rewrites pre-recognized document-level links that lie fully inside one
+ * rewritable span. Offsets translate by the span base.
+ */
+function rewriteOwnedLinks(
   text: string,
+  spanOffset: number,
+  owned: readonly InlineLinkMatch[],
   planDir: string,
   repositoryRoot: string,
   existence: LinkTargetExistence,
@@ -582,7 +791,7 @@ function rewriteInlineLinks(
   let rewritten = 0;
   let cursor = 0;
   const parts: string[] = [];
-  for (const found of findInlineLinks(text)) {
+  for (const found of owned) {
     const outcome = rewriteDestination(
       found.inside,
       planDir,
@@ -590,14 +799,16 @@ function rewriteInlineLinks(
       existence,
     );
     if (outcome.skipped !== undefined) skipped.push(outcome.skipped);
-    parts.push(text.slice(cursor, found.start));
+    const start = found.start - spanOffset;
+    const end = found.end - spanOffset;
+    parts.push(text.slice(cursor, start));
     if (!outcome.rewritten) {
-      parts.push(text.slice(found.start, found.end));
+      parts.push(text.slice(start, end));
     } else {
       parts.push(`${found.bang}[${found.label}](${outcome.destination})`);
       rewritten += 1;
     }
-    cursor = found.end;
+    cursor = end;
   }
   parts.push(text.slice(cursor));
   return { text: parts.join(""), rewritten };
@@ -609,7 +820,8 @@ function rewriteReferenceDefinitions(
   repositoryRoot: string,
   existence: LinkTargetExistence,
   skipped: string[],
-): { text: string; rewritten: number } {
+  paragraphOpen = false,
+): { text: string; rewritten: number; paragraphOpen: boolean } {
   let rewritten = 0;
   const rewriteOne = (whole: string, destination: string): string => {
     const outcome = rewriteDestination(
@@ -625,18 +837,86 @@ function rewriteReferenceDefinitions(
     // swap just the destination bytes and keep titles byte-identical.
     return whole.replace(destination, outcome.destination);
   };
-  const single = text.replace(
-    REFERENCE_DEFINITION_PATTERN,
-    (whole: string, _prefix: string, destination: string) =>
-      rewriteOne(whole, destination),
-  );
-  // Reference definitions may break the destination onto the next line.
-  const replaced = single.replace(
-    MULTILINE_DEFINITION_PATTERN,
-    (whole: string, _prefix: string, destination: string) =>
-      rewriteOne(whole, destination),
-  );
-  return { text: replaced, rewritten };
+  // Reference definitions are block-level: a definition line that
+  // continues an open paragraph is lazy continuation text, not a
+  // definition, and stays byte-identical.
+  const lines = text.split("\n");
+  const out: string[] = [];
+  let open = paragraphOpen;
+  const replaceLine = (
+    line: string,
+    pattern: RegExp,
+  ): { line: string; matched: boolean } => {
+    pattern.lastIndex = 0;
+    const probe = pattern.exec(line);
+    pattern.lastIndex = 0;
+    if (probe === null) return { line, matched: false };
+    // Paragraph gate before any rewrite side effect: a definition line
+    // continuing a paragraph is lazy continuation text. The count must
+    // not move when the bytes do not.
+    if (open) return { line, matched: true };
+    let matched = false;
+    const replaced = line.replace(
+      pattern,
+      (
+        whole: string,
+        _container: string,
+        _prefix: string,
+        destination: string,
+      ) => {
+        matched = true;
+        return rewriteOne(whole, destination);
+      },
+    );
+    pattern.lastIndex = 0;
+    return { line: replaced, matched };
+  };
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+    const line = lines[lineIndex] ?? "";
+    // A definition destination may sit on the next line: join the pair
+    // for matching, then split the rewrite back across both lines.
+    const next = lineIndex + 1 < lines.length ? lines[lineIndex + 1] : null;
+    const joined =
+      next !== null && next !== undefined && /^[ \t]+\S/.test(next)
+        ? `${line}\n${next}`
+        : null;
+    if (joined !== null) {
+      const probe = replaceLine(joined, MULTILINE_DEFINITION_PATTERN);
+      if (probe.matched) {
+        if (open) {
+          out.push(line);
+          // Reprocess the next line on its own below.
+        } else {
+          const parts = probe.line.split("\n");
+          out.push(parts[0] ?? line);
+          out.push(parts[1] ?? next ?? "");
+          lineIndex += 1;
+          open = false;
+        }
+        if (open) {
+          if (line.trim().length === 0) open = false;
+          else if (!/^(?: {4}|\t)/.test(line)) open = true;
+          continue;
+        }
+        continue;
+      }
+    }
+    const single = replaceLine(line, REFERENCE_DEFINITION_PATTERN);
+    if (!single.matched) {
+      out.push(line);
+      if (line.trim().length === 0) open = false;
+      else if (/^(?: {4}|\t)/.test(line)) open = false;
+      else open = true;
+      continue;
+    }
+    if (open) {
+      out.push(line);
+      continue;
+    }
+    out.push(single.line);
+    open = false;
+  }
+  return { text: out.join("\n"), rewritten, paragraphOpen: open };
 }
 
 /**
@@ -660,25 +940,55 @@ export function rewriteOutgoingLinks(
   const skipped: string[] = [];
   let rewritten = 0;
   const parts: string[] = [];
-  for (const span of splitProtectedSpans(markdown)) {
+  let definitionsParagraphOpen = false;
+  // Inline code spans and raw HTML may appear inside link labels, so all
+  // inline links are recognized against the whole document first.
+  // Block-level protection (fences, indented code) wins over inline
+  // recognition: links fully inside a protected block span are dropped
+  // from the exclusions, so code content never punches protection holes.
+  // Only links in rewritable inline regions punch holes for their labels.
+  const documentLinks = findInlineLinks(markdown);
+  const blockSpans = splitProtectedSpans(markdown);
+  const inProtectedBlock = (link: { start: number; end: number }): boolean =>
+    blockSpans.some(
+      (span) =>
+        span.protected_ &&
+        link.start >= span.offset &&
+        link.end <= span.offset + span.text.length,
+    );
+  const exclusions = documentLinks
+    .filter((link) => !inProtectedBlock(link))
+    .map((link) => ({ start: link.start, end: link.end }));
+  for (const span of splitProtectedSpans(markdown, exclusions)) {
     if (span.protected_) {
       parts.push(span.text);
       continue;
     }
-    const inline = rewriteInlineLinks(
+    const spanEnd = span.offset + span.text.length;
+    const owned = documentLinks.filter(
+      (link) => link.start >= span.offset && link.end <= spanEnd,
+    );
+    const inline = rewriteOwnedLinks(
       span.text,
+      span.offset,
+      owned,
       planDir,
       repositoryRoot,
       existence,
       skipped,
     );
+    // Paragraph state carries across spans: protection splits never end
+    // a paragraph, so a definition after a paragraph line in an
+    // earlier span stays lazy continuation text.
     const definitions = rewriteReferenceDefinitions(
       inline.text,
       planDir,
       repositoryRoot,
       existence,
       skipped,
+      definitionsParagraphOpen,
     );
+    definitionsParagraphOpen = definitions.paragraphOpen;
     rewritten += inline.rewritten + definitions.rewritten;
     parts.push(definitions.text);
   }

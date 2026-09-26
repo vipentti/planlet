@@ -269,6 +269,56 @@ test("an invalid reference-looking line stays byte-identical", () => {
   assert.equal(outcome.rewritten, 0);
 });
 
+test("a quoted fence ends when its quote container ends", () => {
+  const outcome = rewrite("> ```\n[x](../other-plan/plan.md)\n");
+  assert.equal(outcome.rewritten, 1);
+  assert.ok(outcome.text.includes("[x](../../other-plan/plan.md)"));
+});
+
+test("indented paragraph continuations stay rewritable", () => {
+  const outcome = rewrite("Foo\n    [x](../other-plan/plan.md)\n");
+  assert.equal(outcome.rewritten, 1);
+  assert.ok(outcome.text.includes("[x](../../other-plan/plan.md)"));
+});
+
+test("no space is allowed between label and paren", () => {
+  const input = "[x] (../other-plan/plan.md)\n";
+  const outcome = rewrite(input);
+  assert.equal(outcome.text, input);
+  assert.equal(outcome.rewritten, 0);
+});
+
+test("whitespace after the opening paren is allowed", () => {
+  const outcome = rewrite("[x](   ../other-plan/plan.md)\n");
+  assert.equal(outcome.rewritten, 1);
+  assert.ok(outcome.text.includes("(../../other-plan/plan.md)"));
+});
+
+test("escaped delimiters inside titles are honored", () => {
+  const outcome = rewrite('[x](../other-plan/plan.md "a\\"b")');
+  assert.equal(outcome.rewritten, 1);
+  assert.ok(outcome.text.includes("../../other-plan/plan.md"));
+});
+
+test("inline code inside link labels does not split the link", () => {
+  const outcome = rewrite("[a `b` c](../other-plan/plan.md)\n");
+  assert.equal(outcome.rewritten, 1);
+  assert.ok(outcome.text.includes("[a `b` c](../../other-plan/plan.md)"));
+});
+
+test("a definition after a paragraph line is lazy continuation", () => {
+  const input = "Foo\n[id]: ../other-plan/plan.md\n";
+  const outcome = rewrite(input);
+  assert.equal(outcome.text, input);
+  assert.equal(outcome.rewritten, 0);
+});
+
+test("a quoted reference definition is recognized", () => {
+  const outcome = rewrite("> [id]: ../other-plan/plan.md\n");
+  assert.equal(outcome.rewritten, 1);
+  assert.ok(outcome.text.includes("> [id]: ../../other-plan/plan.md"));
+});
+
 test("resolveLinkPath is POSIX-only and reports root escapes", () => {
   assert.equal(
     resolveLinkPath("plans/a", "../other/plan.md"),
