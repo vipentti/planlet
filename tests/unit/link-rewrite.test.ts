@@ -727,6 +727,18 @@ test("an outer image survives a nested link", () => {
   assert.equal(outcome.rewritten, 2);
 });
 
+test("CRLF multi-line definitions keep original bytes", () => {
+  const label = rewrite("[a\r\nb]: ../other-plan/plan.md\r\n");
+  assert.equal(label.text, "[a\r\nb]: ../../other-plan/plan.md\r\n");
+  assert.equal(label.rewritten, 1);
+  const title = rewrite('[id]:\r\n  ../other-plan/plan.md "Ti\r\ntle"\r\n');
+  assert.equal(
+    title.text,
+    '[id]:\r\n  ../../other-plan/plan.md "Ti\r\ntle"\r\n',
+  );
+  assert.equal(title.rewritten, 1);
+});
+
 test("resolveLinkPath is POSIX-only and reports root escapes", () => {
   assert.equal(
     resolveLinkPath("plans/a", "../other/plan.md"),

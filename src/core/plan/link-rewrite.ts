@@ -1027,12 +1027,6 @@ const REFERENCE_DEFINITION_PATTERN =
 const MULTILINE_LABEL_DEFINITION_PATTERN =
   /^((?:[ \t]{0,3}> ?|[ \t]{0,3}(?:[-+*]|\d+[.)]) +)*[ \t]{0,3})(\[(?:\\.|[^\]\\\r\n]|\r\n|\n(?!\n))*\]:[ \t]*)(<[^>\n]+>|[^\s]+)(?:(?=[ \t]*$)|(?=[ \t]+(?:"[^"\n\\]*(?:\\.[^"\n\\]*)*"|'[^'\n\\]*(?:\\.[^'\n\\]*)*'|\([^)\n\\]*(?:\\.[^)\n\\]*)*\))[ \t]*$))/;
 
-/** Matches a definition whose title starts unclosed on the destination
- * line and closes on a later nonblank line. Groups: (container)(label +
- * colon)(separator)(destination)(separator)(title). */
-const CONTINUED_TITLE_DEFINITION_PATTERN =
-  /^((?:[ \t]{0,3}> ?|[ \t]{0,3}(?:[-+*]|\d+[.)]) +)*[ \t]{0,3})(\[(?:\\.|[^\]\\\r\n]|\r\n|\n(?!\n))*\]:)([ \t]*(?:\r\n|\n)?[ \t]*)(<[^>\n]+>|[^\s]+)([ \t]*(?:\r\n|\n)?[ \t]*)((?:"(?:\\.|[^"\n\\]|\r\n|\n(?!\n))*"|'(?:\\.|[^'\n\\]|\r\n|\n(?!\n))*'|\((?:\\.|[^)\n\\]|\r\n|\n(?!\n))*\)))(?=[ \t]*(?:\r\n|\n|$))/;
-
 /** Matches a reference definition whose destination sits on the next line. */
 const MULTILINE_DEFINITION_PATTERN =
   /^((?:[ \t]{0,3}> ?|[ \t]{0,3}(?:[-+*]|\d+[.)]) +)*[ \t]{0,3})(\[[^\]\n\\]*(?:\\.[^\]\n\\]*)*\]:[ \t]*\n[ \t]+)(<[^>\n]+>|[^\s]+)(?:(?=[ \t]*$)|(?=[ \t]+(?:"[^"\n\\]*(?:\\.[^"\n\\]*)*"|'[^'\n\\]*(?:\\.[^'\n\\]*)*'|\([^)\n\\]*(?:\\.[^)\n\\]*)*\))[ \t]*$))/gm;
@@ -1678,16 +1672,19 @@ function findReferenceDefinitions(
         continue;
       }
     }
-    // A label split across two lines: join the pair in original bytes
-    // when the first line holds an unclosed bracket, then match the
-    // label-tolerant pattern.
+    // A label split across two lines: join the bare pair (CR-stripped
+    // so CRLF behaves like LF) and map the destination back to
+    // original bytes: the destination sits on the second line, past
+    // the first line's stripped CR if any.
     const unescaped = bare.replace(/\\./g, "");
     if (/\[[^\]]*$/.test(unescaped)) {
       const labelNext =
         lineIndex + 1 < lines.length ? lines[lineIndex + 1] : null;
       if (labelNext !== null && labelNext !== undefined) {
-        const separator = line.endsWith("\r") ? "\r\n" : "\n";
-        const pair = `${line}${separator}${labelNext}`;
+        const labelNextBare = labelNext.endsWith("\r")
+          ? labelNext.slice(0, -1)
+          : labelNext;
+        const pair = `${bare}\n${labelNextBare}`;
         MULTILINE_LABEL_DEFINITION_PATTERN.lastIndex = 0;
         const labelProbe = MULTILINE_LABEL_DEFINITION_PATTERN.exec(pair);
         MULTILINE_LABEL_DEFINITION_PATTERN.lastIndex = 0;
@@ -1702,69 +1699,48 @@ function findReferenceDefinitions(
             const container = labelProbe[1] ?? "";
             const label = labelProbe[2] ?? "";
             const destination = labelProbe[3] ?? "";
+            const carriage = line.endsWith("\r") ? 1 : 0;
             const destinationStart =
-              lineStart + container.length + label.length;
+              lineStart + container.length + label.length + carriage;
             matches.push({
               start: lineStart,
-              end: lineStart + pair.length,
+              end: lineStart + line.length + 1 + labelNext.length,
               destinationStart,
               destinationEnd: destinationStart + destination.length,
               destination,
             });
           }
           para = { open: false, signature: null };
-          offset += labelNext.length + separator.length;
+          // Original bytes: the second line plus its preceding ending.
+          offset += labelNext.length + (line.endsWith("\r") ? 2 : 1);
           lineIndex += 1;
           continue;
         }
       }
     }
     // A title that starts unclosed on the destination line and closes
-    // on a later nonblank line: match the whole block in original
-    // bytes so the title stays definition-owned. Runs only when the
-    // strict single/multiline paths above found nothing.
+    // on a later nonblank line: scan manually in original bytes so no
+    // reconstruction or line cap is needed. Runs only when the strict
+    // single/multiline paths above found nothing.
     {
-      // Rebuild the tail in original bytes from this line onward
-      // (capped: titles cannot usefully span more).
-      let tail = lines[lineIndex] ?? "";
-      for (
-        let tailIndex = lineIndex + 1;
-        tailIndex < lines.length && tailIndex <= lineIndex + 8;
-        tailIndex += 1
-      ) {
-        const previous = lines[tailIndex - 1] ?? "";
-        tail += `${previous.endsWith("\r") ? "\r\n" : "\n"}${lines[tailIndex] ?? ""}`;
-      }
-      CONTINUED_TITLE_DEFINITION_PATTERN.lastIndex = 0;
-      const continued = CONTINUED_TITLE_DEFINITION_PATTERN.exec(tail);
-      CONTINUED_TITLE_DEFINITION_PATTERN.lastIndex = 0;
+      const continued = matchContinuedDefinition(lines, lineIndex, lineStart);
       if (continued !== null) {
-        const matched = continued[0] ?? "";
         if (lazy) {
           // Lazy paragraph text: normal tracking, following lines stay
           // unconsumed.
           para = trackParagraph(para, stripped, kinds, consumedBullet);
           continue;
         }
-        {
-          const container = continued[1] ?? "";
-          const label = continued[2] ?? "";
-          const separator = continued[3] ?? "";
-          const destination = continued[4] ?? "";
-          const destinationStart =
-            lineStart + container.length + label.length + separator.length;
-          matches.push({
-            start: lineStart,
-            end: lineStart + matched.length,
-            destinationStart,
-            destinationEnd: destinationStart + destination.length,
-            destination,
-          });
-        }
+        matches.push({
+          start: lineStart,
+          end: continued.end,
+          destinationStart: continued.destinationStart,
+          destinationEnd: continued.destinationEnd,
+          destination: continued.destination,
+        });
         // Consume the covered lines (the current line was already
         // counted at the top of the loop).
-        const covered = countLineEndings(tail, 0, matched.length);
-        for (let step = 0; step < covered; step += 1) {
+        for (let step = 0; step < continued.extraLines; step += 1) {
           lineIndex += 1;
           const consumed = lines[lineIndex] ?? "";
           offset += consumed.length + 1;
@@ -1783,6 +1759,170 @@ function findReferenceDefinitions(
     continue;
   }
   return matches;
+}
+
+/**
+ * Matches a reference definition whose title starts (but does not
+ * close) on the destination line and closes on a later nonblank line.
+ * Parses line by line over original bytes: no reconstructed strings,
+ * no line cap (a blank line always aborts). Returns original-byte
+ * ranges plus how many extra lines past `lineIndex` were consumed.
+ */
+function matchContinuedDefinition(
+  lines: readonly string[],
+  lineIndex: number,
+  lineStart: number,
+): {
+  end: number;
+  destinationStart: number;
+  destinationEnd: number;
+  destination: string;
+  extraLines: number;
+} | null {
+  const bareAt = (index: number): string | null => {
+    const raw = lines[index];
+    if (raw === undefined) return null;
+    return raw.endsWith("\r") ? raw.slice(0, -1) : raw;
+  };
+  const origStart = (index: number): number => {
+    let start = lineStart;
+    for (let i = lineIndex; i < index; i += 1) {
+      start += (lines[i] ?? "").length + 1;
+    }
+    return start;
+  };
+  // Blank (whitespace-only) lines always abort: titles span nonblank
+  // lines only, so scanning stays linear without a line cap.
+  const isBlank = (bare: string): boolean => /^[ \t]*$/.test(bare);
+  const firstBare = bareAt(lineIndex);
+  if (firstBare === null) return null;
+  const container =
+    /^(?:[ \t]{0,3}> ?|[ \t]{0,3}(?:[-+*]|\d+[.)]) +)*[ \t]{0,3}/.exec(
+      firstBare,
+    )?.[0] ?? "";
+  let cursorLine = lineIndex;
+  let cursorCol = container.length;
+  // Label: '[' ... ']' with escapes; newlines cross to nonblank lines.
+  const labelBare = bareAt(cursorLine);
+  if (labelBare === null || labelBare[cursorCol] !== "[") return null;
+  cursorCol += 1;
+  let closedLabel = false;
+  for (;;) {
+    const bare = bareAt(cursorLine);
+    if (bare === null) return null;
+    while (cursorCol < bare.length) {
+      const char = bare[cursorCol] ?? "";
+      if (char === "\\") {
+        cursorCol += 2;
+        continue;
+      }
+      if (char === "]") {
+        closedLabel = true;
+        cursorCol += 1;
+        break;
+      }
+      cursorCol += 1;
+    }
+    if (closedLabel) break;
+    const nextBare = bareAt(cursorLine + 1);
+    if (nextBare === null || isBlank(nextBare)) return null;
+    cursorLine += 1;
+    cursorCol = 0;
+  }
+  // Colon immediately after the label.
+  const colonBare = bareAt(cursorLine);
+  if (colonBare === null || colonBare[cursorCol] !== ":") return null;
+  cursorCol += 1;
+  // Separators: spaces, tabs, and single nonblank breaks.
+  const skipSeparators = (): boolean => {
+    for (;;) {
+      const bare = bareAt(cursorLine);
+      if (bare === null) return false;
+      while (
+        cursorCol < bare.length &&
+        (bare[cursorCol] === " " || bare[cursorCol] === "\t")
+      ) {
+        cursorCol += 1;
+      }
+      if (cursorCol < bare.length) return true;
+      const nextBare = bareAt(cursorLine + 1);
+      if (nextBare === null || isBlank(nextBare)) return false;
+      cursorLine += 1;
+      cursorCol = 0;
+    }
+  };
+  if (!skipSeparators()) return null;
+  // Destination: angled (same line only) or a bare non-space run.
+  const destBare = bareAt(cursorLine);
+  if (destBare === null) return null;
+  let destinationStartCol = cursorCol;
+  let destinationEndCol = cursorCol;
+  if (destBare[cursorCol] === "<") {
+    const close = destBare.indexOf(">", cursorCol + 1);
+    if (close === -1) return null;
+    destinationStartCol = cursorCol + 1;
+    destinationEndCol = close;
+    cursorCol = close + 1;
+  } else {
+    while (
+      cursorCol < destBare.length &&
+      destBare[cursorCol] !== " " &&
+      destBare[cursorCol] !== "\t"
+    ) {
+      cursorCol += 1;
+    }
+    if (cursorCol === destinationStartCol) return null;
+    destinationEndCol = cursorCol;
+  }
+  const destinationStart = origStart(cursorLine) + destinationStartCol;
+  const destinationEnd = origStart(cursorLine) + destinationEndCol;
+  const destination = destBare.slice(destinationStartCol, destinationEndCol);
+  // Title: required here (complete titles match the strict paths).
+  // Skip separators, expect an opener, scan to its closer across
+  // nonblank lines, then require whitespace-only to end of line.
+  if (!skipSeparators()) return null;
+  const titleBare = bareAt(cursorLine);
+  if (titleBare === null) return null;
+  const opener = titleBare[cursorCol] ?? "";
+  if (opener !== '"' && opener !== "'" && opener !== "(") return null;
+  const closer = opener === "(" ? ")" : opener;
+  cursorCol += 1;
+  let closedTitle = false;
+  for (;;) {
+    const bare = bareAt(cursorLine);
+    if (bare === null) return null;
+    while (cursorCol < bare.length) {
+      const char = bare[cursorCol] ?? "";
+      if (char === "\\") {
+        cursorCol += 2;
+        continue;
+      }
+      if (char === closer) {
+        closedTitle = true;
+        cursorCol += 1;
+        break;
+      }
+      cursorCol += 1;
+    }
+    if (closedTitle) break;
+    const nextBare = bareAt(cursorLine + 1);
+    if (nextBare === null || isBlank(nextBare)) return null;
+    cursorLine += 1;
+    cursorCol = 0;
+  }
+  while (cursorCol < (bareAt(cursorLine) ?? "").length) {
+    const char = (bareAt(cursorLine) ?? "")[cursorCol] ?? "";
+    if (char !== " " && char !== "\t") return null;
+    cursorCol += 1;
+  }
+  const end = origStart(cursorLine) + (lines[cursorLine] ?? "").length;
+  return {
+    end,
+    destinationStart,
+    destinationEnd,
+    destination,
+    extraLines: cursorLine - lineIndex,
+  };
 }
 
 /**
