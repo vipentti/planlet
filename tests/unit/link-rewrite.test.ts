@@ -240,6 +240,35 @@ test("multiline reference definitions rewrite on the next line", () => {
   assert.equal(outcome.rewritten, 1);
 });
 
+test("a quoted-fence line inside top-level code never closes it", () => {
+  const input = "```\ncode\n> ```\n[x](../other-plan/plan.md)\n```\n";
+  const outcome = rewrite(input);
+  assert.equal(outcome.text, input);
+  assert.equal(outcome.rewritten, 0);
+});
+
+test("a backtick inside raw HTML cannot pair outward", () => {
+  const input = "<!-- ` --> [x](../other-plan/plan.md) `\n";
+  const outcome = rewrite(input);
+  assert.equal(outcome.rewritten, 1);
+  assert.ok(outcome.text.includes("[x](../../other-plan/plan.md)"));
+});
+
+test("a line-broken inline link with a title is rewritten", () => {
+  const input = '[x](../other-plan/plan.md\n "Title")';
+  const outcome = rewrite(input);
+  assert.equal(outcome.rewritten, 1);
+  assert.ok(outcome.text.includes("../../other-plan/plan.md"));
+  assert.ok(outcome.text.includes('"Title"'));
+});
+
+test("an invalid reference-looking line stays byte-identical", () => {
+  const input = "[id]: ../other-plan/plan.md garbage\n";
+  const outcome = rewrite(input);
+  assert.equal(outcome.text, input);
+  assert.equal(outcome.rewritten, 0);
+});
+
 test("resolveLinkPath is POSIX-only and reports root escapes", () => {
   assert.equal(
     resolveLinkPath("plans/a", "../other/plan.md"),

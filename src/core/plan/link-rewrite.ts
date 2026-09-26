@@ -179,6 +179,7 @@ function splitProtectedSpans(
   let current = "";
   let inFence = false;
   let fenceMarker = "";
+  let fenceQuoted = false;
 
   const flush = (protected_: boolean, chunk: string): void => {
     if (chunk.length === 0) return;
@@ -193,28 +194,35 @@ function splitProtectedSpans(
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index] ?? "";
     const withNewline = index < lines.length - 1 ? `${line}\n` : line;
-    // Strip one optional block-quote marker before fence detection so
-    // fenced code inside quotes protects its body. Deeper container
+    // Fence state retains its container context: a fence opened inside a
+    // block quote only closes on a quoted closer, and a top-level fence
+    // only closes on a top-level closer, so a literal `> ``` line inside
+    // top-level code can never terminate the block. Deeper container
     // nesting (lists inside quotes and beyond) stays out of scope and is
     // documented on rewriteOutgoingLinks.
-    const quoteStripped = line.replace(/^ {0,3}> ?/, "");
+    const quoteMatch = /^ {0,3}> ?/.exec(line);
+    const quoted = quoteMatch !== null;
+    const stripped =
+      quoteMatch === null ? line : line.slice(quoteMatch[0].length);
     // Fence openers allow at most three leading spaces; deeper indentation
     // is an indented code block, never a fence. Closing runs need the same
     // character, at least the opening length, and only spaces/tabs after.
-    const fenceMatch = /^ {0,3}(`{3,}|~{3,})/.exec(quoteStripped);
+    const fenceMatch = /^ {0,3}(`{3,}|~{3,})/.exec(stripped);
     if (fenceMatch !== null) {
       const marker = fenceMatch[1] ?? "";
       const markerChar = marker[0] ?? "";
       if (!inFence) {
         inFence = true;
         fenceMarker = marker;
+        fenceQuoted = quoted;
         flush(false, current);
         current = withNewline;
       } else if (
+        quoted === fenceQuoted &&
         markerChar === (fenceMarker[0] ?? "") &&
         marker.length >= fenceMarker.length &&
         /^[ \t]*$/.test(
-          quoteStripped.slice(quoteStripped.indexOf(marker) + marker.length),
+          stripped.slice(stripped.indexOf(marker) + marker.length),
         )
       ) {
         current += withNewline;
@@ -222,6 +230,7 @@ function splitProtectedSpans(
         current = "";
         inFence = false;
         fenceMarker = "";
+        fenceQuoted = false;
       } else {
         current += withNewline;
       }
@@ -241,24 +250,33 @@ function splitProtectedSpans(
   }
   flush(inFence, current);
   // Split inline code spans and HTML comments out of rewritable spans.
-  // Backtick runs scan as whole delimiters per CommonMark: a span closes
-  // only on a run of exactly the opener length, and spans may cross line
-  // breaks. Runs with no exact-length closer are literal text.
+  // Raw HTML owns its bytes first: comment (and other tag) ranges are
+  // excluded before backtick pairing, so a backtick inside HTML can never
+  // pair with a visible backtick outside it. Backtick runs then scan as
+  // whole delimiters per CommonMark: a span closes only on a run of
+  // exactly the opener length, and spans may cross line breaks. Runs with
+  // no exact-length closer are literal text.
   const result: { protected_: boolean; text: string }[] = [];
   for (const span of spans) {
     if (span.protected_) {
       result.push(span);
       continue;
     }
-    const runs = [...span.text.matchAll(/`+/g)];
-    // commentMatches holds [start, end] pairs; code spans resolve below.
-    const commentMatches = [...span.text.matchAll(/<!--[\s\S]*?-->/g)];
-    const protectedRanges: Array<[number, number]> = commentMatches.map(
-      (comment) => [
-        comment.index ?? 0,
-        (comment.index ?? 0) + comment[0].length,
-      ],
+    // Raw HTML ranges: comments plus inline tags on one line. Tag
+    // detection is deliberately narrow (a `<` run to the next `>` with no
+    // newline); anything exotic stays rewritable, which fails safe toward
+    // rewriting a real link rather than hiding one.
+    const htmlRanges: Array<[number, number]> = [
+      ...span.text.matchAll(/<!--[\s\S]*?-->/g),
+      ...span.text.matchAll(/<\/?[A-Za-z][^<>\n]*?>/g),
+    ].map((tag) => [tag.index ?? 0, (tag.index ?? 0) + tag[0].length]);
+    htmlRanges.sort((left, right) => left[0] - right[0]);
+    const inHtml = (position: number): boolean =>
+      htmlRanges.some(([start, end]) => position >= start && position < end);
+    const runs = [...span.text.matchAll(/`+/g)].filter(
+      (run) => !inHtml(run.index ?? 0),
     );
+    const protectedRanges: Array<[number, number]> = [...htmlRanges];
     let openStart = -1;
     let openLength = 0;
     for (const run of runs) {
@@ -309,11 +327,11 @@ function splitProtectedSpans(
 }
 
 const REFERENCE_DEFINITION_PATTERN =
-  /^([ \t]{0,3}\[[^\]\n]+\]:[ \t]*)(<[^>\n]+>|[^\s]+)([ \t]*.*)?$/gm;
+  /^([ \t]{0,3}\[[^\]\n]+\]:[ \t]*)(<[^>\n]+>|[^\s]+)(?:(?=[ \t]*$)|(?=[ \t]+(?:"[^"\n]*"|'[^'\n]*'|\([^)\n]*\))[ \t]*$))/gm;
 
 /** Matches a reference definition whose destination sits on the next line. */
 const MULTILINE_DEFINITION_PATTERN =
-  /^([ \t]{0,3}\[[^\]\n]+\]:[ \t]*\n[ \t]+)(<[^>\n]+>|[^\s]+)([ \t]*.*)?$/gm;
+  /^([ \t]{0,3}\[[^\]\n]+\]:[ \t]*\n[ \t]+)(<[^>\n]+>|[^\s]+)(?:(?=[ \t]*$)|(?=[ \t]+(?:"[^"\n]*"|'[^'\n]*'|\([^)\n]*\))[ \t]*$))/gm;
 
 interface InlineLinkMatch {
   readonly start: number;
@@ -343,12 +361,43 @@ function isEscaped(text: string, position: number): boolean {
   return backslashes % 2 === 1;
 }
 
+/** Counts `\n` characters in `text[start, end)`. */
+function countLineEndings(text: string, start: number, end: number): number {
+  let count = 0;
+  for (let index = start; index < end; index += 1) {
+    if (text[index] === "\n") count += 1;
+  }
+  return count;
+}
+
+/**
+ * Skips spaces, tabs, and at most one line ending. Returns the remainder
+ * plus the skipped prefix length, or null when more whitespace appears.
+ */
+function allowOneLineEnding(
+  text: string,
+): { text: string; prefix: number } | null {
+  const match = /^[ \t]*(?:\n[ \t]*)?/.exec(text);
+  if (match === null) return null;
+  const prefix = match[0];
+  const rest = text.slice(prefix.length);
+  if (prefix.includes("\n")) {
+    if (rest.startsWith("\n")) return null;
+  } else if (rest.length === 0) {
+    return { text: rest, prefix: prefix.length };
+  }
+  if (/^[ \t]*\n/.test(rest)) return null;
+  return { text: rest, prefix: prefix.length };
+}
+
 /**
  * Finds inline links `[label](destination)` and `![alt](destination)` with
  * a small scanner: backslash-escape parity is honored, labels balance
  * nested brackets, and destinations may hold balanced parentheses or one
- * `<...>` group with an optional title. Returns byte offsets so the caller
- * preserves every untouched byte.
+ * `<...>` group with an optional title. One line ending is allowed between
+ * the label close, the destination, and the title (CommonMark permits a
+ * single line ending there). Returns byte offsets so the caller preserves
+ * every untouched byte.
  */
 function findInlineLinks(text: string): InlineLinkMatch[] {
   const matches: InlineLinkMatch[] = [];
@@ -364,14 +413,20 @@ function findInlineLinks(text: string): InlineLinkMatch[] {
       open > 0 && text[open - 1] === "!" && !isEscaped(text, open - 1)
         ? "!"
         : "";
-    // Find the closing bracket, balancing nested brackets and excluding
-    // newlines.
+    // Find the closing bracket, balancing nested brackets. One line
+    // ending is allowed inside the label run.
     let cursor = open + 1;
     let depth = 0;
     let closeBracket = -1;
+    let lineBreaks = 0;
     while (cursor < text.length) {
       const char = text[cursor];
-      if (char === "\n") break;
+      if (char === "\n") {
+        lineBreaks += 1;
+        if (lineBreaks > 1) break;
+        cursor += 1;
+        continue;
+      }
       if (char === "\\") {
         cursor += 2;
         continue;
@@ -386,64 +441,79 @@ function findInlineLinks(text: string): InlineLinkMatch[] {
       }
       cursor += 1;
     }
+    const afterBracket =
+      closeBracket === -1
+        ? null
+        : allowOneLineEnding(text.slice(closeBracket + 1));
     if (
       closeBracket === -1 ||
-      closeBracket + 1 >= text.length ||
-      text[closeBracket + 1] !== "("
+      afterBracket === null ||
+      !afterBracket.text.startsWith("(")
     ) {
       index = open + 1;
       continue;
     }
     // Parse the destination: `<...>` group (with optional title) or
-    // balanced parentheses.
-    const destStart = closeBracket + 2;
+    // balanced parentheses. A single line ending may precede the
+    // destination and separate it from the title.
+    const parenOffset = closeBracket + 1 + afterBracket.prefix;
+    const destStart = parenOffset + 1;
     let destEnd = -1;
     let end = -1;
     let angled = false;
     if (text[destStart] === "<") {
       const close = text.indexOf(">", destStart + 1);
-      if (close !== -1 && !text.slice(destStart, close).includes("\n")) {
-        const after = text.slice(close + 1);
+      if (close !== -1 && countLineEndings(text, destStart, close) <= 1) {
+        const after = allowOneLineEnding(text.slice(close + 1));
         const tail =
-          /^(?:[ \t]+(?:"[^"\n]*"|'[^'\n]*'|\([^)\n]*\)))?[ \t]*\)/.exec(after);
-        if (tail !== undefined && tail !== null) {
+          after === null
+            ? null
+            : /^(?:(?:"[^"\n]*(?:\n[ \t]*[^"\n]*)*"|'[^'\n]*(?:\n[ \t]*[^'\n]*)*'|\([^)\n]*(?:\n[ \t]*[^)\n]*)*\))?[ \t\n]*\))/.exec(
+                after.text,
+              );
+        if (tail !== undefined && tail !== null && after !== null) {
           // Keep the optional title: the tail ends at the link paren, so
           // everything before its final `)` is title text.
-          const title = tail[0].slice(0, -1);
           destEnd = close;
-          end = close + 1 + tail[0].length;
+          end = close + 1 + after.prefix + tail[0].length;
           angled = true;
+          // Rebuild inside from source offsets so the separator between
+          // `>` and the title round-trips byte-identically.
+          const inside = text.slice(destStart, end - 1);
           matches.push({
             start: bang.length === 0 ? open : open - 1,
             end,
             bang,
             label: text.slice(open + 1, closeBracket),
-            inside: `<${text.slice(destStart + 1, close)}>${title}`,
+            inside,
             destination: text.slice(destStart + 1, close),
             angled,
-            angledTitle: title,
+            angledTitle: tail[0].slice(0, -1),
           });
           index = end;
           continue;
         }
       }
     } else {
-      // Bare destination: the path runs to whitespace (optional title
-      // follows) or to the closing paren. Parentheses inside quoted
-      // titles must not affect balance, so the scan is title-aware:
-      // once whitespace ends the path, only the title grammar to the
-      // final `)` matters.
+      // Bare destination: the path runs to whitespace or a line ending
+      // (optional title follows) or to the closing paren. Parentheses
+      // inside quoted titles must not affect balance, so the scan is
+      // title-aware: once whitespace ends the path, only the title
+      // grammar to the final `)` matters. One line ending may separate
+      // the destination from the title.
       let depth = 0;
       let pathEnd = -1;
       cursor = destStart;
       while (cursor < text.length) {
         const char = text[cursor];
-        if (char === "\n") break;
         if (char === "\\") {
           cursor += 2;
           continue;
         }
-        if (pathEnd === -1 && (char === " " || char === "\t")) {
+        if (
+          pathEnd === -1 &&
+          (char === " " || char === "\t" || char === "\n")
+        ) {
           pathEnd = cursor;
           break;
         }
@@ -460,13 +530,21 @@ function findInlineLinks(text: string): InlineLinkMatch[] {
       }
       if (pathEnd !== -1 && destEnd === -1) {
         // A title follows: accept `"..."`, `'...'`, or `(...)` then the
-        // link close, all on one line.
-        const after = text.slice(pathEnd);
+        // link close, allowing one line ending between components. A bare
+        // non-whitespace suffix is not a title and never matches.
+        const after = allowOneLineEnding(text.slice(pathEnd));
         const titleClose =
-          /^(?:[ \t]+(?:"[^"\n]*"|'[^'\n]*'|\([^)\n]*\)))?[ \t]*\)/.exec(after);
+          after === null
+            ? null
+            : /^(?:(?:"[^"\n]*(?:\n[ \t]*[^"\n]*)*"|'[^'\n]*(?:\n[ \t]*[^'\n]*)*'|\([^)\n]*(?:\n[ \t]*[^)\n]*)*\))?[ \t\n]*\))/.exec(
+                after.text,
+              );
         if (titleClose !== undefined && titleClose !== null) {
           destEnd = pathEnd;
-          end = pathEnd + titleClose[0].length;
+          end =
+            pathEnd +
+            (after === null ? 0 : after.prefix) +
+            titleClose[0].length;
         }
       }
     }
@@ -533,12 +611,7 @@ function rewriteReferenceDefinitions(
   skipped: string[],
 ): { text: string; rewritten: number } {
   let rewritten = 0;
-  const rewriteOne = (
-    whole: string,
-    prefix: string,
-    destination: string,
-    suffix: string | undefined,
-  ): string => {
+  const rewriteOne = (whole: string, destination: string): string => {
     const outcome = rewriteDestination(
       destination,
       planDir,
@@ -548,26 +621,20 @@ function rewriteReferenceDefinitions(
     if (outcome.skipped !== undefined) skipped.push(outcome.skipped);
     if (!outcome.rewritten) return whole;
     rewritten += 1;
-    return `${prefix}${outcome.destination}${suffix ?? ""}`;
+    // The patterns consume no trailing title bytes (lookahead only), so
+    // swap just the destination bytes and keep titles byte-identical.
+    return whole.replace(destination, outcome.destination);
   };
   const single = text.replace(
     REFERENCE_DEFINITION_PATTERN,
-    (
-      whole: string,
-      prefix: string,
-      destination: string,
-      suffix: string | undefined,
-    ) => rewriteOne(whole, prefix, destination, suffix),
+    (whole: string, _prefix: string, destination: string) =>
+      rewriteOne(whole, destination),
   );
   // Reference definitions may break the destination onto the next line.
   const replaced = single.replace(
     MULTILINE_DEFINITION_PATTERN,
-    (
-      whole: string,
-      prefix: string,
-      destination: string,
-      suffix: string | undefined,
-    ) => rewriteOne(whole, prefix, destination, suffix),
+    (whole: string, _prefix: string, destination: string) =>
+      rewriteOne(whole, destination),
   );
   return { text: replaced, rewritten };
 }
@@ -577,6 +644,12 @@ function rewriteReferenceDefinitions(
  * `planDir` is the repository-relative active plan directory
  * (for example `plans/my-feature`). Only links whose target exists on disk
  * are rewritten; dangling links are left untouched with a skip note.
+ *
+ * Deliberate scope limits: fence detection handles top-level and
+ * single block-quote containers only (deeper list/quote nesting stays
+ * rewritable); raw-HTML tag detection is narrow (`<...>` with no newline,
+ * so exotic markup stays rewritable). Both limits fail safe toward
+ * rewriting a real link rather than hiding one behind fake protection.
  */
 export function rewriteOutgoingLinks(
   markdown: string,
