@@ -653,6 +653,9 @@ interface InlineLinkMatch {
   readonly end: number;
   readonly bang: string;
   readonly label: string;
+  /** Byte range of the label text (between the brackets). */
+  readonly labelStart: number;
+  readonly labelEnd: number;
   /** Byte range of the destination path only (no brackets, no title). */
   readonly destinationStart: number;
   readonly destinationEnd: number;
@@ -838,7 +841,47 @@ function findExactRun(text: string, length: number): number {
  * single line ending there). Returns byte offsets so the caller preserves
  * every untouched byte.
  */
+/**
+ * Finds inline links with CommonMark nesting precedence: an inner link
+ * kills its outer brackets (they stay literal text), while images may
+ * live inside link text alongside the outer link. Thus
+ * `[outer [inner](a)](b)` yields only the inner link, but
+ * `[![img](a)](b)` yields both the image and the outer link.
+ */
 function findInlineLinks(text: string): InlineLinkMatch[] {
+  const top = scanInlineLinks(text);
+  const out: InlineLinkMatch[] = [];
+  for (const match of top) {
+    const inners = findInlineLinks(
+      text.slice(match.labelStart, match.labelEnd),
+    ).map((inner) => shiftMatch(inner, match.labelStart));
+    if (inners.length > 0) out.push(...inners);
+    // An outer link survives only when no inner link voids it; inner
+    // images coexist with it. An outer image never survives nested
+    // content: the inner match owns those bytes.
+    const innerLink = inners.some((inner) => inner.bang === "");
+    if (match.bang !== "" ? inners.length === 0 : !innerLink) {
+      out.push(match);
+    }
+  }
+  out.sort((left, right) => left.start - right.start);
+  return out;
+}
+
+/** Offsets every range of a sliced-text match back to document bytes. */
+function shiftMatch(match: InlineLinkMatch, delta: number): InlineLinkMatch {
+  return {
+    ...match,
+    start: match.start + delta,
+    end: match.end + delta,
+    labelStart: match.labelStart + delta,
+    labelEnd: match.labelEnd + delta,
+    destinationStart: match.destinationStart + delta,
+    destinationEnd: match.destinationEnd + delta,
+  };
+}
+
+function scanInlineLinks(text: string): InlineLinkMatch[] {
   const matches: InlineLinkMatch[] = [];
   let index = 0;
   while (index < text.length) {
@@ -952,6 +995,8 @@ function findInlineLinks(text: string): InlineLinkMatch[] {
             end,
             bang,
             label: text.slice(open + 1, closeBracket),
+            labelStart: open + 1,
+            labelEnd: closeBracket,
             // Inside `<...>`: brackets stay outside, path only.
             destinationStart: destStart + 1,
             destinationEnd: close,
@@ -1020,6 +1065,8 @@ function findInlineLinks(text: string): InlineLinkMatch[] {
       end,
       bang,
       label: text.slice(open + 1, closeBracket),
+      labelStart: open + 1,
+      labelEnd: closeBracket,
       // Path bytes only: `<...>` brackets stay outside the range so the
       // splice prefixes the path and preserves the wrapper.
       destinationStart: destStart + (angled ? 1 : 0),

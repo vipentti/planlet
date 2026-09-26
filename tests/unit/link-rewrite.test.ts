@@ -14,6 +14,7 @@ const EXISTING: LinkTargetExistence = {
     absolutePath.endsWith("plans/other-plan/plan.md") ||
     absolutePath.endsWith("plans/other-plan/plan.md#section") ||
     absolutePath.endsWith("plans/other-plan/foo(bar).md") ||
+    absolutePath.endsWith("plans/other-plan/image.png") ||
     absolutePath.endsWith("plans/my docs/x.md"),
 };
 
@@ -576,6 +577,28 @@ test("a link inside a mixed-length code span stays protected", () => {
   const outcome = rewrite(input);
   assert.equal(outcome.text, input);
   assert.equal(outcome.rewritten, 0);
+});
+
+test("an inner link voids its outer brackets", () => {
+  const outcome = rewrite(
+    "[outer [inner](../other-plan/plan.md)](../other-plan/plan.md)\n",
+  );
+  assert.equal(
+    outcome.text,
+    "[outer [inner](../../other-plan/plan.md)](../other-plan/plan.md)\n",
+  );
+  assert.equal(outcome.rewritten, 1);
+});
+
+test("a linked image rewrites both destinations", () => {
+  const outcome = rewrite(
+    "[![img](../other-plan/image.png)](../other-plan/plan.md)\n",
+  );
+  assert.equal(
+    outcome.text,
+    "[![img](../../other-plan/image.png)](../../other-plan/plan.md)\n",
+  );
+  assert.equal(outcome.rewritten, 2);
 });
 
 test("resolveLinkPath is POSIX-only and reports root escapes", () => {
