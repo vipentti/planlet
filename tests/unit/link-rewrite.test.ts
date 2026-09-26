@@ -367,6 +367,12 @@ test("a shorter backtick opener never closes on a longer run", () => {
   assert.equal(outcome.rewritten, 1);
 });
 
+test("an unmatched backtick in the label stays literal", () => {
+  const outcome = rewrite("[a ` b](../other-plan/plan.md)");
+  assert.equal(outcome.text, "[a ` b](../../other-plan/plan.md)");
+  assert.equal(outcome.rewritten, 1);
+});
+
 test("resolveLinkPath is POSIX-only and reports root escapes", () => {
   assert.equal(
     resolveLinkPath("plans/a", "../other/plan.md"),

@@ -658,9 +658,15 @@ function parseTitleTail(text: string): RegExpExecArray | null {
  * run is neither preceded nor followed by another backtick. Returns the
  * run start or -1.
  */
+/**
+ * Finds the first backtick run of exactly `length` in `text`, where the
+ * run is neither preceded nor followed by another backtick. Both sides
+ * anchor on a single backtick (never the repeated run), so a longer run
+ * can never furnish a suffix match. Returns the run start or -1.
+ */
 function findExactRun(text: string, length: number): number {
   const ticks = "`".repeat(length);
-  const pattern = new RegExp(`(?<!${ticks})${ticks}(?!${ticks[0] ?? "`"})`);
+  const pattern = new RegExp(`(?<!\`)${ticks}(?!\`)`);
   const match = pattern.exec(text);
   return match === null ? -1 : (match.index ?? -1);
 }
@@ -700,12 +706,16 @@ function findInlineLinks(text: string): InlineLinkMatch[] {
       const char = text[cursor];
       if (char === "`") {
         // Whole-run pairing: a closer must be a run of exactly the
-        // opener length, never a prefix of a longer run. Scan runs
-        // forward so `[a `` b ``` c]` keeps its backticks literal.
+        // opener length, never a prefix of a longer run. An unmatched
+        // opener is literal text: skip only the run and keep scanning
+        // for the label close instead of abandoning the link.
         const run = /`+/.exec(text.slice(cursor))?.[0] ?? "`";
         const rest = text.slice(cursor + run.length);
         const closer = findExactRun(rest, run.length);
-        if (closer === -1) break;
+        if (closer === -1) {
+          cursor += run.length;
+          continue;
+        }
         cursor = cursor + run.length + closer + run.length;
         continue;
       }
