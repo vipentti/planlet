@@ -587,9 +587,14 @@ function splitProtectedSpans(
         protectedRanges.push([openStart, start + length, "code"]);
         openStart = -1;
         openLength = 0;
+      } else {
+        // A longer or shorter run never closes the span: the earlier
+        // opener stays literal text, and this run becomes the new
+        // opener candidate so later equal-length pairs still delimit
+        // code. This shares the whole-run rule with label scanning.
+        openStart = start;
+        openLength = length;
       }
-      // A longer or shorter run does not close the span: it becomes part
-      // of the span body and scanning continues for an exact-length close.
     }
     // An unmatched opener protects nothing; its run stays rewritable.
     // Coalesce overlapping ranges (a comment nested inside a code span is

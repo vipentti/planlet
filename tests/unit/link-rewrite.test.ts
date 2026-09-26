@@ -527,6 +527,13 @@ test("a title on the line after a definition stays definition-owned", () => {
   assert.equal(outcome.rewritten, 1);
 });
 
+test("an unmatched short run before a valid long run protects the link", () => {
+  const input = "` literal `` [x](../other-plan/plan.md) ``\n";
+  const outcome = rewrite(input);
+  assert.equal(outcome.text, input);
+  assert.equal(outcome.rewritten, 0);
+});
+
 test("resolveLinkPath is POSIX-only and reports root escapes", () => {
   assert.equal(
     resolveLinkPath("plans/a", "../other/plan.md"),
