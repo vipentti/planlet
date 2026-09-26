@@ -106,6 +106,13 @@ function rewritePath(encodedPath: string): string {
   return `../${encodedPath}`;
 }
 
+function unescapeMarkdownPath(encodedPath: string): string {
+  // Markdown backslash escapes: a backslash before escapable punctuation
+  // denotes the punctuation itself. Only ASCII punctuation is escapable;
+  // other backslashes (for example Windows separators) stay literal.
+  return encodedPath.replace(/\\([!"#$%&'()*+,./:;<=>?@[\\\]^_`{|}~-])/g, "$1");
+}
+
 /**
  * Classifies a bare destination path (no brackets, no title).
  * Returns the rewritten path, or null when it must pass through.
@@ -128,11 +135,14 @@ function classifyDestinationPath(
   if (hashIndex !== -1) pathEnd = Math.min(pathEnd, hashIndex);
   if (queryIndex !== -1) pathEnd = Math.min(pathEnd, queryIndex);
   const pathOnly = encodedPath.slice(0, pathEnd);
-  let decoded = pathOnly;
+  // Decode Markdown backslash escapes first (`\\(` denotes `(`), then
+  // percent-encoding: the filesystem holds the semantic path.
+  const unescaped = unescapeMarkdownPath(pathOnly);
+  let decoded = unescaped;
   try {
-    decoded = decodeURIComponent(pathOnly);
+    decoded = decodeURIComponent(unescaped);
   } catch {
-    decoded = pathOnly;
+    decoded = unescaped;
   }
   const oldResolved = resolveLinkPath(planDir, decoded);
   // Links escaping above the repository root are never guessed at.

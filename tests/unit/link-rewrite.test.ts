@@ -373,6 +373,12 @@ test("an unmatched backtick in the label stays literal", () => {
   assert.equal(outcome.rewritten, 1);
 });
 
+test("escaped punctuation resolves to the semantic target", () => {
+  const outcome = rewrite("[x](../other-plan/foo\\(bar\\).md)");
+  assert.equal(outcome.text, "[x](../../other-plan/foo\\(bar\\).md)");
+  assert.equal(outcome.rewritten, 1);
+});
+
 test("resolveLinkPath is POSIX-only and reports root escapes", () => {
   assert.equal(
     resolveLinkPath("plans/a", "../other/plan.md"),
