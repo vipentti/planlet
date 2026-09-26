@@ -690,6 +690,17 @@ test("lazy paragraph definitions never close the paragraph", () => {
   assert.equal(outcome.rewritten, 0);
 });
 
+test("an outer image survives a nested link", () => {
+  const outcome = rewrite(
+    "![outer [inner](../other-plan/plan.md)](../other-plan/image.png)\n",
+  );
+  assert.equal(
+    outcome.text,
+    "![outer [inner](../../other-plan/plan.md)](../../other-plan/image.png)\n",
+  );
+  assert.equal(outcome.rewritten, 2);
+});
+
 test("resolveLinkPath is POSIX-only and reports root escapes", () => {
   assert.equal(
     resolveLinkPath("plans/a", "../other/plan.md"),

@@ -1196,11 +1196,13 @@ function findExactRun(text: string, length: number): number {
  * every untouched byte.
  */
 /**
- * Finds inline links with CommonMark nesting precedence: an inner link
- * kills its outer brackets (they stay literal text), while images may
- * live inside link text alongside the outer link. Thus
- * `[outer [inner](a)](b)` yields only the inner link, but
- * `[![img](a)](b)` yields both the image and the outer link.
+ * Finds inline links with CommonMark nesting precedence: an inner
+ * match voids an outer match of the same kind (its brackets stay
+ * literal text), while mixed nesting coexists. Thus
+ * `[outer [inner](a)](b)` yields only the inner link,
+ * `[![img](a)](b)` yields both the image and the outer link, and
+ * `![outer [inner](a)](b)` yields both the inner link and the outer
+ * image.
  */
 function findInlineLinks(text: string): InlineLinkMatch[] {
   const top = scanInlineLinks(text);
@@ -1210,11 +1212,13 @@ function findInlineLinks(text: string): InlineLinkMatch[] {
       text.slice(match.labelStart, match.labelEnd),
     ).map((inner) => shiftMatch(inner, match.labelStart));
     if (inners.length > 0) out.push(...inners);
-    // An outer link survives only when no inner link voids it; inner
-    // images coexist with it. An outer image never survives nested
-    // content: the inner match owns those bytes.
-    const innerLink = inners.some((inner) => inner.bang === "");
-    if (match.bang !== "" ? inners.length === 0 : !innerLink) {
+    // An outer match survives only when no inner match of the same
+    // kind voids it: inner links void outer links, inner images void
+    // outer images, and mixed nesting coexists.
+    const voids = inners.some(
+      (inner) => (inner.bang === "") === (match.bang === ""),
+    );
+    if (!voids) {
       out.push(match);
     }
   }
