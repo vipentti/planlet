@@ -305,6 +305,27 @@ test("rewrites a link to an archived planlet and keeps its fragment", () => {
   assert.deepEqual(result.notes, []);
 });
 
+test("leaves a path that resolves to the planlet directory itself unchanged", () => {
+  for (const path of [".", "./", "docs/..", "a/b/../.."]) {
+    const result = rewrite(`[a](${path})\n`, { exists: one("plans/demo") });
+
+    assert.equal(result.text, `[a](${path})\n`);
+    assert.equal(result.rewrites, 0);
+    assert.deepEqual(result.notes, []);
+  }
+});
+
+test("notes a path that names the planlet directory through its parent", () => {
+  for (const path of ["../demo", "../demo/"]) {
+    const result = rewrite(`[a](${path})\n`, { exists: one("plans/demo") });
+
+    assert.equal(result.text, `[a](${path})\n`);
+    assert.deepEqual(result.notes, [
+      `plan.md link left unchanged (reaches planlet through its parent directory: ${path})`,
+    ]);
+  }
+});
+
 test("notes a missing target at both depths and a target above the repository root", () => {
   const result = rewrite("[a](../missing.md) [b](../../../../outside.md)\n", {
     exists: () => false,
@@ -369,8 +390,8 @@ test("notes an invalid path when the existence probe throws", () => {
 
 test("a second pass over rewritten output changes nothing", () => {
   const text =
-    "[a](../other/plan.md) [b](../../src/x.ts) [c](../demo/tasks.md) " +
-    "[d](tasks.md) [e](<../other/plan.md#s>) [f](https://example.com)\n";
+    "[a](../other/plan.md) [b](../../src/x.ts) [c](../demo/tasks.md) [d](./) " +
+    "[e](<../other/plan.md#s>) [f](https://example.com)\n";
   const exists = (target: string) =>
     target === "plans/other/plan.md" || target === "src/x.ts";
   const first = rewrite(text, { exists });

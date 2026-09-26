@@ -86,7 +86,7 @@ function resolveTarget(base: string, target: string): Target {
 }
 
 function isInside(directory: string, path: string): boolean {
-  return path.startsWith(`${directory}/`);
+  return path === directory || path.startsWith(`${directory}/`);
 }
 
 function decide(decoded: string, options: LinkRewriteOptions): Decision {
