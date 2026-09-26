@@ -5,6 +5,7 @@ import {
   mkdtempSync,
   readFileSync,
   realpathSync,
+  renameSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -30,10 +31,18 @@ function withRepository(
   tasksMarkdown: string,
   run: (root: string, source: string) => void,
 ): void {
+  withFiles(PLAN, tasksMarkdown, run);
+}
+
+function withFiles(
+  planMarkdown: string,
+  tasksMarkdown: string,
+  run: (root: string, source: string) => void,
+): void {
   const root = mkdtempSync(join(tmpdir(), "planlet-completion-"));
   const source = join(root, "plans", "fixture-plan");
   mkdirSync(source, { recursive: true });
-  writeFileSync(join(source, "plan.md"), PLAN);
+  writeFileSync(join(source, "plan.md"), planMarkdown);
   writeFileSync(join(source, "tasks.md"), tasksMarkdown);
   try {
     run(root, source);
@@ -449,5 +458,201 @@ test("completion stages the destination for a never-tracked planlet", async () =
       "A  plans/completed/2027-01-02-fixture-plan/plan.md",
       "A  plans/completed/2027-01-02-fixture-plan/tasks.md",
     ]);
+  });
+});
+
+const LINKED_PLAN =
+  "# Fixture Plan\n\n## Summary\nSee [sibling](../other-plan/plan.md) and " +
+  "[design](../../README.md).\n\n## Scope\n![diagram](../images/flow.png)\n\n" +
+  "## Approach\nFixture.\n\n## Acceptance Criteria\n- Works.\n\n## Verification\nTests.\n";
+const LINKED_TASKS =
+  "# Tasks: Fixture Plan\n\n- [x] T1 Review [notes](../other-plan/plan.md)\n" +
+  "- [x] T2 Ship\n";
+
+/** What `LINKED_PLAN` must look like from the archive directory. */
+const ARCHIVED_PLAN =
+  "# Fixture Plan\n\n## Summary\nSee [sibling](../../other-plan/plan.md) and " +
+  "[design](../../../README.md).\n\n## Scope\n![diagram](../../images/flow.png)\n\n" +
+  "## Approach\nFixture.\n\n## Acceptance Criteria\n- Works.\n\n## Verification\nTests.\n";
+
+/** Creates every target `LINKED_PLAN` points at, so nothing is left unresolved. */
+function withLinkTargets(plan: string, run: (root: string) => void): void {
+  withFiles(plan, LINKED_TASKS, (root) => {
+    for (const target of [
+      "README.md",
+      "plans/images/flow.png",
+      "plans/other-plan/plan.md",
+    ]) {
+      mkdirSync(join(root, target, ".."), { recursive: true });
+      writeFileSync(join(root, target), "x\n");
+    }
+    run(root);
+  });
+}
+
+test("completion rewrites links that leave the planlet in both files", () => {
+  withLinkTargets(LINKED_PLAN, (root) => {
+    const result = completePlanlet({
+      repositoryRoot: root,
+      slug: "fixture-plan",
+      dependencies: { now: () => new Date("2027-01-02T00:00:00.125Z") },
+    });
+
+    assert.equal(
+      readFileSync(join(result.destination, "plan.md"), "utf8"),
+      ARCHIVED_PLAN,
+    );
+    const tasks = readFileSync(join(result.destination, "tasks.md"), "utf8");
+    assert.match(
+      tasks,
+      /- \[x\] T1 Review \[notes\]\(\.\.\/\.\.\/other-plan\/plan\.md\)/,
+    );
+    assert.deepEqual(result.summary.warnings, [
+      "Rewrote 3 relative link(s) in plan.md for the archived location",
+      "Rewrote 1 relative link(s) in tasks.md for the archived location",
+    ]);
+    assert.equal(
+      validatePlanletStructure({
+        directoryName: result.archiveName,
+        location: "completed",
+        planMarkdown: readFileSync(join(result.destination, "plan.md"), "utf8"),
+        tasksMarkdown: tasks,
+      }).state,
+      "completed",
+    );
+  });
+});
+
+test("completion leaves a planlet with only internal links byte-identical", () => {
+  const plan =
+    "# Fixture Plan\n\n## Summary\nSee [tasks](tasks.md) and [here]().\n" +
+    "\n## Scope\nFixture.\n\n## Approach\nFixture.\n\n## Acceptance Criteria\n- Works.\n\n## Verification\nTests.\n";
+  withFiles(plan, COMPLETE_TASKS, (root) => {
+    const result = completePlanlet({
+      repositoryRoot: root,
+      slug: "fixture-plan",
+      dependencies: { now: () => new Date("2027-01-02T00:00:00.125Z") },
+    });
+
+    assert.equal(
+      readFileSync(join(result.destination, "plan.md"), "utf8"),
+      plan,
+    );
+    assert.equal(
+      readFileSync(join(result.destination, "tasks.md"), "utf8"),
+      `${COMPLETE_TASKS}\n## Completion\n\n` +
+        "- Completed at: 2027-01-02T00:00:00.125Z\n" +
+        "- Mode: normal\n",
+    );
+    assert.deepEqual(result.summary.warnings, []);
+  });
+});
+
+test("a completion record keeps a relative link in its reason verbatim", () => {
+  withRepository(INCOMPLETE_TASKS, (root) => {
+    const result = completePlanlet({
+      repositoryRoot: root,
+      slug: "fixture-plan",
+      allowIncomplete: true,
+      reason:
+        "Deferred until [../other-plan/plan.md](../other-plan/plan.md) lands",
+      dependencies: { now: () => new Date("2027-01-02T00:00:00.125Z") },
+    });
+
+    assert.match(
+      readFileSync(join(result.destination, "tasks.md"), "utf8"),
+      /- Reason: Deferred until \[\.\.\/other-plan\/plan\.md\]\(\.\.\/other-plan\/plan\.md\) lands/,
+    );
+    assert.deepEqual(result.summary.warnings, [
+      "Completed planlet contains an incomplete-task override",
+    ]);
+  });
+});
+
+test("resume after a failed plan.md publish rewrites plan.md only", () => {
+  withLinkTargets(LINKED_PLAN, (root) => {
+    const source = join(root, "plans", "fixture-plan");
+    let renames = 0;
+    assert.throws(
+      () =>
+        completePlanlet({
+          repositoryRoot: root,
+          slug: "fixture-plan",
+          dependencies: {
+            now: () => new Date("2027-01-02T00:00:00.125Z"),
+            replaceFile: (from, to) => {
+              renames += 1;
+              if (renames === 2) throw new Error("simulated plan.md failure");
+              renameSync(from, to);
+            },
+          },
+        }),
+      (error) => {
+        assert.ok(error instanceof PlanletError);
+        assert.equal(error.code, "write_conflict");
+        assert.equal(error.details.auditRecorded, true);
+        return true;
+      },
+    );
+    const audited = readFileSync(join(source, "tasks.md"), "utf8");
+    assert.equal(readFileSync(join(source, "plan.md"), "utf8"), LINKED_PLAN);
+
+    const result = completePlanlet({
+      repositoryRoot: root,
+      slug: "fixture-plan",
+      dependencies: { now: () => new Date("2030-01-01T00:00:00Z") },
+    });
+
+    assert.equal(result.archiveName, "2027-01-02-fixture-plan");
+    assert.equal(
+      readFileSync(join(result.destination, "plan.md"), "utf8"),
+      ARCHIVED_PLAN,
+    );
+    assert.equal(
+      readFileSync(join(result.destination, "tasks.md"), "utf8"),
+      audited,
+    );
+    assert.deepEqual(result.summary.warnings, [
+      "Rewrote 3 relative link(s) in plan.md for the archived location",
+    ]);
+  });
+});
+
+test("resume after a failed move rewrites nothing a second time", () => {
+  withLinkTargets(LINKED_PLAN, (root) => {
+    const source = join(root, "plans", "fixture-plan");
+    assert.throws(
+      () =>
+        completePlanlet({
+          repositoryRoot: root,
+          slug: "fixture-plan",
+          dependencies: {
+            now: () => new Date("2027-01-02T00:00:00.125Z"),
+            moveDirectory: () => {
+              throw new Error("simulated move failure");
+            },
+          },
+        }),
+      (error) =>
+        error instanceof PlanletError && error.code === "write_conflict",
+    );
+    const audited = readFileSync(join(source, "tasks.md"), "utf8");
+
+    const result = completePlanlet({
+      repositoryRoot: root,
+      slug: "fixture-plan",
+      dependencies: { now: () => new Date("2030-01-01T00:00:00Z") },
+    });
+
+    assert.equal(existsSync(source), false);
+    assert.equal(
+      readFileSync(join(result.destination, "tasks.md"), "utf8"),
+      audited,
+    );
+    assert.equal(
+      readFileSync(join(result.destination, "plan.md"), "utf8"),
+      ARCHIVED_PLAN,
+    );
+    assert.deepEqual(result.summary.warnings, []);
   });
 });

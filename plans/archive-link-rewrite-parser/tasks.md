@@ -2,7 +2,7 @@
 
 - [x] T1 Add the pinned parser devDependencies and the pure `link-rewrite.ts` module with the unit test matrix.
   - Verify: `npx tsx --test tests/unit/link-rewrite.test.ts` and `npm run knip`.
-- [ ] T2 Wire the rewrite into fresh and resume completion with atomic publishes, warnings, and integration tests.
+- [x] T2 Wire the rewrite into fresh and resume completion with atomic publishes, warnings, and integration tests.
   - Verify: `npx tsx --test tests/integration/completion.test.ts`.
 - [ ] T3 Make the complete skill report completion warnings, add its contract assertion, and regenerate installed skill copies.
   - Verify: `node dist/planlet.mjs update`, then `node dist/planlet.mjs --root . tools` reports every destination installed.

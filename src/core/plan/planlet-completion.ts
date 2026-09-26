@@ -8,9 +8,10 @@ import {
   writeFileSync,
 } from "node:fs";
 
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 
 import type { PlanSummary } from "./models.js";
+import { rewriteArchiveLinks } from "./link-rewrite.js";
 import {
   withPlanletLock,
   type PlanletLockDependencies,
@@ -100,6 +101,75 @@ function appendCompletionRecord(
   return `${markdown}${separator}${lines.join("\n")}\n`;
 }
 
+/**
+ * Rewrites one planlet file for the archived location. Archiving moves the
+ * file one directory deeper, so every relative link that leaves the planlet
+ * needs a `../` prefix.
+ */
+function rewriteForArchive(
+  options: CompletePlanletOptions,
+  slug: string,
+  archiveName: string,
+  fileName: string,
+  markdown: string,
+): { readonly markdown: string; readonly warnings: readonly string[] } {
+  const result = rewriteArchiveLinks({
+    fileName,
+    planDir: `plans/${slug}`,
+    archiveDir: `plans/completed/${archiveName}`,
+    exists: (path) => tryLstat(join(options.repositoryRoot, path)) !== null,
+    text: markdown,
+  });
+
+  return {
+    markdown: result.text,
+    warnings: [
+      ...(result.rewrites > 0
+        ? [
+            `Rewrote ${result.rewrites} relative link(s) in ${fileName} for the archived location`,
+          ]
+        : []),
+      ...result.notes,
+    ],
+  };
+}
+
+/** Replaces one planlet file with `content` in a single atomic publish. */
+function publishMarkdown(
+  source: string,
+  targetPath: string,
+  content: string,
+  slug: string,
+  dependencies: CompletePlanletDependencies,
+  auditRecorded: boolean,
+): void {
+  const temporaryPath = resolveSafePath(
+    source,
+    dependencies.temporaryName(slug),
+  );
+  atomicPublish({
+    temporaryPath,
+    targetPath,
+    createTemporary: () => {
+      const mode = statSync(targetPath).mode & 0o777;
+      dependencies.writeFile(temporaryPath, content, mode);
+    },
+    rename: dependencies.replaceFile,
+    remove: dependencies.remove,
+    onFailure: (error) =>
+      asWriteConflict(error, `Could not complete planlet: ${slug}`, {
+        slug,
+        auditRecorded,
+      }),
+    cleanupFailure: {
+      code: "write_conflict",
+      message: `Could not clean up failed completion publish: ${slug}`,
+      details: { slug, temporaryPath, cleanupFailed: true },
+      fatal: true,
+    },
+  });
+}
+
 function assertNoCompletionCollision(
   completedPath: string,
   slug: string,
@@ -131,6 +201,7 @@ function resumeRecordedCompletion(
   options: CompletePlanletOptions,
   dependencies: CompletePlanletDependencies,
   source: string,
+  planPath: string,
   planMarkdown: string,
   tasksMarkdown: string,
 ): CompletePlanletResult {
@@ -159,10 +230,19 @@ function resumeRecordedCompletion(
 
   const instant = new Date(completion.completedAt);
   const archiveName = createArchiveName(slug, instant);
+  // tasks.md was published already rewritten, together with the completion
+  // record. Only plan.md still needs the archive-depth link rewrite.
+  const rewrittenPlan = rewriteForArchive(
+    options,
+    slug,
+    archiveName,
+    "plan.md",
+    planMarkdown,
+  );
   const completedValidation = validatePlanletStructure({
     directoryName: archiveName,
     location: "completed",
-    planMarkdown,
+    planMarkdown: rewrittenPlan.markdown,
     tasksMarkdown,
   });
 
@@ -184,6 +264,27 @@ function resumeRecordedCompletion(
     mkdirSync(completedPath, { recursive: true });
     assertNoCompletionCollision(completedPath, slug, destination);
     assertActivePlanletDirectory(source, slug);
+  } catch (error) {
+    throw asWriteConflict(error, `Could not complete planlet: ${slug}`, {
+      slug,
+      source,
+      auditRecorded: true,
+      resumeAttempted: true,
+    });
+  }
+
+  if (rewrittenPlan.markdown !== planMarkdown) {
+    publishMarkdown(
+      source,
+      planPath,
+      rewrittenPlan.markdown,
+      slug,
+      dependencies,
+      true,
+    );
+  }
+
+  try {
     dependencies.moveDirectory(source, destination);
   } catch (error) {
     throw asWriteConflict(error, `Could not complete planlet: ${slug}`, {
@@ -195,7 +296,7 @@ function resumeRecordedCompletion(
   }
 
   const completedTasks = active.tasks.length - remainingTaskIds.length;
-  const warnings = [...completedValidation.warnings];
+  const warnings = [...completedValidation.warnings, ...rewrittenPlan.warnings];
   tryStageMove(options.repositoryRoot, source, destination, warnings);
   return {
     slug,
@@ -271,6 +372,7 @@ function completePlanletLocked(
       options,
       dependencies,
       source,
+      planPath,
       planMarkdown,
       tasksMarkdown,
     );
@@ -347,8 +449,24 @@ function completePlanletLocked(
   // prepared. The lexical entry remains the only directory we ever move.
   assertActivePlanletDirectory(source, slug);
 
-  const updatedTasks = appendCompletionRecord(
+  // The audit record is appended to the rewritten text, so it is never
+  // rewritten itself and is published together with the rewritten tasks.md.
+  const rewrittenPlan = rewriteForArchive(
+    options,
+    slug,
+    archiveName,
+    "plan.md",
+    planMarkdown,
+  );
+  const rewrittenTasks = rewriteForArchive(
+    options,
+    slug,
+    archiveName,
+    "tasks.md",
     tasksMarkdown,
+  );
+  const updatedTasks = appendCompletionRecord(
+    rewrittenTasks.markdown,
     completedAt,
     remainingTaskIds,
     reason,
@@ -356,35 +474,21 @@ function completePlanletLocked(
   validatePlanletStructure({
     directoryName: archiveName,
     location: "completed",
-    planMarkdown,
+    planMarkdown: rewrittenPlan.markdown,
     tasksMarkdown: updatedTasks,
   });
 
-  const temporaryPath = resolveSafePath(
-    source,
-    dependencies.temporaryName(slug),
-  );
-  atomicPublish({
-    temporaryPath,
-    targetPath: tasksPath,
-    createTemporary: () => {
-      const mode = statSync(tasksPath).mode & 0o777;
-      dependencies.writeFile(temporaryPath, updatedTasks, mode);
-    },
-    rename: dependencies.replaceFile,
-    remove: dependencies.remove,
-    onFailure: (error) =>
-      asWriteConflict(error, `Could not complete planlet: ${slug}`, {
-        slug,
-        auditRecorded: false,
-      }),
-    cleanupFailure: {
-      code: "write_conflict",
-      message: `Could not clean up failed completion audit: ${slug}`,
-      details: { slug, temporaryPath, cleanupFailed: true },
-      fatal: true,
-    },
-  });
+  publishMarkdown(source, tasksPath, updatedTasks, slug, dependencies, false);
+  if (rewrittenPlan.markdown !== planMarkdown) {
+    publishMarkdown(
+      source,
+      planPath,
+      rewrittenPlan.markdown,
+      slug,
+      dependencies,
+      true,
+    );
+  }
 
   try {
     // Recheck after recording the audit and immediately before movement.
@@ -405,7 +509,11 @@ function completePlanletLocked(
 
   const completedTasks = validated.tasks.length - remainingTaskIds.length;
   const mode = reason === undefined ? "normal" : "incomplete override";
-  const warnings = [...validated.warnings];
+  const warnings = [
+    ...validated.warnings,
+    ...rewrittenPlan.warnings,
+    ...rewrittenTasks.warnings,
+  ];
   if (mode === "incomplete override") {
     warnings.push("Completed planlet contains an incomplete-task override");
   }
