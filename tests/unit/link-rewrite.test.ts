@@ -561,6 +561,16 @@ test("an angled destination with a newline stays byte-identical", () => {
   assert.equal(outcome.rewritten, 0);
 });
 
+test("a multi-line definition label is recognized", () => {
+  const outcome = rewrite("[a\nb]: ../other-plan/plan.md\n");
+  assert.equal(outcome.text, "[a\nb]: ../../other-plan/plan.md\n");
+  assert.equal(outcome.rewritten, 1);
+  const blank = "[a\n\nb]: ../other-plan/plan.md\n";
+  const blankOutcome = rewrite(blank);
+  assert.equal(blankOutcome.text, blank);
+  assert.equal(blankOutcome.rewritten, 0);
+});
+
 test("resolveLinkPath is POSIX-only and reports root escapes", () => {
   assert.equal(
     resolveLinkPath("plans/a", "../other/plan.md"),

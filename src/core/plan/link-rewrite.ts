@@ -639,6 +639,10 @@ function splitProtectedSpans(
 const REFERENCE_DEFINITION_PATTERN =
   /^((?:[ \t]{0,3}> ?|[ \t]{0,3}(?:[-+*]|\d+[.)]) +)*[ \t]{0,3})(\[[^\]\n\\]*(?:\\.[^\]\n\\]*)*\]:[ \t]*)(<[^>\n]+>|[^\s]+)(?:(?=[ \t]*$)|(?=[ \t]+(?:"[^"\n\\]*(?:\\.[^"\n\\]*)*"|'[^'\n\\]*(?:\\.[^'\n\\]*)*'|\([^)\n\\]*(?:\\.[^)\n\\]*)*\))[ \t]*$))/gm;
 
+/** Matches a reference definition whose label spans two lines. */
+const MULTILINE_LABEL_DEFINITION_PATTERN =
+  /^((?:[ \t]{0,3}> ?|[ \t]{0,3}(?:[-+*]|\d+[.)]) +)*[ \t]{0,3})(\[(?:\\.|[^\]\\\r\n]|\r\n|\n(?!\n))*\]:[ \t]*)(<[^>\n]+>|[^\s]+)(?:(?=[ \t]*$)|(?=[ \t]+(?:"[^"\n\\]*(?:\\.[^"\n\\]*)*"|'[^'\n\\]*(?:\\.[^'\n\\]*)*'|\([^)\n\\]*(?:\\.[^)\n\\]*)*\))[ \t]*$))/;
+
 /** Matches a reference definition whose destination sits on the next line. */
 const MULTILINE_DEFINITION_PATTERN =
   /^((?:[ \t]{0,3}> ?|[ \t]{0,3}(?:[-+*]|\d+[.)]) +)*[ \t]{0,3})(\[[^\]\n\\]*(?:\\.[^\]\n\\]*)*\]:[ \t]*\n[ \t]+)(<[^>\n]+>|[^\s]+)(?:(?=[ \t]*$)|(?=[ \t]+(?:"[^"\n\\]*(?:\\.[^"\n\\]*)*"|'[^'\n\\]*(?:\\.[^'\n\\]*)*'|\([^)\n\\]*(?:\\.[^)\n\\]*)*\))[ \t]*$))/gm;
@@ -1180,6 +1184,41 @@ function findReferenceDefinitions(
         offset += (next ?? "").length + 1;
         lineIndex += 1;
         continue;
+      }
+    }
+    // A label split across two lines: join the pair in original bytes
+    // when the first line holds an unclosed bracket, then match the
+    // label-tolerant pattern.
+    const unescaped = bare.replace(/\\./g, "");
+    if (/\[[^\]]*$/.test(unescaped)) {
+      const labelNext =
+        lineIndex + 1 < lines.length ? lines[lineIndex + 1] : null;
+      if (labelNext !== null && labelNext !== undefined) {
+        const separator = line.endsWith("\r") ? "\r\n" : "\n";
+        const pair = `${line}${separator}${labelNext}`;
+        MULTILINE_LABEL_DEFINITION_PATTERN.lastIndex = 0;
+        const labelProbe = MULTILINE_LABEL_DEFINITION_PATTERN.exec(pair);
+        MULTILINE_LABEL_DEFINITION_PATTERN.lastIndex = 0;
+        if (labelProbe !== null) {
+          if (!open) {
+            const container = labelProbe[1] ?? "";
+            const label = labelProbe[2] ?? "";
+            const destination = labelProbe[3] ?? "";
+            const destinationStart =
+              lineStart + container.length + label.length;
+            matches.push({
+              start: lineStart,
+              end: lineStart + pair.length,
+              destinationStart,
+              destinationEnd: destinationStart + destination.length,
+              destination,
+            });
+          }
+          open = false;
+          offset += labelNext.length + separator.length;
+          lineIndex += 1;
+          continue;
+        }
       }
     }
     // Shared endsParagraph model: headings, breaks, and blanks end
