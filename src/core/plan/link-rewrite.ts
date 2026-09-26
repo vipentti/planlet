@@ -573,30 +573,31 @@ function splitProtectedSpans(
         ([start, end]) =>
           [start, end, "html"] as [number, number, ProtectedSpan["kind"]],
       );
-    let openStart = -1;
-    let openLength = 0;
+    // Pending openers stay eligible until an equal-length whole run
+    // closes them: different-length runs never match, so `` [x] ` ``
+    // protects its link while an unmatched opener stays literal. The
+    // most recent matching opener pairs first, mirroring CommonMark.
+    // This shares the whole-run rule with label scanning.
+    const openers: Array<{ start: number; length: number }> = [];
     for (const run of runs) {
       const start = run.index ?? 0;
       const length = run[0].length;
-      if (openStart === -1) {
-        openStart = start;
-        openLength = length;
+      const matchIndex = openers.findLastIndex(
+        (opener) => opener.length === length,
+      );
+      if (matchIndex === -1) {
+        openers.push({ start, length });
         continue;
       }
-      if (length === openLength) {
-        protectedRanges.push([openStart, start + length, "code"]);
-        openStart = -1;
-        openLength = 0;
-      } else {
-        // A longer or shorter run never closes the span: the earlier
-        // opener stays literal text, and this run becomes the new
-        // opener candidate so later equal-length pairs still delimit
-        // code. This shares the whole-run rule with label scanning.
-        openStart = start;
-        openLength = length;
+      const opener = openers[matchIndex];
+      if (opener !== undefined) {
+        protectedRanges.push([opener.start, start + length, "code"]);
       }
+      // The matched opener and everything opened after it are consumed
+      // by the span.
+      openers.splice(matchIndex);
     }
-    // An unmatched opener protects nothing; its run stays rewritable.
+    // Unmatched openers protect nothing; their runs stay rewritable.
     // Coalesce overlapping ranges (a comment nested inside a code span is
     // owned by the span) so slicing never duplicates or drops bytes.
     // Document-level link ranges punch holes: a link label may hold

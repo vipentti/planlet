@@ -571,6 +571,13 @@ test("a multi-line definition label is recognized", () => {
   assert.equal(blankOutcome.rewritten, 0);
 });
 
+test("a link inside a mixed-length code span stays protected", () => {
+  const input = "`` [x](../other-plan/plan.md) ` ``\n";
+  const outcome = rewrite(input);
+  assert.equal(outcome.text, input);
+  assert.equal(outcome.rewritten, 0);
+});
+
 test("resolveLinkPath is POSIX-only and reports root escapes", () => {
   assert.equal(
     resolveLinkPath("plans/a", "../other/plan.md"),
