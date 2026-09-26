@@ -193,10 +193,15 @@ function splitProtectedSpans(
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index] ?? "";
     const withNewline = index < lines.length - 1 ? `${line}\n` : line;
+    // Strip one optional block-quote marker before fence detection so
+    // fenced code inside quotes protects its body. Deeper container
+    // nesting (lists inside quotes and beyond) stays out of scope and is
+    // documented on rewriteOutgoingLinks.
+    const quoteStripped = line.replace(/^ {0,3}> ?/, "");
     // Fence openers allow at most three leading spaces; deeper indentation
     // is an indented code block, never a fence. Closing runs need the same
     // character, at least the opening length, and only spaces/tabs after.
-    const fenceMatch = /^ {0,3}(`{3,}|~{3,})/.exec(line);
+    const fenceMatch = /^ {0,3}(`{3,}|~{3,})/.exec(quoteStripped);
     if (fenceMatch !== null) {
       const marker = fenceMatch[1] ?? "";
       const markerChar = marker[0] ?? "";
@@ -208,7 +213,9 @@ function splitProtectedSpans(
       } else if (
         markerChar === (fenceMarker[0] ?? "") &&
         marker.length >= fenceMarker.length &&
-        /^[ \t]*$/.test(line.slice(line.indexOf(marker) + marker.length))
+        /^[ \t]*$/.test(
+          quoteStripped.slice(quoteStripped.indexOf(marker) + marker.length),
+        )
       ) {
         current += withNewline;
         flush(true, current);
@@ -271,9 +278,20 @@ function splitProtectedSpans(
       // of the span body and scanning continues for an exact-length close.
     }
     // An unmatched opener protects nothing; its run stays rewritable.
+    // Coalesce overlapping ranges (a comment nested inside a code span is
+    // owned by the span) so slicing never duplicates or drops bytes.
     protectedRanges.sort((left, right) => left[0] - right[0]);
-    let cursor = 0;
+    const coalesced: Array<[number, number]> = [];
     for (const [start, end] of protectedRanges) {
+      const last = coalesced[coalesced.length - 1];
+      if (last !== undefined && start <= last[1]) {
+        last[1] = Math.max(last[1], end);
+      } else {
+        coalesced.push([start, end]);
+      }
+    }
+    let cursor = 0;
+    for (const [start, end] of coalesced) {
       if (start > cursor) {
         result.push({
           protected_: false,
@@ -291,13 +309,20 @@ function splitProtectedSpans(
 }
 
 const REFERENCE_DEFINITION_PATTERN =
-  /^([ \t]{0,3}\[[^\]\n]+\]:[ \t]*)(<[^>\n]+>|[^\s]+)([ \t]*.*)$/gm;
+  /^([ \t]{0,3}\[[^\]\n]+\]:[ \t]*)(<[^>\n]+>|[^\s]+)([ \t]*.*)?$/gm;
+
+/** Matches a reference definition whose destination sits on the next line. */
+const MULTILINE_DEFINITION_PATTERN =
+  /^([ \t]{0,3}\[[^\]\n]+\]:[ \t]*\n[ \t]+)(<[^>\n]+>|[^\s]+)([ \t]*.*)?$/gm;
 
 interface InlineLinkMatch {
   readonly start: number;
   readonly end: number;
   readonly bang: string;
   readonly label: string;
+  /** Full inside-parens text (destination plus optional title). */
+  readonly inside: string;
+  /** Decoded destination path without brackets or title. */
   readonly destination: string;
   readonly angled: boolean;
   /** Title text after an angle destination, including leading space. */
@@ -393,6 +418,7 @@ function findInlineLinks(text: string): InlineLinkMatch[] {
             end,
             bang,
             label: text.slice(open + 1, closeBracket),
+            inside: `<${text.slice(destStart + 1, close)}>${title}`,
             destination: text.slice(destStart + 1, close),
             angled,
             angledTitle: title,
@@ -402,7 +428,13 @@ function findInlineLinks(text: string): InlineLinkMatch[] {
         }
       }
     } else {
+      // Bare destination: the path runs to whitespace (optional title
+      // follows) or to the closing paren. Parentheses inside quoted
+      // titles must not affect balance, so the scan is title-aware:
+      // once whitespace ends the path, only the title grammar to the
+      // final `)` matters.
       let depth = 0;
+      let pathEnd = -1;
       cursor = destStart;
       while (cursor < text.length) {
         const char = text[cursor];
@@ -410,6 +442,10 @@ function findInlineLinks(text: string): InlineLinkMatch[] {
         if (char === "\\") {
           cursor += 2;
           continue;
+        }
+        if (pathEnd === -1 && (char === " " || char === "\t")) {
+          pathEnd = cursor;
+          break;
         }
         if (char === "(") depth += 1;
         if (char === ")") {
@@ -422,6 +458,17 @@ function findInlineLinks(text: string): InlineLinkMatch[] {
         }
         cursor += 1;
       }
+      if (pathEnd !== -1 && destEnd === -1) {
+        // A title follows: accept `"..."`, `'...'`, or `(...)` then the
+        // link close, all on one line.
+        const after = text.slice(pathEnd);
+        const titleClose =
+          /^(?:[ \t]+(?:"[^"\n]*"|'[^'\n]*'|\([^)\n]*\)))?[ \t]*\)/.exec(after);
+        if (titleClose !== undefined && titleClose !== null) {
+          destEnd = pathEnd;
+          end = pathEnd + titleClose[0].length;
+        }
+      }
     }
     if (destEnd === -1 || end === -1) {
       index = open + 1;
@@ -432,6 +479,9 @@ function findInlineLinks(text: string): InlineLinkMatch[] {
       end,
       bang,
       label: text.slice(open + 1, closeBracket),
+      // Full inside-parens text: splitDestination separates the path
+      // from any title, so titled links round-trip byte-identically.
+      inside: text.slice(destStart, end - 1),
       // Exclude the angle brackets: splitDestination re-adds the wrapper.
       destination: angled
         ? text.slice(destStart + 1, destEnd)
@@ -456,7 +506,7 @@ function rewriteInlineLinks(
   const parts: string[] = [];
   for (const found of findInlineLinks(text)) {
     const outcome = rewriteDestination(
-      found.angled ? `<${found.destination}>` : found.destination,
+      found.inside,
       planDir,
       repositoryRoot,
       existence,
@@ -465,13 +515,6 @@ function rewriteInlineLinks(
     parts.push(text.slice(cursor, found.start));
     if (!outcome.rewritten) {
       parts.push(text.slice(found.start, found.end));
-    } else if (found.angledTitle.length > 0) {
-      // Rebuild the angled link with its title: the rewrite output holds
-      // only the `<path>` destination.
-      parts.push(
-        `${found.bang}[${found.label}](${outcome.destination}${found.angledTitle})`,
-      );
-      rewritten += 1;
     } else {
       parts.push(`${found.bang}[${found.label}](${outcome.destination})`);
       rewritten += 1;
@@ -490,20 +533,41 @@ function rewriteReferenceDefinitions(
   skipped: string[],
 ): { text: string; rewritten: number } {
   let rewritten = 0;
-  const replaced = text.replace(
+  const rewriteOne = (
+    whole: string,
+    prefix: string,
+    destination: string,
+    suffix: string | undefined,
+  ): string => {
+    const outcome = rewriteDestination(
+      destination,
+      planDir,
+      repositoryRoot,
+      existence,
+    );
+    if (outcome.skipped !== undefined) skipped.push(outcome.skipped);
+    if (!outcome.rewritten) return whole;
+    rewritten += 1;
+    return `${prefix}${outcome.destination}${suffix ?? ""}`;
+  };
+  const single = text.replace(
     REFERENCE_DEFINITION_PATTERN,
-    (whole: string, prefix: string, destination: string, suffix: string) => {
-      const outcome = rewriteDestination(
-        destination,
-        planDir,
-        repositoryRoot,
-        existence,
-      );
-      if (outcome.skipped !== undefined) skipped.push(outcome.skipped);
-      if (!outcome.rewritten) return whole;
-      rewritten += 1;
-      return `${prefix}${outcome.destination}${suffix}`;
-    },
+    (
+      whole: string,
+      prefix: string,
+      destination: string,
+      suffix: string | undefined,
+    ) => rewriteOne(whole, prefix, destination, suffix),
+  );
+  // Reference definitions may break the destination onto the next line.
+  const replaced = single.replace(
+    MULTILINE_DEFINITION_PATTERN,
+    (
+      whole: string,
+      prefix: string,
+      destination: string,
+      suffix: string | undefined,
+    ) => rewriteOne(whole, prefix, destination, suffix),
   );
   return { text: replaced, rewritten };
 }

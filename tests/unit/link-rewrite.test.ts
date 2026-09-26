@@ -212,6 +212,34 @@ test("nested label brackets balance", () => {
   assert.equal(outcome.rewritten, 1);
 });
 
+test("a comment nested in a code span changes no bytes", () => {
+  const input = "`a <!-- c --> b`\n";
+  const outcome = rewrite(input);
+  assert.equal(outcome.text, input);
+  assert.equal(outcome.rewritten, 0);
+});
+
+test("fenced code inside block quotes stays protected", () => {
+  const input =
+    "> ```\n> [x](../other-plan/plan.md)\n> ```\n\n[y](../other-plan/plan.md)\n";
+  const outcome = rewrite(input);
+  assert.equal(outcome.rewritten, 1);
+  assert.ok(outcome.text.includes("> [x](../other-plan/plan.md)"));
+  assert.ok(outcome.text.includes("[y](../../other-plan/plan.md)"));
+});
+
+test("parentheses inside quoted titles do not break the destination", () => {
+  const outcome = rewrite('[x](../other-plan/plan.md "title(with")');
+  assert.equal(outcome.text, '[x](../../other-plan/plan.md "title(with")');
+  assert.equal(outcome.rewritten, 1);
+});
+
+test("multiline reference definitions rewrite on the next line", () => {
+  const outcome = rewrite("[r][i]\n\n[i]:\n  ../other-plan/plan.md\n");
+  assert.equal(outcome.text, "[r][i]\n\n[i]:\n  ../../other-plan/plan.md\n");
+  assert.equal(outcome.rewritten, 1);
+});
+
 test("resolveLinkPath is POSIX-only and reports root escapes", () => {
   assert.equal(
     resolveLinkPath("plans/a", "../other/plan.md"),
