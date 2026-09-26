@@ -624,6 +624,35 @@ test("a title spanning lines owns the whole definition", () => {
   }
 });
 
+test("raw HTML blocks protect their literal links", () => {
+  for (const input of [
+    "<!--\n[x](../other-plan/plan.md)\n",
+    "<script>\n[x](../other-plan/plan.md)\n</script>\n",
+    "<div>\n[x](../other-plan/plan.md)\n</div>\n",
+  ]) {
+    const outcome = rewrite(input);
+    assert.equal(outcome.text, input);
+    assert.equal(outcome.rewritten, 0);
+  }
+  const after = rewrite(
+    "<div>\n[x](../other-plan/plan.md)\n</div>\n\n[y](../other-plan/plan.md)\n",
+  );
+  assert.equal(
+    after.text,
+    "<div>\n[x](../other-plan/plan.md)\n</div>\n\n[y](../../other-plan/plan.md)\n",
+  );
+  assert.equal(after.rewritten, 1);
+});
+
+test("a backtick fence with a backtick info string is not a fence", () => {
+  const outcome = rewrite("``` foo`bar`\n[x](../other-plan/plan.md)\n```\n");
+  assert.equal(
+    outcome.text,
+    "``` foo`bar`\n[x](../../other-plan/plan.md)\n```\n",
+  );
+  assert.equal(outcome.rewritten, 1);
+});
+
 test("resolveLinkPath is POSIX-only and reports root escapes", () => {
   assert.equal(
     resolveLinkPath("plans/a", "../other/plan.md"),

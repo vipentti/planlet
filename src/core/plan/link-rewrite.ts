@@ -231,8 +231,124 @@ interface ProtectedSpan {
   readonly text: string;
   /** Byte offset of the span start within the source document. */
   readonly offset: number;
-  /** Block kind for protected spans: fence, indented, code, or html. */
-  readonly kind: "fence" | "indented" | "code" | "html" | "text";
+  /** Block kind: fence, indented, html blocks, inline code/html, text. */
+  readonly kind: "fence" | "indented" | "htmlblock" | "code" | "html" | "text";
+}
+
+/** Raw HTML block state: comments run to `-->`, elements to their close
+ * tag, and generic block tags to the next blank line. */
+type HtmlBlockState =
+  | { readonly end: "comment" }
+  | { readonly end: "element"; readonly tag: string }
+  | { readonly end: "blank" };
+
+/** Block-level tag names that open a blank-terminated raw HTML block. */
+const HTML_BLOCK_TAGS = [
+  "address",
+  "article",
+  "aside",
+  "base",
+  "basefont",
+  "blockquote",
+  "body",
+  "caption",
+  "center",
+  "col",
+  "colgroup",
+  "dd",
+  "details",
+  "dialog",
+  "dir",
+  "div",
+  "dl",
+  "dt",
+  "fieldset",
+  "figcaption",
+  "figure",
+  "footer",
+  "form",
+  "frame",
+  "frameset",
+  "h1",
+  "h2",
+  "h3",
+  "h4",
+  "h5",
+  "h6",
+  "head",
+  "header",
+  "hr",
+  "html",
+  "iframe",
+  "legend",
+  "li",
+  "link",
+  "main",
+  "menu",
+  "menuitem",
+  "nav",
+  "noframes",
+  "ol",
+  "optgroup",
+  "option",
+  "p",
+  "param",
+  "search",
+  "section",
+  "summary",
+  "table",
+  "tbody",
+  "td",
+  "tfoot",
+  "th",
+  "thead",
+  "title",
+  "tr",
+  "track",
+  "ul",
+];
+
+/**
+ * Detects a raw HTML block start on a container-stripped line. Comments
+ * and script-like elements interrupt paragraphs; generic block tags
+ * open only outside paragraphs. Single-line constructs stay inline:
+ * only unclosed comments/elements open a block. Returns null when the
+ * line is ordinary Markdown.
+ */
+function htmlBlockStart(stripped: string): HtmlBlockState | "line" | null {
+  const comment = /^ {0,3}<!--/.exec(stripped);
+  if (comment !== null) {
+    return stripped.includes("-->") ? null : { end: "comment" };
+  }
+  const element = /^ {0,3}<(script|pre|style|textarea)(?=[\s/>]|$)/i.exec(
+    stripped,
+  );
+  if (element !== null) {
+    const tag = (element[1] ?? "").toLowerCase();
+    // An opening line that also closes stays a single protected line.
+    return new RegExp(`</${tag}\\s*>`, "i").test(stripped)
+      ? "line"
+      : { end: "element", tag };
+  }
+  const tagName = HTML_BLOCK_TAGS.join("|");
+  const block = new RegExp(`^ {0,3}</?(?:${tagName})(?=[\\s/>]|$)`, "i").exec(
+    stripped,
+  );
+  if (block !== null) {
+    return { end: "blank" };
+  }
+  return null;
+}
+
+/** True when the line ends an open raw HTML block (inclusive). */
+function htmlBlockEnds(state: HtmlBlockState, line: string): boolean {
+  if (state.end === "comment") {
+    return line.includes("-->");
+  }
+  if (state.end === "element") {
+    return new RegExp(`</${state.tag}\\s*>`, "i").test(line);
+  }
+  return false;
 }
 
 /**
@@ -358,6 +474,7 @@ function splitProtectedSpans(
   let inFence = false;
   let fenceMarker = "";
   let fenceDepth = 0;
+  let inHtmlBlock: HtmlBlockState | null = null;
   let paragraphOpen = false;
   let previousWasCode = true;
   let contentColumn: ContainerColumn[] = [];
@@ -406,11 +523,46 @@ function splitProtectedSpans(
     const { depth, content, columns } = stripContainers(bare, contentColumn);
     contentColumn = columns;
     const stripped = content;
-    // Fence openers allow at most three leading spaces; deeper indentation
-    // is an indented code block, never a fence. Closing runs need the same
-    // character, at least the opening length, and only spaces/tabs after.
+    // Raw HTML blocks own their lines before fence detection: their
+    // content is literal Markdown-wise. A blank line ends a
+    // blank-terminated block without belonging to it.
+    if (
+      inHtmlBlock !== null &&
+      inHtmlBlock.end === "blank" &&
+      bare.trim().length === 0
+    ) {
+      flush(true, current, "htmlblock");
+      current = "";
+      inHtmlBlock = null;
+      paragraphOpen = false;
+      previousWasCode = true;
+      // Fall through to ordinary handling of the blank line.
+    } else if (inHtmlBlock !== null) {
+      current += withNewline;
+      if (htmlBlockEnds(inHtmlBlock, line)) {
+        flush(true, current, "htmlblock");
+        current = "";
+        inHtmlBlock = null;
+        paragraphOpen = false;
+        previousWasCode = true;
+      }
+      continue;
+    }
+    // Fence openers allow at most three leading spaces past the
+    // container; deeper indentation is indented code, never a fence.
+    // Closing runs need the same character, at least the opening
+    // length, and only spaces/tabs after. A backtick fence whose info
+    // string holds a backtick is not a fence at all.
     const fenceMatch = /^ {0,3}(`{3,}|~{3,})/.exec(stripped);
-    if (fenceMatch !== null) {
+    const fenceInfo = fenceMatch
+      ? stripped.slice(
+          stripped.indexOf(fenceMatch[1] ?? "") + (fenceMatch[1] ?? "").length,
+        )
+      : "";
+    const fenceOpenerValid =
+      fenceMatch !== null &&
+      ((fenceMatch[1] ?? "")[0] !== "`" || !fenceInfo.includes("`"));
+    if (fenceMatch !== null && (inFence || fenceOpenerValid)) {
       const marker = fenceMatch[1] ?? "";
       const markerChar = marker[0] ?? "";
       if (!inFence) {
@@ -458,6 +610,29 @@ function splitProtectedSpans(
         continue;
       }
     }
+    // A raw HTML block opens here unless already inside a fence: its
+    // content is literal. Generic block tags open only outside
+    // paragraphs; comments and script-like elements interrupt.
+    // Single-line constructs stay inline-handled.
+    if (!inFence) {
+      const htmlOpen = htmlBlockStart(stripped);
+      if (htmlOpen === "line") {
+        flush(false, current);
+        current = "";
+        flush(true, withNewline, "htmlblock");
+        paragraphOpen = false;
+        previousWasCode = true;
+        continue;
+      }
+      if (htmlOpen !== null && (htmlOpen.end !== "blank" || !paragraphOpen)) {
+        flush(false, current);
+        current = withNewline;
+        inHtmlBlock = htmlOpen;
+        paragraphOpen = false;
+        previousWasCode = false;
+        continue;
+      }
+    }
     // Indented code is relative to the container: content indented four
     // or more spaces past the container starts code only where CommonMark
     // permits a block start. A four-space line continuing a paragraph is
@@ -492,7 +667,11 @@ function splitProtectedSpans(
     }
     current += withNewline;
   }
-  flush(inFence, current);
+  flush(
+    inFence || inHtmlBlock !== null,
+    current,
+    inHtmlBlock !== null ? "htmlblock" : inFence ? "fence" : "text",
+  );
   // Resolve block-span offsets in document order, preserving kinds.
   let blockBase = 0;
   for (let spanIndex = 0; spanIndex < spans.length; spanIndex += 1) {
@@ -1119,7 +1298,9 @@ function findReferenceDefinitions(
   const lineIsCode = (lineStart: number): boolean =>
     blockSpans.some(
       (span) =>
-        (span.kind === "fence" || span.kind === "indented") &&
+        (span.kind === "fence" ||
+          span.kind === "indented" ||
+          span.kind === "htmlblock") &&
         lineStart >= span.offset &&
         lineStart < span.offset + span.text.length,
     );
@@ -1445,7 +1626,9 @@ export function rewriteOutgoingLinks(
     // recognition ran on the block stream.
     const inBlock = blockSpans.some(
       (span) =>
-        (span.kind === "fence" || span.kind === "indented") &&
+        (span.kind === "fence" ||
+          span.kind === "indented" ||
+          span.kind === "htmlblock") &&
         definition.start >= span.offset &&
         definition.end <= span.offset + span.text.length,
     );
