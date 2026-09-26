@@ -362,6 +362,12 @@ function splitProtectedSpans(
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index] ?? "";
     const withNewline = index < lines.length - 1 ? `${line}\n` : line;
+    // Classify on the line without a trailing CR so CRLF documents
+    // behave exactly like LF documents; output keeps original bytes.
+    const bare =
+      line.endsWith("\r") && index < lines.length - 1
+        ? line.slice(0, -1)
+        : line;
     // Fence state retains its container depth: a fence opened at depth N
     // only closes at depth N, where depth counts arbitrary quote/list
     // nesting via stripContainers. A literal `> ``` line inside
@@ -371,7 +377,7 @@ function splitProtectedSpans(
     // it and is reprocessed below. Indented code is relative to the
     // container: four spaces beyond the container indent is code at any
     // nesting depth.
-    const { depth, content, columns } = stripContainers(line, contentColumn);
+    const { depth, content, columns } = stripContainers(bare, contentColumn);
     contentColumn = columns;
     const stripped = content;
     // Fence openers allow at most three leading spaces; deeper indentation
@@ -430,6 +436,7 @@ function splitProtectedSpans(
     // or more spaces past the container starts code only where CommonMark
     // permits a block start. A four-space line continuing a paragraph is
     // lazy continuation text, never code, so links there stay rewritable.
+    // All tests below run on the CR-stripped line.
     const contentIndented = /^(?: {4}|\t)/.test(stripped);
     if (contentIndented && !canStartIndentedCode()) {
       paragraphOpen = true;
@@ -444,12 +451,12 @@ function splitProtectedSpans(
       previousWasCode = true;
       continue;
     }
-    if (endsParagraph(line)) {
+    if (endsParagraph(bare)) {
       paragraphOpen = false;
       previousWasCode = false;
       // A blank line closes open list items; other boundaries keep the
       // item open for lazy continuation lines.
-      if (line.trim().length === 0) contentColumn = [];
+      if (bare.trim().length === 0) contentColumn = [];
     } else if (fenceMatch === null) {
       paragraphOpen = true;
       previousWasCode = false;
@@ -632,33 +639,52 @@ function isEscaped(text: string, position: number): boolean {
   return backslashes % 2 === 1;
 }
 
-/** Counts `\n` characters in `text[start, end)`. */
+/** Length of the line ending at `index`: 2 for CRLF, 1 for LF or CR. */
+function lineEndingLength(text: string, index: number): number {
+  if (text[index] === "\r") {
+    return text[index + 1] === "\n" ? 2 : 1;
+  }
+  return text[index] === "\n" ? 1 : 0;
+}
+
+/** Counts line endings (`\r\n`, `\n`, `\r`) in `text[start, end)`. */
 function countLineEndings(text: string, start: number, end: number): number {
   let count = 0;
-  for (let index = start; index < end; index += 1) {
-    if (text[index] === "\n") count += 1;
+  for (let index = start; index < end;) {
+    const length = lineEndingLength(text, index);
+    if (length > 0) {
+      count += 1;
+      index += length;
+    } else {
+      index += 1;
+    }
   }
   return count;
 }
 
 /**
- * Skips spaces, tabs, and at most one line ending. Returns the remainder
- * plus the skipped prefix length, or null when more whitespace appears.
+ * Skips spaces, tabs, and at most one line ending (LF, CRLF, or CR).
+ * Returns the remainder plus the skipped prefix length, or null when
+ * more whitespace appears.
  */
 function allowOneLineEnding(
   text: string,
 ): { text: string; prefix: number } | null {
-  const match = /^[ \t]*(?:\n[ \t]*)?/.exec(text);
-  if (match === null) return null;
-  const prefix = match[0];
-  const rest = text.slice(prefix.length);
-  if (prefix.includes("\n")) {
-    if (rest.startsWith("\n")) return null;
-  } else if (rest.length === 0) {
-    return { text: rest, prefix: prefix.length };
+  const leading = /^[ \t]*/.exec(text)?.[0] ?? "";
+  let prefix = leading.length;
+  const breakLength = lineEndingLength(text, prefix);
+  if (breakLength > 0) {
+    prefix += breakLength;
+    const trailing = /^[ \t]*/.exec(text.slice(prefix))?.[0] ?? "";
+    prefix += trailing.length;
   }
-  if (/^[ \t]*\n/.test(rest)) return null;
-  return { text: rest, prefix: prefix.length };
+  const rest = text.slice(prefix);
+  if (prefix === leading.length && rest.length === 0) {
+    return { text: rest, prefix };
+  }
+  if (breakLength === 0 && /^[ \t]*(\r\n|\n|\r)/.test(rest)) return null;
+  if (breakLength > 0 && /^(\r\n|\n|\r)/.test(rest)) return null;
+  return { text: rest, prefix };
 }
 
 /**
@@ -678,10 +704,11 @@ function parseTitleTail(text: string): RegExpExecArray | null {
       cursor += 1;
       continue;
     }
-    if (char === "\n") {
+    const breakLength = lineEndingLength(text, cursor);
+    if (breakLength > 0) {
       lineBreaks += 1;
       if (lineBreaks > 1) return null;
-      cursor += 1;
+      cursor += breakLength;
       continue;
     }
     break;
@@ -699,10 +726,11 @@ function parseTitleTail(text: string): RegExpExecArray | null {
           cursor += 2;
           continue;
         }
-        if (inner === "\n") {
+        const innerBreak = lineEndingLength(text, cursor);
+        if (innerBreak > 0) {
           breaks += 1;
           if (breaks > 1) return null;
-          cursor += 1;
+          cursor += innerBreak;
           continue;
         }
         if (inner === closer) {
@@ -722,10 +750,11 @@ function parseTitleTail(text: string): RegExpExecArray | null {
       cursor += 1;
       continue;
     }
-    if (char === "\n") {
+    const trailingLength = lineEndingLength(text, cursor);
+    if (trailingLength > 0) {
       trailingBreaks += 1;
       if (trailingBreaks > 1) return null;
-      cursor += 1;
+      cursor += trailingLength;
       continue;
     }
     break;
@@ -817,10 +846,11 @@ function findInlineLinks(text: string): InlineLinkMatch[] {
           }
         }
       }
-      if (char === "\n") {
+      if (char === "\r" || char === "\n") {
+        const breakLength = lineEndingLength(text, cursor);
         lineBreaks += 1;
         if (lineBreaks > 1) break;
-        cursor += 1;
+        cursor += breakLength;
         continue;
       }
       if (char === "\\") {
@@ -903,7 +933,7 @@ function findInlineLinks(text: string): InlineLinkMatch[] {
         }
         if (
           pathEnd === -1 &&
-          (char === " " || char === "\t" || char === "\n")
+          (char === " " || char === "\t" || lineEndingLength(text, cursor) > 0)
         ) {
           pathEnd = cursor;
           break;
@@ -1079,12 +1109,22 @@ function findReferenceDefinitions(
     if (lineIsCode(lineStart)) {
       continue;
     }
+    // Match on the CR-stripped line so CRLF documents behave like LF;
+    // offsets below stay in original bytes (the CR sits at the line
+    // end, past every recorded offset).
+    const bare = line.endsWith("\r") ? line.slice(0, -1) : line;
     // A definition destination may sit on the next line: join the pair
     // for matching.
     const next = lineIndex + 1 < lines.length ? lines[lineIndex + 1] : null;
+    const nextBare =
+      next === null || next === undefined
+        ? null
+        : next.endsWith("\r")
+          ? next.slice(0, -1)
+          : next;
     const joined =
-      next !== null && next !== undefined && /^[ \t]+\S/.test(next)
-        ? `${line}\n${next}`
+      nextBare !== null && /^[ \t]+\S/.test(nextBare)
+        ? `${bare}\n${nextBare}`
         : null;
     if (joined !== null) {
       const found = matchPatterns(joined);
@@ -1093,7 +1133,8 @@ function findReferenceDefinitions(
           const destinationStart = lineStart + found.destinationLength;
           matches.push({
             start: lineStart,
-            end: lineStart + joined.length,
+            // Original bytes: both lines plus the line ending between.
+            end: lineStart + line.length + 1 + (next ?? "").length,
             destinationStart,
             destinationEnd: destinationStart + found.destination.length,
             destination: found.destination,
@@ -1107,12 +1148,12 @@ function findReferenceDefinitions(
         continue;
       }
     }
-    const single = matchPatterns(line);
+    const single = matchPatterns(bare);
     if (single === null) {
       // Shared endsParagraph model: headings, breaks, and blanks end
       // the paragraph just like in the block splitter.
-      if (/^(?: {4}|\t)/.test(line)) open = false;
-      else if (endsParagraph(line)) open = false;
+      if (/^(?: {4}|\t)/.test(bare)) open = false;
+      else if (endsParagraph(bare)) open = false;
       else open = true;
       continue;
     }

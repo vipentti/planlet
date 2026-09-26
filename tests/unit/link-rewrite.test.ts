@@ -456,6 +456,21 @@ test("a definition after an inline-code-ended paragraph stays text", () => {
   assert.equal(outcome.rewritten, 0);
 });
 
+test("CRLF documents rewrite with original bytes preserved", () => {
+  const fence = rewrite("```\r\ncode\r\n```\r\n[x](../other-plan/plan.md)\r\n");
+  assert.equal(
+    fence.text,
+    "```\r\ncode\r\n```\r\n[x](../../other-plan/plan.md)\r\n",
+  );
+  assert.equal(fence.rewritten, 1);
+  const definition = rewrite("[id]: ../other-plan/plan.md\r\n");
+  assert.equal(definition.text, "[id]: ../../other-plan/plan.md\r\n");
+  assert.equal(definition.rewritten, 1);
+  const multiline = rewrite('[x](../other-plan/plan.md\r\n "Title")\r\n');
+  assert.equal(multiline.text, '[x](../../other-plan/plan.md\r\n "Title")\r\n');
+  assert.equal(multiline.rewritten, 1);
+});
+
 test("resolveLinkPath is POSIX-only and reports root escapes", () => {
   assert.equal(
     resolveLinkPath("plans/a", "../other/plan.md"),
