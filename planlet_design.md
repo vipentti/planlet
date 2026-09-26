@@ -246,8 +246,8 @@ The Complete skill should:
 6. Warn the user that the planlet is incomplete and ask for explicit confirmation before overriding the check.
 7. If confirmed, provide an explicit reason to the CLI and archive with the incomplete-task override.
 8. Capture one UTC completion timestamp and derive the `YYYY-MM-DD` archive date from it.
-9. Move the planlet to `plans/completed/<YYYY-MM-DD>-<slug>`.
-10. Report the logical slug, final destination, and whether completion was normal or forced.
+9. Rewrite the relative links in `plan.md` and `tasks.md` for the archive location, then move the planlet to `plans/completed/<YYYY-MM-DD>-<slug>`.
+10. Report the logical slug, final destination, whether completion was normal or forced, and every warning the CLI returned.
 
 The CLI itself should remain non-interactive. On incomplete work it returns a structured error and non-zero exit code. The skill owns the human confirmation conversation and then, if approved, calls an explicit override such as:
 
@@ -258,6 +258,8 @@ planlet complete add-more-users \
 ```
 
 The completion operation should record the full UTC timestamp and completion mode in `tasks.md` before moving the directory. An incomplete override should additionally record the remaining task IDs and override reason. The archive date and recorded timestamp must come from the same captured instant. This preserves the two-file model while leaving an audit trail.
+
+Archiving moves the planlet one directory deeper, so a relative link in `plan.md` or `tasks.md` that points outside the planlet would then resolve one level too shallow. Completion therefore rewrites those destinations for the archive depth: every link that leaves the planlet gains one `../` prefix, resolved from the planlet's own parent directory, while links that stay inside the planlet keep pointing at the files that moved with it. The rewrite only inserts those three bytes, so titles, escapes, query strings, fragments, and line endings stay byte-identical, and a planlet without qualifying links archives byte-identically. The completion record is appended after the rewrite, so it is never rewritten itself. Each unchanged link is reported as a warning with a reason, such as an unresolved target, a target that exists at both depths, a target that names the planlet through its parent directory, or a path the platform cannot express.
 
 ### 8.5 CI and pull-request workflow
 
@@ -895,6 +897,7 @@ Recommended baseline:
 - Publish an npm package with a `bin` entry for `planlet`.
 - Use `#!/usr/bin/env node` in the executable bundle.
 - Prefer Node built-ins and keep runtime dependencies minimal. The official TOON library (`@toon-format/toon`, see §13.4) is a deliberate exception, adopted as the default-output serializer instead of a hand-rolled implementation of the format.
+- The CommonMark parser (`mdast-util-from-markdown`, with `micromark-util-decode-string`) is a second deliberate exception, adopted so completion can locate exact link destinations instead of scanning Markdown by hand. Both are bundled into `dist/planlet.mjs`, so the published package still installs no runtime dependency.
 - Use Node's stable `util.parseArgs()` before adopting a large CLI framework.
 - Use the built-in `node:test` runner unless project needs outgrow it.
 - Use ESLint for linting and Prettier for formatting, with documented `lint` and `format`/`format:check` scripts.

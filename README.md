@@ -82,7 +82,10 @@ the CLI for discovery, validation, progress, and archiving.
    case that ordinary history cannot reconstruct it.
 3. **Complete** — `planlet-complete` validates the planlet and archives it to
    `plans/completed/<YYYY-MM-DD>-<slug>/`. Unfinished tasks require an explicit
-   override with a recorded reason.
+   override with a recorded reason. Because the archive sits one directory
+   deeper, completion also rewrites the relative links in `plan.md` and
+   `tasks.md` that point outside the planlet, and reports any link it left
+   unchanged.
 
 A typical session: ask for a plan, review the two Markdown files yourself, then
 ask for implementation, then completion. Nothing is hidden from review — the
@@ -133,7 +136,7 @@ planlet validate my-feature
 planlet tasks my-feature
 planlet task check my-feature T1
 planlet status my-feature
-planlet complete my-feature  # archive to plans/completed/<date>-my-feature/
+planlet complete my-feature  # rewrite archive links, then archive
 ```
 
 Running `planlet` with no command displays the active-plan dashboard.
@@ -184,22 +187,22 @@ scaffold stubs and does not stage them. The CLI never commits, and Planlet opera
 
 ## Commands
 
-| Command                                                | Purpose                                                                      |
-| ------------------------------------------------------ | ---------------------------------------------------------------------------- |
-| `init [--tools <ids>] [--force] [--no-agents]`         | Create `plans/`, install harness skills, write agent onboarding section      |
-| `update [--tools <ids>] [--force]`                     | Refresh installed skill copies from canonical sources                        |
-| `tools`                                                | Report skill destinations and installation state                             |
-| `onboard`                                              | Print the agent onboarding snippet                                           |
-| `list [--state <state>] [--completed]`                 | List planlets                                                                |
-| `create <slug> [--title <title>]`                      | Scaffold a new planlet                                                       |
-| `show <slug> [--part plan\|tasks\|summary]`            | Show planlet content                                                         |
-| `status <slug>`                                        | Report state and task counts                                                 |
-| `validate [<slug>\|--all]`                             | Validate planlet structure                                                   |
-| `tasks <slug> [--remaining\|--completed]`              | List tasks                                                                   |
-| `task check\|uncheck <slug> <task-id>`                 | Toggle a task checkbox                                                       |
-| `complete <slug> [--allow-incomplete --reason <text>]` | Archive a planlet under `plans/completed/`                                   |
-| `check-completion --base <git-ref>`                    | Report completed planlets and fail when changed ready planlets remain active |
-| `help [command]`                                       | Show usage                                                                   |
+| Command                                                | Purpose                                                                                                 |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------- |
+| `init [--tools <ids>] [--force] [--no-agents]`         | Create `plans/`, install harness skills, write agent onboarding section                                 |
+| `update [--tools <ids>] [--force]`                     | Refresh installed skill copies from canonical sources                                                   |
+| `tools`                                                | Report skill destinations and installation state                                                        |
+| `onboard`                                              | Print the agent onboarding snippet                                                                      |
+| `list [--state <state>] [--completed]`                 | List planlets                                                                                           |
+| `create <slug> [--title <title>]`                      | Scaffold a new planlet                                                                                  |
+| `show <slug> [--part plan\|tasks\|summary]`            | Show planlet content                                                                                    |
+| `status <slug>`                                        | Report state and task counts                                                                            |
+| `validate [<slug>\|--all]`                             | Validate planlet structure                                                                              |
+| `tasks <slug> [--remaining\|--completed]`              | List tasks                                                                                              |
+| `task check\|uncheck <slug> <task-id>`                 | Toggle a task checkbox                                                                                  |
+| `complete <slug> [--allow-incomplete --reason <text>]` | Archive a planlet under `plans/completed/`, rewriting its outbound relative links for the archive depth |
+| `check-completion --base <git-ref>`                    | Report completed planlets and fail when changed ready planlets remain active                            |
+| `help [command]`                                       | Show usage                                                                                              |
 
 Global options: `--root <path>` selects the repository root, `--full` returns
 complete `show --part plan|tasks` content, and `--version` prints the version
