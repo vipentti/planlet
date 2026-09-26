@@ -653,6 +653,32 @@ test("a backtick fence with a backtick info string is not a fence", () => {
   assert.equal(outcome.rewritten, 1);
 });
 
+test("a quoted paragraph swallows definition-looking text", () => {
+  const input = "> Foo\n> [id]: ../other-plan/plan.md\n";
+  const outcome = rewrite(input);
+  assert.equal(outcome.text, input);
+  assert.equal(outcome.rewritten, 0);
+});
+
+test("a list fence after a quoted fence stays protected", () => {
+  const input =
+    "> ```\n> code\n> ```\n- ```\n- [x](../other-plan/plan.md)\n- ```\n";
+  const outcome = rewrite(input);
+  assert.equal(outcome.text, input);
+  assert.equal(outcome.rewritten, 0);
+});
+
+test("raw HTML ends with its quote container", () => {
+  const outcome = rewrite(
+    "> <script>\n> x\n</script>\n[x](../other-plan/plan.md)\n",
+  );
+  assert.equal(
+    outcome.text,
+    "> <script>\n> x\n</script>\n[x](../../other-plan/plan.md)\n",
+  );
+  assert.equal(outcome.rewritten, 1);
+});
+
 test("resolveLinkPath is POSIX-only and reports root escapes", () => {
   assert.equal(
     resolveLinkPath("plans/a", "../other/plan.md"),

@@ -372,24 +372,91 @@ function excludeRanges(
 }
 
 /**
- * Shared block-boundary rule: blank lines, ATX headings, setext
- * underlines, thematic breaks, list items, and block quotes end a
- * paragraph. Used by both the block splitter (indented-code starts)
- * and reference-definition tracking (lazy continuation), so the two
- * models cannot disagree.
+ * Shared block-boundary rule over container-stripped content: blank
+ * lines, ATX headings, setext underlines, and thematic breaks end a
+ * paragraph. Container identity (quotes, list items) is tracked
+ * separately through signatures, so a definition-looking line inside
+ * an open paragraph stays lazy continuation text. Used by both the
+ * block splitter (indented-code starts) and reference-definition
+ * tracking, so the two models cannot disagree.
  */
 function endsParagraph(line: string): boolean {
   return (
     line.trim().length === 0 ||
-    /^(?: {0,3}> ?)? {0,3}#{1,6}(?:\s|$)/.test(line) ||
-    /^(?: {0,3}> ?)? {0,3}(?:=+[ \t]*)$/.test(line) ||
-    /^(?: {0,3}> ?)? {0,3}(?:-+[ \t]*)$/.test(line) ||
-    /^(?: {0,3}> ?)? {0,3}(?:\*[ \t]*){3,}$/.test(line) ||
-    /^(?: {0,3}> ?)? {0,3}(?:-[ \t]*){3,}$/.test(line) ||
-    /^(?: {0,3}> ?)? {0,3}(?:_[ \t]*){3,}$/.test(line) ||
-    /^(?: {0,3}> ?)? {0,3}(?:[-+*]|\d+[.)]) /.test(line) ||
-    /^(?: {0,3}> ?)/.test(line)
+    /^ {0,3}#{1,6}(?:\s|$)/.test(line) ||
+    /^ {0,3}(?:=+[ \t]*)$/.test(line) ||
+    /^ {0,3}(?:-+[ \t]*)$/.test(line) ||
+    /^ {0,3}(?:\*[ \t]*){3,}$/.test(line) ||
+    /^ {0,3}(?:-[ \t]*){3,}$/.test(line) ||
+    /^ {0,3}(?:_[ \t]*){3,}$/.test(line)
   );
+}
+
+/** A container marker kind in document order. */
+type ContainerKind = "quote" | "list";
+
+/**
+ * Paragraph state scoped to a container signature: an open paragraph
+ * continues only on lines with the same container identity that are
+ * not block boundaries. A new list item always starts a fresh
+ * container, so definitions there are real definitions.
+ */
+interface ParagraphState {
+  readonly open: boolean;
+  /** Container signature when open, null when no paragraph is open. */
+  readonly signature: string | null;
+}
+
+function containerSignature(kinds: readonly ContainerKind[]): string {
+  return kinds.join("\0");
+}
+
+/** True when `open` is a prefix of `current` (same container stack). */
+function containerPrefixMatches(
+  current: readonly ContainerKind[],
+  open: readonly ContainerKind[],
+): boolean {
+  if (current.length < open.length) return false;
+  return open.every((kind, index) => current[index] === kind);
+}
+
+/** True when both container stacks are identical. */
+function containersEqual(
+  left: readonly ContainerKind[],
+  right: readonly ContainerKind[],
+): boolean {
+  return (
+    left.length === right.length &&
+    left.every((kind, index) => right[index] === kind)
+  );
+}
+
+/**
+ * Advances paragraph state for one ordinary content line (already
+ * container-stripped). The caller gates definition recognition on the
+ * pre-update `open` value, then adopts the returned state.
+ */
+function trackParagraph(
+  state: ParagraphState,
+  stripped: string,
+  kinds: readonly ContainerKind[],
+  consumedBullet: boolean,
+): ParagraphState {
+  if (endsParagraph(stripped)) {
+    return { open: false, signature: null };
+  }
+  const signature = containerSignature(kinds);
+  if (consumedBullet) {
+    // A new list item starts a fresh container: lazy continuation
+    // never crosses it.
+    return { open: true, signature };
+  }
+  if (state.open && state.signature === signature) {
+    // Same container, ordinary text: the paragraph continues.
+    return state;
+  }
+  // A different container (or no open paragraph) starts a new block.
+  return { open: true, signature };
 }
 
 /**
@@ -415,16 +482,22 @@ function stripContainers(
   content: string;
   /** Updated open item content columns after consuming this line. */
   columns: ContainerColumn[];
+  /** Container kinds in document order (explicit + shared). */
+  kinds: ContainerKind[];
+  /** True when this line opened a new list item. */
+  consumedBullet: boolean;
 } {
   let rest = line;
   let depth = 0;
   let columns = [...contentColumn];
   let consumedBullet = false;
+  const kinds: ContainerKind[] = [];
   for (;;) {
     const quote = /^ {0,3}> ?/.exec(rest);
     if (quote !== null) {
       rest = rest.slice(quote[0].length);
       depth += 1;
+      kinds.push("quote");
       continue;
     }
     const bullet = /^ {0,3}(?:[-+*]|\d+[.)]) +/.exec(rest);
@@ -437,6 +510,7 @@ function stripContainers(
       });
       rest = rest.slice(bullet[0].length);
       depth += 1;
+      kinds.push("list");
       consumedBullet = true;
       continue;
     }
@@ -456,12 +530,13 @@ function stripContainers(
       if (rest.startsWith(" ".repeat(need)) && rest.length > need) {
         rest = rest.slice(need);
         depth += 1;
+        kinds.push("list");
       } else {
         break;
       }
     }
   }
-  return { depth, content: rest, columns };
+  return { depth, content: rest, columns, kinds, consumedBullet };
 }
 
 function splitProtectedSpans(
@@ -473,12 +548,14 @@ function splitProtectedSpans(
   let current = "";
   let inFence = false;
   let fenceMarker = "";
-  let fenceDepth = 0;
+  let fenceKinds: ContainerKind[] = [];
   let inHtmlBlock: HtmlBlockState | null = null;
-  let paragraphOpen = false;
+  let htmlKinds: ContainerKind[] = [];
+  let htmlDepth = 0;
+  let para: ParagraphState = { open: false, signature: null };
   let previousWasCode = true;
   let contentColumn: ContainerColumn[] = [];
-  const canStartIndentedCode = (): boolean => !paragraphOpen || previousWasCode;
+  const canStartIndentedCode = (): boolean => !para.open || previousWasCode;
   const flush = (
     protected_: boolean,
     chunk: string,
@@ -520,7 +597,10 @@ function splitProtectedSpans(
     // it and is reprocessed below. Indented code is relative to the
     // container: four spaces beyond the container indent is code at any
     // nesting depth.
-    const { depth, content, columns } = stripContainers(bare, contentColumn);
+    const { depth, content, columns, kinds, consumedBullet } = stripContainers(
+      bare,
+      contentColumn,
+    );
     contentColumn = columns;
     const stripped = content;
     // Raw HTML blocks own their lines before fence detection: their
@@ -534,19 +614,34 @@ function splitProtectedSpans(
       flush(true, current, "htmlblock");
       current = "";
       inHtmlBlock = null;
-      paragraphOpen = false;
+      htmlKinds = [];
+      htmlDepth = 0;
+      para = { open: false, signature: null };
       previousWasCode = true;
       // Fall through to ordinary handling of the blank line.
     } else if (inHtmlBlock !== null) {
-      current += withNewline;
-      if (htmlBlockEnds(inHtmlBlock, line)) {
+      if (!containerPrefixMatches(kinds, htmlKinds) || depth < htmlDepth) {
+        // The container ended: close the block and reprocess this line.
         flush(true, current, "htmlblock");
         current = "";
         inHtmlBlock = null;
-        paragraphOpen = false;
+        htmlKinds = [];
+        htmlDepth = 0;
+        para = { open: false, signature: null };
         previousWasCode = true;
+      } else {
+        current += withNewline;
+        if (htmlBlockEnds(inHtmlBlock, line)) {
+          flush(true, current, "htmlblock");
+          current = "";
+          inHtmlBlock = null;
+          htmlKinds = [];
+          htmlDepth = 0;
+          para = { open: false, signature: null };
+          previousWasCode = true;
+        }
+        continue;
       }
-      continue;
     }
     // Fence openers allow at most three leading spaces past the
     // container; deeper indentation is indented code, never a fence.
@@ -568,11 +663,27 @@ function splitProtectedSpans(
       if (!inFence) {
         inFence = true;
         fenceMarker = marker;
-        fenceDepth = depth;
+        fenceKinds = [...kinds];
         flush(false, current);
         current = withNewline;
+        para = { open: false, signature: null };
+        previousWasCode = false;
+        continue;
       } else if (
-        depth === fenceDepth &&
+        !containerPrefixMatches(kinds, fenceKinds) ||
+        depth < fenceKinds.length
+      ) {
+        // The container changed identity or ended: close the fence
+        // and reprocess this line below (it may open a new fence).
+        flush(true, current, "fence");
+        current = "";
+        inFence = false;
+        fenceMarker = "";
+        fenceKinds = [];
+        para = { open: false, signature: null };
+        previousWasCode = true;
+      } else if (
+        containersEqual(kinds, fenceKinds) &&
         markerChar === (fenceMarker[0] ?? "") &&
         marker.length >= fenceMarker.length &&
         /^[ \t]*$/.test(
@@ -584,31 +695,48 @@ function splitProtectedSpans(
         current = "";
         inFence = false;
         fenceMarker = "";
-        fenceDepth = 0;
+        fenceKinds = [];
         // A fenced block ends the paragraph; later indented code may
         // start fresh.
-        paragraphOpen = false;
+        para = { open: false, signature: null };
         previousWasCode = true;
+        continue;
       } else {
         current += withNewline;
+        continue;
       }
-      continue;
     }
     if (inFence) {
-      if (depth < fenceDepth) {
+      if (
+        !containerPrefixMatches(kinds, fenceKinds) ||
+        depth < fenceKinds.length
+      ) {
         // The container ended: close the fence and reprocess this line
         // as ordinary Markdown.
         flush(true, current, "fence");
         current = "";
         inFence = false;
         fenceMarker = "";
-        fenceDepth = 0;
-        paragraphOpen = false;
+        fenceKinds = [];
+        para = { open: false, signature: null };
         previousWasCode = true;
       } else {
         current += withNewline;
         continue;
       }
+    }
+    // A fence may open here: either no fence is open, or the previous
+    // one just closed because its container ended.
+    if (!inFence && fenceMatch !== null && fenceOpenerValid) {
+      const marker = fenceMatch[1] ?? "";
+      inFence = true;
+      fenceMarker = marker;
+      fenceKinds = [...kinds];
+      flush(false, current);
+      current = withNewline;
+      para = { open: false, signature: null };
+      previousWasCode = false;
+      continue;
     }
     // A raw HTML block opens here unless already inside a fence: its
     // content is literal. Generic block tags open only outside
@@ -620,15 +748,17 @@ function splitProtectedSpans(
         flush(false, current);
         current = "";
         flush(true, withNewline, "htmlblock");
-        paragraphOpen = false;
+        para = { open: false, signature: null };
         previousWasCode = true;
         continue;
       }
-      if (htmlOpen !== null && (htmlOpen.end !== "blank" || !paragraphOpen)) {
+      if (htmlOpen !== null && (htmlOpen.end !== "blank" || !para.open)) {
         flush(false, current);
         current = withNewline;
         inHtmlBlock = htmlOpen;
-        paragraphOpen = false;
+        htmlKinds = [...kinds];
+        htmlDepth = depth;
+        para = { open: false, signature: null };
         previousWasCode = false;
         continue;
       }
@@ -640,7 +770,7 @@ function splitProtectedSpans(
     // All tests below run on the CR-stripped line.
     const contentIndented = /^(?: {4}|\t)/.test(stripped);
     if (contentIndented && !canStartIndentedCode()) {
-      paragraphOpen = true;
+      // Lazy continuation: paragraph state is unchanged.
       current += withNewline;
       continue;
     }
@@ -648,23 +778,22 @@ function splitProtectedSpans(
       flush(false, current);
       current = "";
       flush(true, withNewline, "indented");
-      paragraphOpen = false;
+      para = { open: false, signature: null };
       previousWasCode = true;
       continue;
     }
-    if (endsParagraph(bare)) {
-      paragraphOpen = false;
-      previousWasCode = false;
-      // A blank line closes open list items; other boundaries keep the
-      // item open for lazy continuation lines.
-      if (bare.trim().length === 0) contentColumn = [];
-    } else if (fenceMatch === null) {
-      paragraphOpen = true;
+    // A fence-looking line with an invalid info string reaches here:
+    // it is ordinary text and ends any open paragraph like a fence.
+    if (fenceMatch !== null) {
+      para = { open: false, signature: null };
       previousWasCode = false;
     } else {
-      paragraphOpen = false;
+      para = trackParagraph(para, stripped, kinds, consumedBullet);
       previousWasCode = false;
     }
+    // A blank line closes open list items; other boundaries keep the
+    // item open for lazy continuation lines.
+    if (bare.trim().length === 0) contentColumn = [];
     current += withNewline;
   }
   flush(
@@ -1294,7 +1423,8 @@ function findReferenceDefinitions(
   const matches: DefinitionMatch[] = [];
   const lines = markdown.split("\n");
   let offset = 0;
-  let open = false;
+  let para: ParagraphState = { open: false, signature: null };
+  let contentColumn: ContainerColumn[] = [];
   const lineIsCode = (lineStart: number): boolean =>
     blockSpans.some(
       (span) =>
@@ -1344,15 +1474,33 @@ function findReferenceDefinitions(
     const lineStart = offset;
     offset += line.length + 1;
     if (lineIsCode(lineStart)) {
+      para = { open: false, signature: null };
       continue;
     }
     // Match on the CR-stripped line so CRLF documents behave like LF;
     // offsets below stay in original bytes (the CR sits at the line
     // end, past every recorded offset).
     const bare = line.endsWith("\r") ? line.slice(0, -1) : line;
+    // Container-stripped content drives the shared paragraph model:
+    // `> [id]: ...` inside an open quote paragraph stays lazy
+    // continuation text, while a new list item starts fresh.
+    const strippedContainers = stripContainers(bare, contentColumn);
+    contentColumn = strippedContainers.columns;
+    if (bare.trim().length === 0) contentColumn = [];
+    const stripped = strippedContainers.content;
+    const kinds = strippedContainers.kinds;
+    const consumedBullet = strippedContainers.consumedBullet;
+    // Lazy continuation gate: this line is paragraph text (not a
+    // definition) only when a paragraph is open in the SAME container
+    // and no new list item starts here. A container change always
+    // starts a fresh block.
+    const lazy =
+      para.open &&
+      para.signature === containerSignature(kinds) &&
+      !consumedBullet;
     const singleFirst = matchSingle(bare);
     if (singleFirst !== null) {
-      if (!open) {
+      if (!lazy) {
         const destinationStart = lineStart + singleFirst.destinationLength;
         let end = lineStart + line.length;
         // A title on the following line belongs to the definition.
@@ -1379,7 +1527,7 @@ function findReferenceDefinitions(
           destination: singleFirst.destination,
         });
       }
-      open = false;
+      para = { open: false, signature: null };
       continue;
     }
     // A definition destination may sit on the next line: join the pair
@@ -1398,7 +1546,7 @@ function findReferenceDefinitions(
     if (joined !== null) {
       const found = matchMultiline(joined);
       if (found !== null) {
-        if (!open) {
+        if (!lazy) {
           // Destination offsets in original bytes: the destination
           // opens the next line after its leading whitespace.
           const nextStart = lineStart + line.length + 1;
@@ -1433,7 +1581,7 @@ function findReferenceDefinitions(
         }
         // Consume the pair: the destination line cannot start a
         // paragraph of its own.
-        open = false;
+        para = { open: false, signature: null };
         offset += (next ?? "").length + 1;
         lineIndex += 1;
         continue;
@@ -1453,7 +1601,7 @@ function findReferenceDefinitions(
         const labelProbe = MULTILINE_LABEL_DEFINITION_PATTERN.exec(pair);
         MULTILINE_LABEL_DEFINITION_PATTERN.lastIndex = 0;
         if (labelProbe !== null) {
-          if (!open) {
+          if (!lazy) {
             const container = labelProbe[1] ?? "";
             const label = labelProbe[2] ?? "";
             const destination = labelProbe[3] ?? "";
@@ -1467,7 +1615,7 @@ function findReferenceDefinitions(
               destination,
             });
           }
-          open = false;
+          para = { open: false, signature: null };
           offset += labelNext.length + separator.length;
           lineIndex += 1;
           continue;
@@ -1495,7 +1643,7 @@ function findReferenceDefinitions(
       CONTINUED_TITLE_DEFINITION_PATTERN.lastIndex = 0;
       if (continued !== null) {
         const matched = continued[0] ?? "";
-        if (!open) {
+        if (!lazy) {
           const container = continued[1] ?? "";
           const label = continued[2] ?? "";
           const separator = continued[3] ?? "";
@@ -1518,13 +1666,17 @@ function findReferenceDefinitions(
           const consumed = lines[lineIndex] ?? "";
           offset += consumed.length + 1;
         }
-        open = false;
+        para = { open: false, signature: null };
         continue;
       }
     }
-    if (/^(?: {4}|\t)/.test(bare)) open = false;
-    else if (endsParagraph(bare)) open = false;
-    else open = true;
+    // Indented lines never change paragraph state here: inside an open
+    // paragraph they are lazy continuation text, outside one they
+    // cannot open anything (code lines return early above).
+    if (/^(?: {4}|\t)/.test(stripped)) {
+      continue;
+    }
+    para = trackParagraph(para, stripped, kinds, consumedBullet);
     continue;
   }
   return matches;
