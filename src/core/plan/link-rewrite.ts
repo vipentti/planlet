@@ -57,10 +57,15 @@ function splitDestination(
     return { path, suffix: trimmed.slice(close + 1), angled: true };
   }
   let end = trimmed.length;
-  const hashIndex = trimmed.indexOf("#");
-  const queryIndex = trimmed.indexOf("?");
-  if (hashIndex !== -1) end = Math.min(end, hashIndex);
-  if (queryIndex !== -1) end = Math.min(end, queryIndex);
+  // Split the query/fragment suffix on semantic delimiters: a `#` or
+  // `?` preceded by a backslash is escaped data, not a delimiter.
+  for (let scan = 0; scan < Math.min(end, trimmed.length); scan += 1) {
+    const char = trimmed[scan];
+    if ((char === "#" || char === "?") && !isEscaped(trimmed, scan)) {
+      end = scan;
+      break;
+    }
+  }
   // A title suffix starts at whitespace.
   const spaceIndex = trimmed.slice(0, end).search(/\s/);
   if (spaceIndex !== -1) end = spaceIndex;
@@ -606,11 +611,11 @@ function splitProtectedSpans(
 }
 
 const REFERENCE_DEFINITION_PATTERN =
-  /^(?:([ \t]{0,3}> ?)?)(\[[^\]\n\\]*(?:\\.[^\]\n\\]*)*\]:[ \t]*)(<[^>\n]+>|[^\s]+)(?:(?=[ \t]*$)|(?=[ \t]+(?:"[^"\n\\]*(?:\\.[^"\n\\]*)*"|'[^'\n\\]*(?:\\.[^'\n\\]*)*'|\([^)\n\\]*(?:\\.[^)\n\\]*)*\))[ \t]*$))/gm;
+  /^((?:[ \t]{0,3}> ?|[ \t]{0,3}(?:[-+*]|\d+[.)]) +)*[ \t]{0,3})(\[[^\]\n\\]*(?:\\.[^\]\n\\]*)*\]:[ \t]*)(<[^>\n]+>|[^\s]+)(?:(?=[ \t]*$)|(?=[ \t]+(?:"[^"\n\\]*(?:\\.[^"\n\\]*)*"|'[^'\n\\]*(?:\\.[^'\n\\]*)*'|\([^)\n\\]*(?:\\.[^)\n\\]*)*\))[ \t]*$))/gm;
 
 /** Matches a reference definition whose destination sits on the next line. */
 const MULTILINE_DEFINITION_PATTERN =
-  /^(?:([ \t]{0,3}> ?)?)(\[[^\]\n\\]*(?:\\.[^\]\n\\]*)*\]:[ \t]*\n[ \t]+)(<[^>\n]+>|[^\s]+)(?:(?=[ \t]*$)|(?=[ \t]+(?:"[^"\n\\]*(?:\\.[^"\n\\]*)*"|'[^'\n\\]*(?:\\.[^'\n\\]*)*'|\([^)\n\\]*(?:\\.[^)\n\\]*)*\))[ \t]*$))/gm;
+  /^((?:[ \t]{0,3}> ?|[ \t]{0,3}(?:[-+*]|\d+[.)]) +)*[ \t]{0,3})(\[[^\]\n\\]*(?:\\.[^\]\n\\]*)*\]:[ \t]*\n[ \t]+)(<[^>\n]+>|[^\s]+)(?:(?=[ \t]*$)|(?=[ \t]+(?:"[^"\n\\]*(?:\\.[^"\n\\]*)*"|'[^'\n\\]*(?:\\.[^'\n\\]*)*'|\([^)\n\\]*(?:\\.[^)\n\\]*)*\))[ \t]*$))/gm;
 
 interface InlineLinkMatch {
   readonly start: number;
@@ -1051,6 +1056,13 @@ function findReferenceDefinitions(
     // only the destination text travels here.
     return { destination: probe[3] ?? "" };
   };
+  // A title may sit on its own line after the definition: such a line
+  // is definition-owned, never a live link. Returns its line length,
+  // or null when the line is not a bare title.
+  const titleOnlyPattern =
+    /^[ \t]+(?:"[^"\n\\]*(?:\\.[^"\n\\]*)*"|'[^'\n\\]*(?:\\.[^'\n\\]*)*'|\([^)\n\\]*(?:\\.[^)\n\\]*)*\))[ \t]*$/;
+  const titleOnlyLength = (lineBare: string): number | null =>
+    titleOnlyPattern.test(lineBare) ? lineBare.length : null;
   for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
     const line = lines[lineIndex] ?? "";
     const lineStart = offset;
@@ -1066,10 +1078,26 @@ function findReferenceDefinitions(
     if (singleFirst !== null) {
       if (!open) {
         const destinationStart = lineStart + singleFirst.destinationLength;
+        let end = lineStart + line.length;
+        // A title on the following line belongs to the definition.
+        const titleNext =
+          lineIndex + 1 < lines.length ? lines[lineIndex + 1] : null;
+        const titleNextBare =
+          titleNext === null || titleNext === undefined
+            ? null
+            : titleNext.endsWith("\r")
+              ? titleNext.slice(0, -1)
+              : titleNext;
+        if (titleNextBare !== null && titleOnlyLength(titleNextBare) !== null) {
+          end += 1 + (titleNext ?? "").length;
+          offset += (titleNext ?? "").length + 1;
+          lineIndex += 1;
+        }
         matches.push({
           start: lineStart,
-          // Own the whole line so titles stay definition-owned.
-          end: lineStart + line.length,
+          // Own the whole line (plus a later-line title) so titles
+          // stay definition-owned.
+          end,
           destinationStart,
           destinationEnd: destinationStart + singleFirst.destination.length,
           destination: singleFirst.destination,

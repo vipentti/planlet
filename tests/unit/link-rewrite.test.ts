@@ -493,6 +493,33 @@ test("a complete definition never consumes the next line", () => {
   assert.equal(outcome.rewritten, 2);
 });
 
+test("definitions in containers and indented forms are recognized", () => {
+  for (const [input, want] of [
+    ["- [id]: ../other-plan/plan.md\n", "- [id]: ../../other-plan/plan.md\n"],
+    ["> [id]: ../other-plan/plan.md\n", "> [id]: ../../other-plan/plan.md\n"],
+    [
+      "> - [id]: ../other-plan/plan.md\n",
+      "> - [id]: ../../other-plan/plan.md\n",
+    ],
+    ["  [id]: ../other-plan/plan.md\n", "  [id]: ../../other-plan/plan.md\n"],
+  ] as const) {
+    const outcome = rewrite(input);
+    assert.equal(outcome.text, want);
+    assert.equal(outcome.rewritten, 1);
+  }
+});
+
+test("a title on the line after a definition stays definition-owned", () => {
+  const input =
+    '[id]: ../other-plan/plan.md\n  "Title [x](../other-plan/plan.md)"\n';
+  const outcome = rewrite(input);
+  assert.equal(
+    outcome.text,
+    '[id]: ../../other-plan/plan.md\n  "Title [x](../other-plan/plan.md)"\n',
+  );
+  assert.equal(outcome.rewritten, 1);
+});
+
 test("resolveLinkPath is POSIX-only and reports root escapes", () => {
   assert.equal(
     resolveLinkPath("plans/a", "../other/plan.md"),
