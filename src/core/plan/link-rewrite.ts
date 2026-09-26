@@ -1500,7 +1500,13 @@ function findReferenceDefinitions(
       !consumedBullet;
     const singleFirst = matchSingle(bare);
     if (singleFirst !== null) {
-      if (!lazy) {
+      if (lazy) {
+        // Lazy paragraph text, not a definition: normal tracking, and
+        // the following line stays unconsumed.
+        para = trackParagraph(para, stripped, kinds, consumedBullet);
+        continue;
+      }
+      {
         const destinationStart = lineStart + singleFirst.destinationLength;
         let end = lineStart + line.length;
         // A title on the following line belongs to the definition.
@@ -1546,7 +1552,13 @@ function findReferenceDefinitions(
     if (joined !== null) {
       const found = matchMultiline(joined);
       if (found !== null) {
-        if (!lazy) {
+        if (lazy) {
+          // Lazy paragraph text: normal tracking, following lines stay
+          // unconsumed.
+          para = trackParagraph(para, stripped, kinds, consumedBullet);
+          continue;
+        }
+        {
           // Destination offsets in original bytes: the destination
           // opens the next line after its leading whitespace.
           const nextStart = lineStart + line.length + 1;
@@ -1601,7 +1613,13 @@ function findReferenceDefinitions(
         const labelProbe = MULTILINE_LABEL_DEFINITION_PATTERN.exec(pair);
         MULTILINE_LABEL_DEFINITION_PATTERN.lastIndex = 0;
         if (labelProbe !== null) {
-          if (!lazy) {
+          if (lazy) {
+            // Lazy paragraph text: normal tracking, following lines stay
+            // unconsumed.
+            para = trackParagraph(para, stripped, kinds, consumedBullet);
+            continue;
+          }
+          {
             const container = labelProbe[1] ?? "";
             const label = labelProbe[2] ?? "";
             const destination = labelProbe[3] ?? "";
@@ -1643,7 +1661,13 @@ function findReferenceDefinitions(
       CONTINUED_TITLE_DEFINITION_PATTERN.lastIndex = 0;
       if (continued !== null) {
         const matched = continued[0] ?? "";
-        if (!lazy) {
+        if (lazy) {
+          // Lazy paragraph text: normal tracking, following lines stay
+          // unconsumed.
+          para = trackParagraph(para, stripped, kinds, consumedBullet);
+          continue;
+        }
+        {
           const container = continued[1] ?? "";
           const label = continued[2] ?? "";
           const separator = continued[3] ?? "";
