@@ -4,9 +4,20 @@ import test from "node:test";
 import {
   resolveLinkPath,
   rewriteOutgoingLinks,
+  type LinkTargetExistence,
 } from "../../src/core/plan/link-rewrite.js";
 
 const PLAN_DIR = "plans/link-plan";
+
+const EXISTING: LinkTargetExistence = {
+  exists: (absolutePath) =>
+    absolutePath.endsWith("plans/other-plan/plan.md") ||
+    absolutePath.endsWith("plans/my docs/x.md"),
+};
+
+function rewrite(input: string): ReturnType<typeof rewriteOutgoingLinks> {
+  return rewriteOutgoingLinks(input, PLAN_DIR, EXISTING, "/repo");
+}
 
 test("internal links, anchors, and external URLs pass through unchanged", () => {
   for (const input of [
@@ -21,16 +32,15 @@ test("internal links, anchors, and external URLs pass through unchanged", () => 
     "[pre-written](../../docs/proposal.md)",
     "[outside](../../../../etc/passwd)",
   ]) {
-    const outcome = rewriteOutgoingLinks(input, PLAN_DIR);
+    const outcome = rewrite(input);
     assert.equal(outcome.text, input);
     assert.equal(outcome.rewritten, 0);
   }
 });
 
 test("escaping links gain exactly one parent level", () => {
-  const outcome = rewriteOutgoingLinks(
+  const outcome = rewrite(
     '[cross](../other-plan/plan.md) and [titled](../other-plan/plan.md "Title")',
-    PLAN_DIR,
   );
   assert.equal(
     outcome.text,
@@ -39,10 +49,17 @@ test("escaping links gain exactly one parent level", () => {
   assert.equal(outcome.rewritten, 2);
 });
 
+test("dangling links under plans/ are left untouched with a skip note", () => {
+  const input = "[missing](../missing/plan.md)";
+  const outcome = rewrite(input);
+  assert.equal(outcome.text, input);
+  assert.equal(outcome.rewritten, 0);
+  assert.deepEqual(outcome.skipped, ["missing target: ../missing/plan.md"]);
+});
+
 test("reference definitions are rewritten while usages stay intact", () => {
-  const outcome = rewriteOutgoingLinks(
+  const outcome = rewrite(
     "See [ref][target].\n\n[target]: ../other-plan/plan.md\n",
-    PLAN_DIR,
   );
   assert.equal(
     outcome.text,
@@ -51,45 +68,72 @@ test("reference definitions are rewritten while usages stay intact", () => {
   assert.equal(outcome.rewritten, 1);
 });
 
+test("angle-bracket destinations keep their wrapper while prefixed", () => {
+  const outcome = rewrite("[x](<../other-plan/plan.md>)");
+  assert.equal(outcome.text, "[x](<../../other-plan/plan.md>)");
+  assert.equal(outcome.rewritten, 1);
+  const spaced = rewriteOutgoingLinks(
+    "[x](<../my docs/x.md>)",
+    PLAN_DIR,
+    EXISTING,
+    "/repo",
+  );
+  assert.equal(spaced.text, "[x](<../../my docs/x.md>)");
+  assert.equal(spaced.rewritten, 1);
+});
+
 test("code spans, code blocks, and comments are never rewritten", () => {
   const input =
     "```\n[x](../other-plan/plan.md)\n```\n\n" +
     "    [indented](../other-plan/plan.md)\n\n" +
     "`[inline](../other-plan/plan.md)` and <!-- [comment](../other-plan/plan.md) -->\n\n" +
     "[real](../other-plan/plan.md)\n";
-  const outcome = rewriteOutgoingLinks(input, PLAN_DIR);
+  const outcome = rewrite(input);
   assert.equal(outcome.rewritten, 1);
   assert.ok(outcome.text.includes("[real](../../other-plan/plan.md)"));
   assert.ok(outcome.text.includes("```\n[x](../other-plan/plan.md)\n```"));
   assert.ok(outcome.text.includes("`[inline](../other-plan/plan.md)`"));
 });
 
+test("longer fences stay open past shorter inner fences", () => {
+  const input =
+    "````\n```\n[x](../other-plan/plan.md)\n```\n````\n\n[real](../other-plan/plan.md)\n";
+  const outcome = rewrite(input);
+  assert.equal(outcome.rewritten, 1);
+  assert.ok(outcome.text.includes("[x](../other-plan/plan.md)"));
+  assert.ok(outcome.text.includes("[real](../../other-plan/plan.md)"));
+});
+
+test("mismatched inline-code backtick runs do not protect the span", () => {
+  // `` [x](...) ` is one literal backtick plus text plus a lone backtick,
+  // not a code span, so the link is genuinely visible and must be rewritten.
+  const outcome = rewrite("`` [x](../other-plan/plan.md) `\n");
+  assert.equal(outcome.rewritten, 1);
+});
+
 test("URL-encoded paths and fragments survive the prefix edit", () => {
-  const outcome = rewriteOutgoingLinks(
-    "[docs](../my%20docs/x.md#section)",
-    PLAN_DIR,
-  );
+  const outcome = rewrite("[docs](../my%20docs/x.md#section)");
   assert.equal(outcome.text, "[docs](../../my%20docs/x.md#section)");
   assert.equal(outcome.rewritten, 1);
 });
 
 test("backslashes are literal characters, never separators", () => {
   const input = "[win](notes\\copy.md)";
-  const outcome = rewriteOutgoingLinks(input, PLAN_DIR);
+  const outcome = rewrite(input);
   assert.equal(outcome.text, input);
   assert.equal(outcome.rewritten, 0);
 });
 
 test("above-root escapes are skipped with a note", () => {
-  const outcome = rewriteOutgoingLinks("[o](../../../../etc/x)", PLAN_DIR);
+  const outcome = rewrite("[o](../../../../etc/x)");
   assert.equal(outcome.text, "[o](../../../../etc/x)");
   assert.equal(outcome.rewritten, 0);
   assert.equal(outcome.skipped.length, 1);
 });
 
 test("rewriting is idempotent", () => {
-  const once = rewriteOutgoingLinks("[x](../other-plan/plan.md)", PLAN_DIR);
-  const twice = rewriteOutgoingLinks(once.text, PLAN_DIR);
+  const once = rewrite("[x](../other-plan/plan.md)");
+  const twice = rewriteOutgoingLinks(once.text, PLAN_DIR, EXISTING, "/repo");
   assert.equal(twice.rewritten, 0);
   assert.equal(twice.text, once.text);
 });

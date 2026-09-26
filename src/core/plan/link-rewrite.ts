@@ -18,6 +18,11 @@ export interface LinkRewriteOutcome {
   readonly skipped: readonly string[];
 }
 
+export interface LinkTargetExistence {
+  /** True when the decoded link target exists (absolute path probe). */
+  readonly exists: (absolutePath: string) => boolean;
+}
+
 const SCHEME_PATTERN = /^[a-zA-Z][a-zA-Z0-9+.-]*:/;
 const PROTOCOL_RELATIVE_PATTERN = /^\/\//;
 const ABSOLUTE_PATH_PATTERN = /^\//;
@@ -37,28 +42,33 @@ function isExternalDestination(destination: string): boolean {
  * Splits a destination into its path part and the trailing
  * `?query`/`#fragment`/whitespace-plus-title suffix, which passes through
  * byte-identical. Returns null when the destination has no path part.
+ * Angle-bracket destinations (`<path with spaces>`) parse as one path.
  */
 function splitDestination(
   destination: string,
-): { path: string; suffix: string } | null {
+): { path: string; suffix: string; angled: boolean } | null {
   const trimmed = destination.trim();
   if (trimmed.length === 0) return null;
+  if (trimmed.startsWith("<")) {
+    const close = trimmed.indexOf(">");
+    if (close === -1) return null;
+    const path = trimmed.slice(1, close);
+    if (path.length === 0) return null;
+    return { path, suffix: trimmed.slice(close + 1), angled: true };
+  }
   let end = trimmed.length;
   const hashIndex = trimmed.indexOf("#");
   const queryIndex = trimmed.indexOf("?");
   if (hashIndex !== -1) end = Math.min(end, hashIndex);
   if (queryIndex !== -1) end = Math.min(end, queryIndex);
-  // A title suffix starts at whitespace outside angle brackets.
+  // A title suffix starts at whitespace.
   const spaceIndex = trimmed.slice(0, end).search(/\s/);
   if (spaceIndex !== -1) end = spaceIndex;
   const path = (
     end === trimmed.length ? trimmed : trimmed.slice(0, end)
   ).trim();
-  if (path.length === 0 || path.startsWith("<")) return null;
-  const cleanPath =
-    path.startsWith("<") && path.endsWith(">") ? path.slice(1, -1) : path;
-  if (cleanPath.length === 0) return null;
-  return { path: cleanPath, suffix: trimmed.slice(end) };
+  if (path.length === 0) return null;
+  return { path, suffix: trimmed.slice(end), angled: false };
 }
 
 /**
@@ -99,6 +109,8 @@ function rewritePath(encodedPath: string): string {
 function rewriteDestination(
   destination: string,
   planDir: string,
+  repositoryRoot: string,
+  existence: LinkTargetExistence,
 ): {
   destination: string;
   rewritten: boolean;
@@ -138,7 +150,19 @@ function rewriteDestination(
   if (!oldResolved.startsWith("plans/")) {
     return { destination, rewritten: false };
   }
-  const rewritten = `${rewritePath(split.path)}${split.suffix}`;
+  // Dangling links (no such target on disk) are never guessed at: rewriting
+  // them would corrupt text no reader could have followed before the move.
+  if (!existence.exists(`${repositoryRoot}/${oldResolved}`)) {
+    return {
+      destination,
+      rewritten: false,
+      skipped: `missing target: ${split.path}`,
+    };
+  }
+  const newPath = split.angled
+    ? `<${rewritePath(split.path)}>`
+    : rewritePath(split.path);
+  const rewritten = `${newPath}${split.suffix}`;
   return { destination: rewritten, rewritten: true };
 }
 
@@ -172,12 +196,16 @@ function splitProtectedSpans(
     const fenceMatch = /^(\s*)(`{3,}|~{3,})/.exec(line);
     if (fenceMatch !== null) {
       const marker = fenceMatch[2] ?? "";
+      const markerChar = marker[0] ?? "";
       if (!inFence) {
         inFence = true;
         fenceMarker = marker;
         flush(false, current);
         current = withNewline;
-      } else if (marker[0] === fenceMarker[0]) {
+      } else if (
+        markerChar === (fenceMarker[0] ?? "") &&
+        marker.length >= fenceMarker.length
+      ) {
         current += withNewline;
         flush(true, current);
         current = "";
@@ -208,7 +236,7 @@ function splitProtectedSpans(
       result.push(span);
       continue;
     }
-    const inlinePattern = /(`+[^`\n]*`+|<!--[\s\S]*?-->)/g;
+    const inlinePattern = /(`+)[^`\n]*?\1|(<!--[\s\S]*?-->)/g;
     let lastIndex = 0;
     let match: RegExpExecArray | null;
     while ((match = inlinePattern.exec(span.text)) !== null) {
@@ -230,18 +258,25 @@ function splitProtectedSpans(
 
 const INLINE_LINK_PATTERN = /(!?)\[([^\]\n]*)\]\(([^)\n]*)\)/g;
 const REFERENCE_DEFINITION_PATTERN =
-  /^([ \t]{0,3}\[[^\]\n]+\]:[ \t]*)([^\s]+)([ \t]*.*)$/gm;
+  /^([ \t]{0,3}\[[^\]\n]+\]:[ \t]*)(<[^>\n]+>|[^\s]+)([ \t]*.*)$/gm;
 
 function rewriteInlineLinks(
   text: string,
   planDir: string,
+  repositoryRoot: string,
+  existence: LinkTargetExistence,
   skipped: string[],
 ): { text: string; rewritten: number } {
   let rewritten = 0;
   const replaced = text.replace(
     INLINE_LINK_PATTERN,
     (whole, bang: string, label: string, destination: string) => {
-      const outcome = rewriteDestination(destination, planDir);
+      const outcome = rewriteDestination(
+        destination,
+        planDir,
+        repositoryRoot,
+        existence,
+      );
       if (outcome.skipped !== undefined) skipped.push(outcome.skipped);
       if (!outcome.rewritten) return whole;
       rewritten += 1;
@@ -254,13 +289,20 @@ function rewriteInlineLinks(
 function rewriteReferenceDefinitions(
   text: string,
   planDir: string,
+  repositoryRoot: string,
+  existence: LinkTargetExistence,
   skipped: string[],
 ): { text: string; rewritten: number } {
   let rewritten = 0;
   const replaced = text.replace(
     REFERENCE_DEFINITION_PATTERN,
     (whole: string, prefix: string, destination: string, suffix: string) => {
-      const outcome = rewriteDestination(destination, planDir);
+      const outcome = rewriteDestination(
+        destination,
+        planDir,
+        repositoryRoot,
+        existence,
+      );
       if (outcome.skipped !== undefined) skipped.push(outcome.skipped);
       if (!outcome.rewritten) return whole;
       rewritten += 1;
@@ -273,11 +315,14 @@ function rewriteReferenceDefinitions(
 /**
  * Rewrites escaping relative link destinations for the archived depth.
  * `planDir` is the repository-relative active plan directory
- * (for example `plans/my-feature`).
+ * (for example `plans/my-feature`). Only links whose target exists on disk
+ * are rewritten; dangling links are left untouched with a skip note.
  */
 export function rewriteOutgoingLinks(
   markdown: string,
   planDir: string,
+  existence: LinkTargetExistence,
+  repositoryRoot = ".",
 ): LinkRewriteOutcome {
   const skipped: string[] = [];
   let rewritten = 0;
@@ -287,10 +332,18 @@ export function rewriteOutgoingLinks(
       parts.push(span.text);
       continue;
     }
-    const inline = rewriteInlineLinks(span.text, planDir, skipped);
+    const inline = rewriteInlineLinks(
+      span.text,
+      planDir,
+      repositoryRoot,
+      existence,
+      skipped,
+    );
     const definitions = rewriteReferenceDefinitions(
       inline.text,
       planDir,
+      repositoryRoot,
+      existence,
       skipped,
     );
     rewritten += inline.rewritten + definitions.rewritten;

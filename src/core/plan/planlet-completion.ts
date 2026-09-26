@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import {
   mkdirSync,
   readdirSync,
+  realpathSync,
   renameSync,
   rmSync,
   statSync,
@@ -16,7 +17,11 @@ import {
   type PlanletLockDependencies,
 } from "../planlet-lock.js";
 import { assertActivePlanletDirectory, readMarkdown } from "./planlet-files.js";
-import { rewriteOutgoingLinks } from "./link-rewrite.js";
+import {
+  rewriteOutgoingLinks,
+  type LinkRewriteOutcome,
+  type LinkTargetExistence,
+} from "./link-rewrite.js";
 import { atomicPublish, resolveSafePath, tryLstat } from "../paths.js";
 import { tryStageMove } from "../git.js";
 import {
@@ -42,6 +47,7 @@ interface CompletePlanletDependencies {
   readonly moveDirectory: (source: string, destination: string) => void;
   readonly remove: (path: string) => void;
   readonly temporaryName: (slug: string) => string;
+  readonly linkTargetExists?: ((absolutePath: string) => boolean) | undefined;
   readonly lock?: Partial<PlanletLockDependencies>;
 }
 
@@ -99,6 +105,114 @@ function appendCompletionRecord(
     lines.push(`- Reason: ${reason}`);
   }
   return `${markdown}${separator}${lines.join("\n")}\n`;
+}
+
+function linkExistence(
+  repositoryRoot: string,
+  dependencies: CompletePlanletDependencies,
+): LinkTargetExistence {
+  const probe = dependencies.linkTargetExists;
+  if (probe !== undefined) {
+    return { exists: probe };
+  }
+  let canonicalRoot: string;
+  try {
+    canonicalRoot = realpathSync(repositoryRoot);
+  } catch {
+    canonicalRoot = repositoryRoot;
+  }
+  // tryLstat follows the containment-safe convention: join against the
+  // canonical root so symlinked checkout paths still resolve, matching
+  // resolveSafePath. The lexical `repositoryRoot/relative` join and the
+  // canonical join denote the same file; probe both.
+  return {
+    exists: (absolutePath) =>
+      tryLstat(absolutePath) !== null ||
+      tryLstat(
+        `${canonicalRoot}${absolutePath.slice(repositoryRoot.length)}`,
+      ) !== null,
+  };
+}
+
+/** Warns about rewrites and skipped destinations in both plan files. */
+function linkRewriteWarnings(
+  rewrittenPlan: LinkRewriteOutcome,
+  rewrittenTasks: LinkRewriteOutcome,
+): string[] {
+  const warnings: string[] = [];
+  if (rewrittenPlan.rewritten > 0) {
+    warnings.push(
+      `Rewrote ${rewrittenPlan.rewritten} relative link${rewrittenPlan.rewritten === 1 ? "" : "s"} in plan.md for the archived location`,
+    );
+  }
+  if (rewrittenTasks.rewritten > 0) {
+    warnings.push(
+      `Rewrote ${rewrittenTasks.rewritten} relative link${rewrittenTasks.rewritten === 1 ? "" : "s"} in tasks.md for the archived location`,
+    );
+  }
+  for (const skipped of rewrittenPlan.skipped) {
+    warnings.push(`plan.md link left unchanged (${skipped})`);
+  }
+  for (const skipped of rewrittenTasks.skipped) {
+    warnings.push(`tasks.md link left unchanged (${skipped})`);
+  }
+  return warnings;
+}
+
+/** Removes the trailing `## Completion` audit record, if present. */
+function stripCompletionRecord(tasksMarkdown: string): string {
+  const marker = "\n## Completion";
+  const index = tasksMarkdown.lastIndexOf(marker);
+  if (index === -1) return tasksMarkdown;
+  const tail = tasksMarkdown.slice(index + 1);
+  if (!/^## Completion\n\n- Completed at: /.test(tail)) return tasksMarkdown;
+  return tasksMarkdown.slice(0, index) + (index === 0 ? "" : "\n");
+}
+
+/** Atomically publishes a rewritten plan file when it differs. */
+function publishRewrittenFile(options: {
+  options: CompletePlanletOptions;
+  dependencies: CompletePlanletDependencies;
+  slug: string;
+  source: string;
+  filePath: string;
+  original: string;
+  rewritten: string;
+  auditRecorded: boolean;
+  temporarySuffix: string;
+}): void {
+  if (options.rewritten === options.original) return;
+  const temporaryPath = resolveSafePath(
+    options.source,
+    options.dependencies.temporaryName(
+      `${options.slug}${options.temporarySuffix}`,
+    ),
+  );
+  const mode = statSync(options.filePath).mode & 0o777;
+  atomicPublish({
+    temporaryPath,
+    targetPath: options.filePath,
+    createTemporary: () => {
+      options.dependencies.writeFile(temporaryPath, options.rewritten, mode);
+    },
+    rename: options.dependencies.replaceFile,
+    remove: options.dependencies.remove,
+    onFailure: (error) =>
+      asWriteConflict(error, `Could not complete planlet: ${options.slug}`, {
+        slug: options.slug,
+        auditRecorded: options.auditRecorded,
+      }),
+    cleanupFailure: {
+      code: "write_conflict",
+      message: `Could not clean up failed completion rewrite: ${options.slug}`,
+      details: {
+        slug: options.slug,
+        temporaryPath,
+        cleanupFailed: true,
+      },
+      fatal: true,
+    },
+  });
 }
 
 function assertNoCompletionCollision(
@@ -160,11 +274,70 @@ function resumeRecordedCompletion(
 
   const instant = new Date(completion.completedAt);
   const archiveName = createArchiveName(slug, instant);
+
+  // Finish any pending link rewrites before moving: a crash between the
+  // tasks.md audit publish and the plan.md rewrite publish leaves the
+  // audit durable while plan.md still holds pre-archive destinations.
+  const planDir = `plans/${slug}`;
+  const existence = linkExistence(options.repositoryRoot, dependencies);
+  const rewrittenPlan = rewriteOutgoingLinks(
+    planMarkdown,
+    planDir,
+    existence,
+    options.repositoryRoot,
+  );
+  const rewrittenTasks = rewriteOutgoingLinks(
+    stripCompletionRecord(tasksMarkdown),
+    planDir,
+    existence,
+    options.repositoryRoot,
+  );
+  const linkWarnings: string[] = linkRewriteWarnings(
+    rewrittenPlan,
+    rewrittenTasks,
+  );
+  const rewrittenPlanMarkdown = rewrittenPlan.text;
+  const rewrittenTasksMarkdown =
+    rewrittenTasks.text === stripCompletionRecord(tasksMarkdown)
+      ? tasksMarkdown
+      : appendCompletionRecord(
+          rewrittenTasks.text,
+          completion.completedAt,
+          remainingTaskIds,
+          completion.mode === "incomplete override"
+            ? completion.reason
+            : undefined,
+        );
   const completedValidation = validatePlanletStructure({
     directoryName: archiveName,
     location: "completed",
-    planMarkdown,
-    tasksMarkdown,
+    planMarkdown: rewrittenPlanMarkdown,
+    tasksMarkdown: rewrittenTasksMarkdown,
+  });
+
+  const planPath = resolveSafePath(source, "plan.md");
+  const tasksPath = resolveSafePath(source, "tasks.md");
+  publishRewrittenFile({
+    options,
+    dependencies,
+    slug,
+    source,
+    filePath: planPath,
+    original: planMarkdown,
+    rewritten: rewrittenPlanMarkdown,
+    auditRecorded: true,
+    temporarySuffix: "-plan",
+  });
+  publishRewrittenFile({
+    options,
+    dependencies,
+    slug,
+    source,
+    filePath: tasksPath,
+    original: tasksMarkdown,
+    rewritten: rewrittenTasksMarkdown,
+    auditRecorded: true,
+    temporarySuffix: "-tasks-resume",
   });
 
   let completedPath: string;
@@ -196,7 +369,7 @@ function resumeRecordedCompletion(
   }
 
   const completedTasks = active.tasks.length - remainingTaskIds.length;
-  const warnings = [...completedValidation.warnings];
+  const warnings = [...completedValidation.warnings, ...linkWarnings];
   tryStageMove(options.repositoryRoot, source, destination, warnings);
   return {
     slug,
@@ -351,28 +524,23 @@ function completePlanletLocked(
   // The archive directory sits one level deeper than the active planlet, so
   // relative links that escape the plan directory break by exactly one
   // `../` level. Rewrite those destinations before the move; internal links
-  // stay byte-identical. Pre-written archived-depth links and links escaping
-  // above the repository root are left untouched.
+  // stay byte-identical. Pre-written archived-depth links and dangling links
+  // are left untouched.
   const planDir = `plans/${slug}`;
-  const rewrittenPlan = rewriteOutgoingLinks(planMarkdown, planDir);
-  const rewrittenTasks = rewriteOutgoingLinks(tasksMarkdown, planDir);
-  const linkWarnings: string[] = [];
-  if (rewrittenPlan.rewritten > 0) {
-    linkWarnings.push(
-      `Rewrote ${rewrittenPlan.rewritten} relative link${rewrittenPlan.rewritten === 1 ? "" : "s"} in plan.md for the archived location`,
-    );
-  }
-  if (rewrittenTasks.rewritten > 0) {
-    linkWarnings.push(
-      `Rewrote ${rewrittenTasks.rewritten} relative link${rewrittenTasks.rewritten === 1 ? "" : "s"} in tasks.md for the archived location`,
-    );
-  }
-  for (const skipped of rewrittenPlan.skipped) {
-    linkWarnings.push(`plan.md link left unchanged (${skipped})`);
-  }
-  for (const skipped of rewrittenTasks.skipped) {
-    linkWarnings.push(`tasks.md link left unchanged (${skipped})`);
-  }
+  const existence = linkExistence(options.repositoryRoot, dependencies);
+  const rewrittenPlan = rewriteOutgoingLinks(
+    planMarkdown,
+    planDir,
+    existence,
+    options.repositoryRoot,
+  );
+  const rewrittenTasks = rewriteOutgoingLinks(
+    tasksMarkdown,
+    planDir,
+    existence,
+    options.repositoryRoot,
+  );
+  const linkWarnings = linkRewriteWarnings(rewrittenPlan, rewrittenTasks);
   const rewrittenPlanMarkdown = rewrittenPlan.text;
   const rewrittenTasksMarkdown = rewrittenTasks.text;
 
@@ -419,37 +587,17 @@ function completePlanletLocked(
 
   // Publish plan.md through a second atomic write so a crash between the
   // two publishes resumes with the tasks.md audit already in place.
-  if (rewrittenPlanMarkdown !== planMarkdown) {
-    const planTemporaryPath = resolveSafePath(
-      source,
-      dependencies.temporaryName(`${slug}-plan`),
-    );
-    atomicPublish({
-      temporaryPath: planTemporaryPath,
-      targetPath: planPath,
-      createTemporary: () => {
-        const mode = statSync(planPath).mode & 0o777;
-        dependencies.writeFile(planTemporaryPath, rewrittenPlanMarkdown, mode);
-      },
-      rename: dependencies.replaceFile,
-      remove: dependencies.remove,
-      onFailure: (error) =>
-        asWriteConflict(error, `Could not complete planlet: ${slug}`, {
-          slug,
-          auditRecorded: true,
-        }),
-      cleanupFailure: {
-        code: "write_conflict",
-        message: `Could not clean up failed completion rewrite: ${slug}`,
-        details: {
-          slug,
-          temporaryPath: planTemporaryPath,
-          cleanupFailed: true,
-        },
-        fatal: true,
-      },
-    });
-  }
+  publishRewrittenFile({
+    options,
+    dependencies,
+    slug,
+    source,
+    filePath: planPath,
+    original: planMarkdown,
+    rewritten: rewrittenPlanMarkdown,
+    auditRecorded: true,
+    temporarySuffix: "-plan",
+  });
 
   try {
     // Recheck after recording the audit and immediately before movement.

@@ -8,7 +8,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and thi
 
 ### Fixed
 
-- `planlet complete` now rewrites relative Markdown links in `plan.md` and `tasks.md` that point outside the planlet (for example `../other-plan/plan.md`) so they keep resolving after the archive move to `plans/completed/<date>-<slug>/` adds one directory level. Internal links, anchors, external URLs, and pre-written archived-depth links pass through unchanged; links escaping above the repository root are left untouched with a warning.
+- `planlet complete` now rewrites relative Markdown links in `plan.md` and `tasks.md` that point at existing targets outside the planlet (for example `../other-plan/plan.md`) so they keep resolving after the archive move to `plans/completed/<date>-<slug>/` adds one directory level. Internal links, anchors, external URLs, pre-written archived-depth links, and dangling links pass through unchanged; links escaping above the repository root are left untouched with a warning.
 
 ## [0.7.0] - 2026-08-29
 

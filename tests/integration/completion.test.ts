@@ -5,6 +5,7 @@ import {
   mkdtempSync,
   readFileSync,
   realpathSync,
+  renameSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -523,6 +524,59 @@ test("completion leaves internal-only plans byte-identical without warnings", ()
       linkedPlan,
     );
     assert.deepEqual(result.summary.warnings, []);
+  });
+});
+
+test("a plan.md rewrite failure resumes without archiving stale links", () => {
+  withRepository(COMPLETE_TASKS, (root, source) => {
+    const other = join(root, "plans", "other-plan");
+    mkdirSync(other, { recursive: true });
+    writeFileSync(join(other, "plan.md"), "# Other Plan\n");
+    writeFileSync(join(other, "tasks.md"), "# Tasks: Other Plan\n");
+    const linkedPlan = PLAN.replace(
+      "Tests.\n",
+      "Tests.\n\n- [cross](../other-plan/plan.md)\n",
+    );
+    writeFileSync(join(source, "plan.md"), linkedPlan);
+
+    let calls = 0;
+    assert.throws(
+      () =>
+        completePlanlet({
+          repositoryRoot: root,
+          slug: "fixture-plan",
+          dependencies: {
+            now: () => new Date("2026-07-22T12:00:00Z"),
+            replaceFile: (from, to) => {
+              calls += 1;
+              // Fail the second publish (plan.md) after the tasks.md audit.
+              if (calls === 2)
+                throw new Error("simulated plan publish failure");
+              renameSync(from, to);
+            },
+          },
+        }),
+      (error) => {
+        assert.ok(error instanceof PlanletError);
+        assert.equal(error.code, "write_conflict");
+        assert.equal(error.details.auditRecorded, true);
+        return true;
+      },
+    );
+
+    const retried = completePlanlet({
+      repositoryRoot: root,
+      slug: "fixture-plan",
+      dependencies: { now: () => new Date("2030-01-01T00:00:00Z") },
+    });
+    const archived = readFileSync(join(retried.destination, "plan.md"), "utf8");
+    assert.ok(archived.includes("- [cross](../../other-plan/plan.md)\n"));
+    assert.ok(!archived.includes("../../../other-plan/plan.md"));
+    assert.ok(
+      retried.summary.warnings.includes(
+        "Rewrote 1 relative link in plan.md for the archived location",
+      ),
+    );
   });
 });
 
