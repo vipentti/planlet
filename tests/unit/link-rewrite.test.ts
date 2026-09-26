@@ -250,10 +250,17 @@ test("a quoted-fence line inside top-level code never closes it", () => {
 });
 
 test("a backtick inside raw HTML cannot pair outward", () => {
-  const input = "<!-- ` --> [x](../other-plan/plan.md) `\n";
+  const input = "x <!-- ` --> [x](../other-plan/plan.md) `\n";
   const outcome = rewrite(input);
   assert.equal(outcome.rewritten, 1);
   assert.ok(outcome.text.includes("[x](../../other-plan/plan.md)"));
+});
+
+test("a same-line comment owns the whole line", () => {
+  const input = "<!-- x --> [x](../other-plan/plan.md)\n";
+  const outcome = rewrite(input);
+  assert.equal(outcome.text, input);
+  assert.equal(outcome.rewritten, 0);
 });
 
 test("a line-broken inline link with a title is rewritten", () => {
@@ -431,24 +438,23 @@ test("indented code right after a fenced block stays protected", () => {
   assert.equal(outcome.rewritten, 0);
 });
 
-test("definitions after setext headings, lists, and quotes are recognized", () => {
-  for (const [input, want] of [
-    [
-      "Heading\n=======\n[id]: ../other-plan/plan.md\n",
-      "Heading\n=======\n[id]: ../../other-plan/plan.md\n",
-    ],
-    [
-      "- item\n[id]: ../other-plan/plan.md\n",
-      "- item\n[id]: ../../other-plan/plan.md\n",
-    ],
-    [
-      "> quote\n[id]: ../other-plan/plan.md\n",
-      "> quote\n[id]: ../../other-plan/plan.md\n",
-    ],
-  ] as const) {
+test("definitions after setext headings are recognized", () => {
+  const outcome = rewrite("Heading\n=======\n[id]: ../other-plan/plan.md\n");
+  assert.equal(
+    outcome.text,
+    "Heading\n=======\n[id]: ../../other-plan/plan.md\n",
+  );
+  assert.equal(outcome.rewritten, 1);
+});
+
+test("lazy quote/list continuations never become definitions", () => {
+  for (const input of [
+    "> quote\n[id]: ../other-plan/plan.md\n",
+    "- item\n[id]: ../other-plan/plan.md\n",
+  ]) {
     const outcome = rewrite(input);
-    assert.equal(outcome.text, want);
-    assert.equal(outcome.rewritten, 1);
+    assert.equal(outcome.text, input);
+    assert.equal(outcome.rewritten, 0);
   }
 });
 
@@ -737,6 +743,53 @@ test("CRLF multi-line definitions keep original bytes", () => {
     '[id]:\r\n  ../../other-plan/plan.md "Ti\r\ntle"\r\n',
   );
   assert.equal(title.rewritten, 1);
+});
+
+test("a type-6 tag interrupts a paragraph", () => {
+  const input = "Foo\n<div>\n[x](../other-plan/plan.md)\n</div>\n";
+  const outcome = rewrite(input);
+  assert.equal(outcome.text, input);
+  assert.equal(outcome.rewritten, 0);
+});
+
+test("a same-line comment owns the whole line", () => {
+  const input = "<!-- x --> [x](../other-plan/plan.md)\n";
+  const outcome = rewrite(input);
+  assert.equal(outcome.text, input);
+  assert.equal(outcome.rewritten, 0);
+});
+
+test("a nested image never voids its outer image", () => {
+  const outcome = rewrite(
+    "![outer ![inner](../other-plan/image.png)](../other-plan/image.png)\n",
+  );
+  assert.equal(
+    outcome.text,
+    "![outer ![inner](../../other-plan/image.png)](../../other-plan/image.png)\n",
+  );
+  assert.equal(outcome.rewritten, 2);
+});
+
+test("a multi-line title stays definition-owned", () => {
+  const input =
+    '[id]: ../other-plan/plan.md\n  "Title\n  [x](../other-plan/plan.md)\n  tail"\n';
+  const outcome = rewrite(input);
+  assert.equal(
+    outcome.text,
+    '[id]: ../../other-plan/plan.md\n  "Title\n  [x](../other-plan/plan.md)\n  tail"\n',
+  );
+  assert.equal(outcome.rewritten, 1);
+});
+
+test("a CRLF multi-line label keeps later offsets exact", () => {
+  const input =
+    "[a\r\nb]: ../other-plan/plan.md\r\n[id2]: ../other-plan/plan.md\r\n";
+  const outcome = rewrite(input);
+  assert.equal(
+    outcome.text,
+    "[a\r\nb]: ../../other-plan/plan.md\r\n[id2]: ../../other-plan/plan.md\r\n",
+  );
+  assert.equal(outcome.rewritten, 2);
 });
 
 test("resolveLinkPath is POSIX-only and reports root escapes", () => {

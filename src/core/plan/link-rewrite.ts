@@ -236,15 +236,17 @@ interface ProtectedSpan {
 }
 
 /** Raw HTML block state: comments, processing instructions,
- * declarations, and CDATA run to their closers; elements to their
- * close tag; generic complete-tag and block-tag lines to blank. */
+ * declarations, CDATA sections, and elements run to their closers and
+ * interrupt paragraphs. Generic block tags (type 6) also interrupt;
+ * complete single-line tags (type 7) open only outside paragraphs.
+ * Both tag forms run to the next blank line. */
 type HtmlBlockState =
   | { readonly end: "comment" }
   | { readonly end: "instruction" }
   | { readonly end: "declaration" }
   | { readonly end: "cdata" }
   | { readonly end: "element"; readonly tag: string }
-  | { readonly end: "blank" };
+  | { readonly end: "blank"; readonly interrupt: boolean };
 
 /** Block-level tag names that open a blank-terminated raw HTML block. */
 const HTML_BLOCK_TAGS = [
@@ -323,19 +325,19 @@ const HTML_BLOCK_TAGS = [
 function htmlBlockStart(stripped: string): HtmlBlockState | "line" | null {
   const comment = /^ {0,3}<!--/.exec(stripped);
   if (comment !== null) {
-    return stripped.includes("-->") ? null : { end: "comment" };
+    return stripped.includes("-->") ? "line" : { end: "comment" };
   }
   const instruction = /^ {0,3}<\?/.exec(stripped);
   if (instruction !== null) {
-    return stripped.includes("?>") ? null : { end: "instruction" };
+    return stripped.includes("?>") ? "line" : { end: "instruction" };
   }
   const declaration = /^ {0,3}<![A-Z]/.exec(stripped);
   if (declaration !== null) {
-    return stripped.includes(">") ? null : { end: "declaration" };
+    return stripped.includes(">") ? "line" : { end: "declaration" };
   }
   const cdata = /^ {0,3}<!\[CDATA\[/.exec(stripped);
   if (cdata !== null) {
-    return stripped.includes("]]>") ? null : { end: "cdata" };
+    return stripped.includes("]]>") ? "line" : { end: "cdata" };
   }
   const element = /^ {0,3}<(script|pre|style|textarea)(?=[\s/>]|$)/i.exec(
     stripped,
@@ -352,7 +354,7 @@ function htmlBlockStart(stripped: string): HtmlBlockState | "line" | null {
     stripped,
   );
   if (block !== null) {
-    return { end: "blank" };
+    return { end: "blank", interrupt: true };
   }
   // A complete open or closing tag alone on the line (type 7): raw
   // until the next blank line.
@@ -361,7 +363,7 @@ function htmlBlockStart(stripped: string): HtmlBlockState | "line" | null {
       stripped,
     );
   if (complete !== null) {
-    return { end: "blank" };
+    return { end: "blank", interrupt: false };
   }
   return null;
 }
@@ -471,27 +473,45 @@ function containersEqual(
  * container-stripped). The caller gates definition recognition on the
  * pre-update `open` value, then adopts the returned state.
  */
+/**
+ * True when the line is lazy paragraph continuation text rather than a
+ * new block: a paragraph is open, no new list item starts, and either
+ * the container signature matches or no explicit markers were written
+ * (lazy continuation may omit quote markers and list indentation).
+ * Block boundaries never continue.
+ */
+function isLazyContinuation(
+  state: ParagraphState,
+  stripped: string,
+  kinds: readonly ContainerKind[],
+  explicitKinds: readonly ContainerKind[],
+  consumedBullet: boolean,
+): boolean {
+  if (!state.open || consumedBullet || endsParagraph(stripped)) {
+    return false;
+  }
+  if (explicitKinds.length === 0) {
+    return true;
+  }
+  return state.signature === containerSignature(kinds);
+}
+
 function trackParagraph(
   state: ParagraphState,
   stripped: string,
   kinds: readonly ContainerKind[],
+  explicitKinds: readonly ContainerKind[],
   consumedBullet: boolean,
 ): ParagraphState {
   if (endsParagraph(stripped)) {
     return { open: false, signature: null };
   }
-  const signature = containerSignature(kinds);
-  if (consumedBullet) {
-    // A new list item starts a fresh container: lazy continuation
-    // never crosses it.
-    return { open: true, signature };
-  }
-  if (state.open && state.signature === signature) {
-    // Same container, ordinary text: the paragraph continues.
+  if (
+    isLazyContinuation(state, stripped, kinds, explicitKinds, consumedBullet)
+  ) {
     return state;
   }
-  // A different container (or no open paragraph) starts a new block.
-  return { open: true, signature };
+  return { open: true, signature: containerSignature(kinds) };
 }
 
 /**
@@ -519,6 +539,8 @@ function stripContainers(
   columns: ContainerColumn[];
   /** Container kinds in document order (explicit + shared). */
   kinds: ContainerKind[];
+  /** Container kinds from explicit markers only (no shared columns). */
+  explicitKinds: ContainerKind[];
   /** True when this line opened a new list item. */
   consumedBullet: boolean;
   /** Absolute column of the last consumed bullet, if any. */
@@ -530,12 +552,14 @@ function stripContainers(
   let consumedBullet = false;
   let bulletColumn: number | null = null;
   const kinds: ContainerKind[] = [];
+  const explicitKinds: ContainerKind[] = [];
   for (;;) {
     const quote = /^ {0,3}> ?/.exec(rest);
     if (quote !== null) {
       rest = rest.slice(quote[0].length);
       depth += 1;
       kinds.push("quote");
+      explicitKinds.push("quote");
       continue;
     }
     const bullet = /^ {0,3}(?:[-+*]|\d+[.)]) +/.exec(rest);
@@ -557,6 +581,7 @@ function stripContainers(
       rest = rest.slice(bullet[0].length);
       depth += 1;
       kinds.push("list");
+      explicitKinds.push("list");
       consumedBullet = true;
       continue;
     }
@@ -582,7 +607,15 @@ function stripContainers(
       }
     }
   }
-  return { depth, content: rest, columns, kinds, consumedBullet, bulletColumn };
+  return {
+    depth,
+    content: rest,
+    columns,
+    kinds,
+    explicitKinds,
+    consumedBullet,
+    bulletColumn,
+  };
 }
 
 function splitProtectedSpans(
@@ -657,8 +690,15 @@ function splitProtectedSpans(
     // it and is reprocessed below. Indented code is relative to the
     // container: four spaces beyond the container indent is code at any
     // nesting depth.
-    const { depth, content, columns, kinds, consumedBullet, bulletColumn } =
-      stripContainers(bare, contentColumn);
+    const {
+      depth,
+      content,
+      columns,
+      kinds,
+      explicitKinds,
+      consumedBullet,
+      bulletColumn,
+    } = stripContainers(bare, contentColumn);
     contentColumn = columns;
     const stripped = content;
     // Raw HTML blocks own their lines before fence detection: their
@@ -831,7 +871,11 @@ function splitProtectedSpans(
         previousWasCode = true;
         continue;
       }
-      if (htmlOpen !== null && (htmlOpen.end !== "blank" || !para.open)) {
+      if (
+        htmlOpen !== null &&
+        (htmlOpen.end !== "blank" ||
+          (htmlOpen.end === "blank" && (htmlOpen.interrupt || !para.open)))
+      ) {
         flush(false, current);
         current = withNewline;
         inHtmlBlock = htmlOpen;
@@ -864,7 +908,7 @@ function splitProtectedSpans(
     }
     // A fence-looking line with an invalid info string reaches here:
     // it is ordinary paragraph text, not a block boundary.
-    para = trackParagraph(para, stripped, kinds, consumedBullet);
+    para = trackParagraph(para, stripped, kinds, explicitKinds, consumedBullet);
     previousWasCode = false;
     // A blank line closes open list items; other boundaries keep the
     // item open for lazy continuation lines.
@@ -1226,12 +1270,11 @@ function findExactRun(text: string, length: number): number {
  */
 /**
  * Finds inline links with CommonMark nesting precedence: an inner
- * match voids an outer match of the same kind (its brackets stay
+ * link voids an outer link (its brackets stay
  * literal text), while mixed nesting coexists. Thus
- * `[outer [inner](a)](b)` yields only the inner link,
- * `[![img](a)](b)` yields both the image and the outer link, and
- * `![outer [inner](a)](b)` yields both the inner link and the outer
- * image.
+ * `[outer [inner](a)](b)` yields only the inner link, while images
+ * coexist with any nesting: `[![img](a)](b)` and
+ * `![outer [inner](a)](b)` yield every destination.
  */
 function findInlineLinks(text: string): InlineLinkMatch[] {
   const top = scanInlineLinks(text);
@@ -1241,12 +1284,11 @@ function findInlineLinks(text: string): InlineLinkMatch[] {
       text.slice(match.labelStart, match.labelEnd),
     ).map((inner) => shiftMatch(inner, match.labelStart));
     if (inners.length > 0) out.push(...inners);
-    // An outer match survives only when no inner match of the same
-    // kind voids it: inner links void outer links, inner images void
-    // outer images, and mixed nesting coexists.
-    const voids = inners.some(
-      (inner) => (inner.bang === "") === (match.bang === ""),
-    );
+    // Only inner links void an outer match, and only outer links are
+    // voidable: nested images never deactivate an outer image, so
+    // both destinations stay live.
+    const voids =
+      match.bang === "" && inners.some((inner) => inner.bang === "");
     if (!voids) {
       out.push(match);
     }
@@ -1562,22 +1604,58 @@ function findReferenceDefinitions(
     if (bare.trim().length === 0) contentColumn = [];
     const stripped = strippedContainers.content;
     const kinds = strippedContainers.kinds;
+    const explicitKinds = strippedContainers.explicitKinds;
     const consumedBullet = strippedContainers.consumedBullet;
-    // Lazy continuation gate: this line is paragraph text (not a
-    // definition) only when a paragraph is open in the SAME container
-    // and no new list item starts here. A container change always
-    // starts a fresh block.
-    const lazy =
-      para.open &&
-      para.signature === containerSignature(kinds) &&
-      !consumedBullet;
+    // Lazy continuation gate: marker-less lines continue open paragraphs
+    // with omitted markers; new list items always start fresh.
+    const lazy = isLazyContinuation(
+      para,
+      stripped,
+      kinds,
+      explicitKinds,
+      consumedBullet,
+    );
     const singleFirst = matchSingle(bare);
     if (singleFirst !== null) {
       if (lazy) {
         // Lazy paragraph text, not a definition: normal tracking, and
         // the following line stays unconsumed.
-        para = trackParagraph(para, stripped, kinds, consumedBullet);
+        para = trackParagraph(
+          para,
+          stripped,
+          kinds,
+          explicitKinds,
+          consumedBullet,
+        );
         continue;
+      }
+      // When nothing but whitespace follows the destination, a title
+      // may start on a later line and span lines: parse the complete
+      // definition first so title bytes stay owned. Otherwise record
+      // the strict match (a complete same-line title or none).
+      const restAfterDest = bare.slice(
+        singleFirst.destinationLength + singleFirst.destination.length,
+      );
+      if (/^[ \t]*$/.test(restAfterDest)) {
+        const continued = matchContinuedDefinition(lines, lineIndex, lineStart);
+        if (continued !== null) {
+          matches.push({
+            start: lineStart,
+            end: continued.end,
+            destinationStart: continued.destinationStart,
+            destinationEnd: continued.destinationEnd,
+            destination: continued.destination,
+          });
+          // Consume the covered lines (the current line was already
+          // counted at the top of the loop).
+          for (let step = 0; step < continued.extraLines; step += 1) {
+            lineIndex += 1;
+            const consumed = lines[lineIndex] ?? "";
+            offset += consumed.length + 1;
+          }
+          para = { open: false, signature: null };
+          continue;
+        }
       }
       {
         const destinationStart = lineStart + singleFirst.destinationLength;
@@ -1628,8 +1706,44 @@ function findReferenceDefinitions(
         if (lazy) {
           // Lazy paragraph text: normal tracking, following lines stay
           // unconsumed.
-          para = trackParagraph(para, stripped, kinds, consumedBullet);
+          para = trackParagraph(
+            para,
+            stripped,
+            kinds,
+            explicitKinds,
+            consumedBullet,
+          );
           continue;
+        }
+        // When nothing but whitespace follows the destination, a
+        // title may start on a later line and span lines: parse the
+        // complete definition first so title bytes stay owned.
+        const restAfterDest = (nextBare ?? "").slice(
+          (/^[ \t]+/.exec(nextBare ?? "")?.[0] ?? "").length +
+            found.destination.length,
+        );
+        if (/^[ \t]*$/.test(restAfterDest)) {
+          const continued = matchContinuedDefinition(
+            lines,
+            lineIndex,
+            lineStart,
+          );
+          if (continued !== null) {
+            matches.push({
+              start: lineStart,
+              end: continued.end,
+              destinationStart: continued.destinationStart,
+              destinationEnd: continued.destinationEnd,
+              destination: continued.destination,
+            });
+            for (let step = 0; step < continued.extraLines; step += 1) {
+              lineIndex += 1;
+              const consumed = lines[lineIndex] ?? "";
+              offset += consumed.length + 1;
+            }
+            para = { open: false, signature: null };
+            continue;
+          }
         }
         {
           // Destination offsets in original bytes: the destination
@@ -1692,7 +1806,13 @@ function findReferenceDefinitions(
           if (lazy) {
             // Lazy paragraph text: normal tracking, following lines stay
             // unconsumed.
-            para = trackParagraph(para, stripped, kinds, consumedBullet);
+            para = trackParagraph(
+              para,
+              stripped,
+              kinds,
+              explicitKinds,
+              consumedBullet,
+            );
             continue;
           }
           {
@@ -1712,7 +1832,10 @@ function findReferenceDefinitions(
           }
           para = { open: false, signature: null };
           // Original bytes: the second line plus its preceding ending.
-          offset += labelNext.length + (line.endsWith("\r") ? 2 : 1);
+          // Original bytes: the second line plus its single preceding
+          // line ending (labelNext retains its own trailing CR, so only
+          // the split newline remains to count).
+          offset += labelNext.length + 1;
           lineIndex += 1;
           continue;
         }
@@ -1728,7 +1851,13 @@ function findReferenceDefinitions(
         if (lazy) {
           // Lazy paragraph text: normal tracking, following lines stay
           // unconsumed.
-          para = trackParagraph(para, stripped, kinds, consumedBullet);
+          para = trackParagraph(
+            para,
+            stripped,
+            kinds,
+            explicitKinds,
+            consumedBullet,
+          );
           continue;
         }
         matches.push({
@@ -1755,7 +1884,7 @@ function findReferenceDefinitions(
     if (/^(?: {4}|\t)/.test(stripped)) {
       continue;
     }
-    para = trackParagraph(para, stripped, kinds, consumedBullet);
+    para = trackParagraph(para, stripped, kinds, explicitKinds, consumedBullet);
     continue;
   }
   return matches;
