@@ -37,13 +37,17 @@ Treat CLI non-zero exit and stable structured error code as authoritative. Do no
 Never append a completion record or move a planlet directory by hand. `complete` captures the UTC
 instant, writes the record, and performs the archive move atomically.
 
-Report every warning the `complete` output carries to the user, including link-rewrite counts
-and links left unchanged. Each unchanged link names a reason such as `unresolved target` or
-`invalid path`; report the destination as the CLI printed it, never a rewritten or repaired
-link, and never complete the fix by hand.
+Report every warning the `complete` output carries to the user. Each one names a link the
+command left unchanged and why, for example `unresolved target` or `invalid path`; report the
+destination as the CLI printed it, never a rewritten or repaired link, and never complete the
+fix by hand.
+
+Rewritten links are not warnings: `linkRewrites` in the result reports how many relative links
+were rewritten in `plan.md` and `tasks.md` for the archived location. Mention those counts
+when they are nonzero, and never present them as a problem.
 
 Do not implement remaining tasks, complete several planlets, overwrite a destination, change the logical slug, or delete either primary file.
 
 ## Finish
 
-Completion does not itself require a commit. Keep archive and completion changes with the repository state they describe. If the user requested a commit or the surrounding workflow grants commit authority, verified implementation, task updates, and completion changes may share one atomic commit; no separate completion commit is required. Otherwise leave the intended changes staged and report them for the caller to commit. Before performing a push or branch switch, ensure no Planlet state would be separated from the repository state it describes. Report logical slug, recorded UTC timestamp, mode, remaining task IDs for override, final archive path, whether an optional evidence section was present, every completion warning, and post-completion validation result. If operation stopped, report exact source state and blocking code.
+Completion does not itself require a commit. Keep archive and completion changes with the repository state they describe. If the user requested a commit or the surrounding workflow grants commit authority, verified implementation, task updates, and completion changes may share one atomic commit; no separate completion commit is required. Otherwise leave the intended changes staged and report them for the caller to commit. Before performing a push or branch switch, ensure no Planlet state would be separated from the repository state it describes. Report logical slug, recorded UTC timestamp, mode, remaining task IDs for override, final archive path, whether an optional evidence section was present, rewritten link counts, every completion warning, and post-completion validation result. If operation stopped, report exact source state and blocking code.

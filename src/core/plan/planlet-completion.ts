@@ -52,6 +52,8 @@ export interface CompletePlanletResult {
   readonly completedAt: string;
   readonly mode: "normal" | "incomplete override";
   readonly remainingTaskIds: readonly string[];
+  /** Relative links this invocation rewrote for the archived location. */
+  readonly linkRewrites: { readonly plan: number; readonly tasks: number };
   readonly summary: PlanSummary;
 }
 
@@ -104,7 +106,8 @@ function appendCompletionRecord(
 /**
  * Rewrites one planlet file for the archived location. Archiving moves the
  * file one directory deeper, so every relative link that leaves the planlet
- * needs a `../` prefix.
+ * needs a `../` prefix. A successful rewrite is expected behavior and is
+ * reported as a count, not a warning; only links left unchanged warn.
  */
 function rewriteForArchive(
   options: CompletePlanletOptions,
@@ -112,7 +115,11 @@ function rewriteForArchive(
   archiveName: string,
   fileName: string,
   markdown: string,
-): { readonly markdown: string; readonly warnings: readonly string[] } {
+): {
+  readonly markdown: string;
+  readonly rewrites: number;
+  readonly warnings: readonly string[];
+} {
   const result = rewriteArchiveLinks({
     fileName,
     planDir: `plans/${slug}`,
@@ -123,14 +130,8 @@ function rewriteForArchive(
 
   return {
     markdown: result.text,
-    warnings: [
-      ...(result.rewrites > 0
-        ? [
-            `Rewrote ${result.rewrites} relative link(s) in ${fileName} for the archived location`,
-          ]
-        : []),
-      ...result.notes,
-    ],
+    rewrites: result.rewrites,
+    warnings: result.notes,
   };
 }
 
@@ -310,6 +311,8 @@ function resumeRecordedCompletion(
     completedAt: completion.completedAt,
     mode: completion.mode,
     remainingTaskIds,
+    // tasks.md was published already rewritten by the interrupted run.
+    linkRewrites: { plan: rewrittenPlan.rewrites, tasks: 0 },
     summary: {
       slug,
       archiveName,
@@ -530,6 +533,10 @@ function completePlanletLocked(
     completedAt,
     mode,
     remainingTaskIds,
+    linkRewrites: {
+      plan: rewrittenPlan.rewrites,
+      tasks: rewrittenTasks.rewrites,
+    },
     summary: {
       slug,
       archiveName,

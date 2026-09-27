@@ -507,10 +507,9 @@ test("completion rewrites links that leave the planlet in both files", () => {
       tasks,
       /- \[x\] T1 Review \[notes\]\(\.\.\/\.\.\/other-plan\/plan\.md\)/,
     );
-    assert.deepEqual(result.summary.warnings, [
-      "Rewrote 3 relative link(s) in plan.md for the archived location",
-      "Rewrote 1 relative link(s) in tasks.md for the archived location",
-    ]);
+    // A successful rewrite is reported as a count, not a warning.
+    assert.deepEqual(result.linkRewrites, { plan: 3, tasks: 1 });
+    assert.deepEqual(result.summary.warnings, []);
     assert.equal(
       validatePlanletStructure({
         directoryName: result.archiveName,
@@ -520,6 +519,27 @@ test("completion rewrites links that leave the planlet in both files", () => {
       }).state,
       "completed",
     );
+  });
+});
+
+test("completion warns only for links it left unchanged, never for a rewrite", () => {
+  const plan =
+    "# Fixture Plan\n\n## Summary\nSee [design](../../README.md) and " +
+    "[gone](../missing.md).\n\n## Scope\nFixture.\n\n## Approach\nFixture.\n\n" +
+    "## Acceptance Criteria\n- Works.\n\n## Verification\nTests.\n";
+  withFiles(plan, COMPLETE_TASKS, (root) => {
+    writeFileSync(join(root, "README.md"), "x\n");
+
+    const result = completePlanlet({
+      repositoryRoot: root,
+      slug: "fixture-plan",
+      dependencies: { now: () => new Date("2027-01-02T00:00:00.125Z") },
+    });
+
+    assert.deepEqual(result.linkRewrites, { plan: 1, tasks: 0 });
+    assert.deepEqual(result.summary.warnings, [
+      "plan.md link left unchanged (unresolved target: ../missing.md)",
+    ]);
   });
 });
 
@@ -612,9 +632,8 @@ test("resume after a failed plan.md publish rewrites plan.md only", () => {
       readFileSync(join(result.destination, "tasks.md"), "utf8"),
       audited,
     );
-    assert.deepEqual(result.summary.warnings, [
-      "Rewrote 3 relative link(s) in plan.md for the archived location",
-    ]);
+    assert.deepEqual(result.linkRewrites, { plan: 3, tasks: 0 });
+    assert.deepEqual(result.summary.warnings, []);
   });
 });
 
