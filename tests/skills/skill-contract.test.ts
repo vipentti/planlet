@@ -328,6 +328,26 @@ test("compact task index keeps template tasks single-line and guidance controls 
   );
 });
 
+test("the complete skill reports every completion warning it is given", () => {
+  const completeCorpus = filesUnder("skills/planlet-complete")
+    .map(read)
+    .join("\n");
+
+  assert.match(
+    completeCorpus,
+    /Report every warning the `complete` output carries/,
+  );
+  assert.match(completeCorpus, /link the\s+command left unchanged/);
+  assert.match(completeCorpus, /never a rewritten or repaired\s+link/);
+  assert.match(completeCorpus, /every completion warning/);
+
+  // A successful rewrite is expected behavior, so it must not be filed as a
+  // warning: the skill reads the counts from the result and must say so.
+  assert.match(completeCorpus, /Rewritten links are not warnings/);
+  assert.match(completeCorpus, /`linkRewrites`/);
+  assert.match(completeCorpus, /never present them as a problem/);
+});
+
 test("generic and Claude bootstrap copies are byte-identical to canonical skills", () => {
   for (const name of SKILL_NAMES) {
     const canonicalRoot = `skills/${name}`;
