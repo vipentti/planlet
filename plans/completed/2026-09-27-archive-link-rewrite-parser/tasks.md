@@ -8,3 +8,8 @@
   - Verify: `node dist/planlet.mjs update`, then `node dist/planlet.mjs --root . tools` reports every destination installed.
 - [x] T4 Update `planlet_design.md` (step 9, dependency exception), `README.md`, and the `[Unreleased]` changelog entry.
 - [x] T5 Run the full repository verification suite defined in `plan.md`.
+
+## Completion
+
+- Completed at: 2026-09-27T03:59:11.389Z
+- Mode: normal
