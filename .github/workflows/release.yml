@@ -13,7 +13,7 @@ concurrency:
 
 jobs:
   release:
-    uses: vipentti/npm-release-flow/.github/workflows/release.yml@2ffb0fc02d7c977fe1dc89d3102fa8850030176e
+    uses: vipentti/npm-release-flow/.github/workflows/release.yml@52ed8464f60e1befbffe5fdfe473e32e5138cdaa
     permissions:
       contents: write
       pull-requests: read
