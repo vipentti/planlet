@@ -285,6 +285,11 @@ function resumeRecordedCompletion(
   }
 
   try {
+    // Recheck after the publish and immediately before movement, exactly as the
+    // fresh path does. The publish opens a window in which the source or the
+    // destination can be replaced.
+    assertNoCompletionCollision(completedPath, slug, destination);
+    assertActivePlanletDirectory(source, slug);
     dependencies.moveDirectory(source, destination);
   } catch (error) {
     throw asWriteConflict(error, `Could not complete planlet: ${slug}`, {

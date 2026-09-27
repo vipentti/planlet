@@ -132,47 +132,50 @@ test("leaves a GFM footnote definition unchanged", () => {
 
 test("rewrites escaped and balanced destinations without touching the escapes", () => {
   const text =
-    "[a](../x\\).md) [b](../x%23y.md) [c](../p(q).md) [d](../back\\slash.md)\n";
+    "[a](../x\\).md) [b](../x\\#y.md) [c](../p(q).md) [d](../back\\slash.md)\n";
   const result = rewrite(text, {
     exists: (target) =>
-      target === "plans/x).md" ||
-      target === "plans/x#y.md" ||
-      target === "plans/back\\slash.md",
+      target === "plans/x).md" || target === "plans/back\\slash.md",
   });
 
   assert.equal(
     result.text,
-    "[a](../../x\\).md) [b](../../x%23y.md) [c](../p(q).md) [d](../../back\\slash.md)\n",
+    "[a](../../x\\).md) [b](../x\\#y.md) [c](../p(q).md) [d](../../back\\slash.md)\n",
   );
-  assert.equal(result.rewrites, 3);
+  assert.equal(result.rewrites, 2);
   assert.deepEqual(result.notes, [
+    // The escape keeps the backslash out of the parsed destination, but the
+    // resulting `#` still separates the path from the fragment at the URL
+    // layer, exactly as a browser would resolve it.
+    "plan.md link left unchanged (unresolved target: ../x\\#y.md)",
     "plan.md link left unchanged (unresolved target: ../p(q).md)",
   ]);
 });
 
 test("classifies entity-encoded destinations and preserves their bytes", () => {
-  const text = "[a](../a&amp;b.md) [b](../b&#35;c.md) [c](../bogus&d.md)\n";
+  const text = "[a](../a&amp;b.md) [b](../&bogus;.md) [c](../x&#35;c.md)\n";
   const result = rewrite(text, {
-    exists: (target) => target === "plans/a&b.md",
+    exists: (target) =>
+      target === "plans/a&b.md" ||
+      target === "plans/&bogus;.md" ||
+      target === "plans/x",
   });
 
   assert.equal(
     result.text,
-    "[a](../../a&amp;b.md) [b](../b&#35;c.md) [c](../bogus&d.md)\n",
+    "[a](../../a&amp;b.md) [b](../../&bogus;.md) [c](../../x&#35;c.md)\n",
   );
-  assert.equal(result.rewrites, 1);
-  assert.deepEqual(result.notes, [
-    "plan.md link left unchanged (unresolved target: ../b&#35;c.md)",
-    "plan.md link left unchanged (unresolved target: ../bogus&d.md)",
-  ]);
+  assert.equal(result.rewrites, 3);
+  assert.deepEqual(result.notes, []);
 });
 
-test("rewrites an angle-bracket destination inside its brackets", () => {
-  const text = '[a](<../x.md> "title (with parens)")\n';
-  const result = rewrite(text, { exists: one("plans/x.md") });
+test("rewrites an angle-bracket destination containing a space", () => {
+  const text = '[c](<../sp ace.md> "title (with parens)")\n';
+  const result = rewrite(text, { exists: one("plans/sp ace.md") });
 
-  assert.equal(result.text, '[a](<../../x.md> "title (with parens)")\n');
+  assert.equal(result.text, '[c](<../../sp ace.md> "title (with parens)")\n');
   assert.equal(result.rewrites, 1);
+  assert.deepEqual(result.notes, []);
 });
 
 test("rewrites a destination whose title follows on the next line", () => {
@@ -197,12 +200,12 @@ test("preserves CRLF line endings", () => {
 });
 
 test("preserves bare CR line endings and adds no LF", () => {
-  const text = "[a](../x.md)\r[b](../y.md)\r";
+  const text = '[a](../x.md)\r\r[d]:\r  ../y.md\r  "t"\r';
   const result = rewrite(text, {
     exists: (target) => target === "plans/x.md" || target === "plans/y.md",
   });
 
-  assert.equal(result.text, "[a](../../x.md)\r[b](../../y.md)\r");
+  assert.equal(result.text, '[a](../../x.md)\r\r[d]:\r  ../../y.md\r  "t"\r');
   assert.equal(result.rewrites, 2);
   assert.ok(!result.text.includes("\n"));
 });
