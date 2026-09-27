@@ -6,6 +6,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and thi
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-09-27
+
 ### Added
 
 - `planlet complete <slug>` now rewrites the relative links in `plan.md` and `tasks.md` for the archive location. A relative link whose target exists at the planlet's current depth but not at the archive depth gains one `../` prefix, so it keeps resolving after the planlet moves to `plans/completed/<YYYY-MM-DD>-<slug>/`. Links that stay inside the planlet, and links that are already written for the archive depth, are left alone. The rewrite only inserts those three bytes: titles, escapes, query strings, fragments, and line endings stay byte-identical. A successful rewrite is expected behavior rather than a diagnostic, so the per-file counts are reported as `linkRewrites` in the result. A link left unchanged because its target is unresolved, ambiguous, inside the planlet through its parent directory, or not a valid path is reported as a warning with that reason.
@@ -162,7 +164,8 @@ First release. Everything below is new, so these notes describe what Planlet is 
 - Unexpected failures surface as a structured `internal_error` with no stack or path leakage; set `PLANLET_DEBUG=1` for diagnostic detail.
 - Planlet and repository paths reject directory traversal and symlink escape, and file writes are atomic or recoverable.
 
-[Unreleased]: https://github.com/vipentti/planlet/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/vipentti/planlet/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/vipentti/planlet/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/vipentti/planlet/compare/v0.6.1...v0.7.0
 [0.6.1]: https://github.com/vipentti/planlet/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/vipentti/planlet/compare/v0.5.0...v0.6.0
