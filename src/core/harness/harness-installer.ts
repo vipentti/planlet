@@ -11,7 +11,13 @@ import {
   type HarnessToolId,
 } from "./harnesses.js";
 import { tryStage } from "../git.js";
-import { byName, pathKind, resolveSafePath, sortedRecord } from "../paths.js";
+import {
+  byName,
+  pathKind,
+  resolveSafePath,
+  sortedRecord,
+  tryLstat,
+} from "../paths.js";
 import {
   prepareInitPlansDirectory,
   resolvePlansLocation,
@@ -236,6 +242,57 @@ function inspectDestination(
   };
 }
 
+function posixPathOverlaps(left: string, right: string): boolean {
+  const a = left.split("/");
+  const b = right.split("/");
+  const n = Math.min(a.length, b.length);
+  for (let i = 0; i < n; i += 1) {
+    if (a[i] !== b[i]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function agentFileRelativePaths(
+  repositoryRoot: string,
+  operation: "init" | "update",
+  skip: boolean | undefined,
+): readonly string[] {
+  if (skip === true) {
+    return [];
+  }
+  const names: string[] = [];
+  if (operation === "init") {
+    names.push("AGENTS.md");
+  }
+  for (const file of ["AGENTS.md", "CLAUDE.md"] as const) {
+    if (tryLstat(join(repositoryRoot, file))?.isFile() === true) {
+      names.push(file);
+    }
+  }
+  return [...new Set(names)];
+}
+
+function assertPlansDirClearOfOwnedPaths(
+  plansDir: string,
+  ownedRelativePaths: readonly string[],
+): void {
+  for (const owned of ownedRelativePaths) {
+    if (!posixPathOverlaps(plansDir, owned)) {
+      continue;
+    }
+    throw new PlanletError(
+      "invalid_config",
+      `plansDir overlaps a path this operation owns: ${owned}`,
+      {
+        details: { plansDir, owned },
+        next: "Choose a plansDir that is not equal to, inside, or a parent of a harness destination or agent file this command will write",
+      },
+    );
+  }
+}
+
 export function installHarnessSkills(options: {
   readonly repositoryRoot: string;
   readonly operation: "init" | "update";
@@ -326,6 +383,17 @@ export function installHarnessSkills(options: {
           );
         }
 
+        assertPlansDirClearOfOwnedPaths(prepared.plansDir, [
+          ...actionable.map(
+            (inspection) => inspection.destination.relativePath,
+          ),
+          ...agentFileRelativePaths(
+            options.repositoryRoot,
+            options.operation,
+            options.noAgents,
+          ),
+        ]);
+
         // Preflight passed: only now mutate the repository.
         wroteConfig = writeConfigIfNeeded();
         if (plansInitialized) mkdirSync(plansPath, { recursive: true });
@@ -346,6 +414,14 @@ export function installHarnessSkills(options: {
               ),
         );
       } else {
+        assertPlansDirClearOfOwnedPaths(
+          prepared.plansDir,
+          agentFileRelativePaths(
+            options.repositoryRoot,
+            options.operation,
+            options.noAgents,
+          ),
+        );
         wroteConfig = writeConfigIfNeeded();
         if (plansInitialized) mkdirSync(plansPath, { recursive: true });
       }

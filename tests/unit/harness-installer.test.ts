@@ -291,6 +291,62 @@ test("init --plans-dir docs/plans is write_conflict when docs is a file", () => 
   });
 });
 
+test("init --plans-dir .agents with default tools is invalid_config", () => {
+  withRoot((root) => {
+    assert.throws(
+      () =>
+        installHarnessSkills({
+          repositoryRoot: root,
+          operation: "init",
+          noAgents: true,
+          plansDir: ".agents",
+          source: BASE_SOURCE,
+        }),
+      (error: unknown) =>
+        error instanceof PlanletError && error.code === "invalid_config",
+    );
+    assert.equal(existsSync(join(root, ".planlet.json")), false);
+    assert.equal(existsSync(join(root, ".agents")), false);
+  });
+});
+
+test("init --plans-dir .agents/skills with default tools is invalid_config", () => {
+  withRoot((root) => {
+    assert.throws(
+      () =>
+        installHarnessSkills({
+          repositoryRoot: root,
+          operation: "init",
+          noAgents: true,
+          plansDir: ".agents/skills",
+          source: BASE_SOURCE,
+        }),
+      (error: unknown) =>
+        error instanceof PlanletError && error.code === "invalid_config",
+    );
+    assert.equal(existsSync(join(root, ".planlet.json")), false);
+    assert.equal(existsSync(join(root, ".agents")), false);
+  });
+});
+
+test("init --plans-dir AGENTS.md without --no-agents is invalid_config", () => {
+  withRoot((root) => {
+    assert.throws(
+      () =>
+        installHarnessSkills({
+          repositoryRoot: root,
+          operation: "init",
+          tools: "none",
+          plansDir: "AGENTS.md",
+        }),
+      (error: unknown) =>
+        error instanceof PlanletError && error.code === "invalid_config",
+    );
+    assert.equal(existsSync(join(root, ".planlet.json")), false);
+    assert.equal(existsSync(join(root, "AGENTS.md")), false);
+  });
+});
+
 test("update upgrades a v1 manifest to v2 without touching unchanged skills", () => {
   withRoot((root) => {
     installHarnessSkills({
