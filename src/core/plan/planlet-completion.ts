@@ -13,6 +13,11 @@ import { join, resolve } from "node:path";
 import type { PlanSummary } from "./models.js";
 import { rewriteArchiveLinks } from "./link-rewrite.js";
 import {
+  joinPlansRelative,
+  requirePlansDirectory,
+  resolveUnderPlans,
+} from "../plans-dir.js";
+import {
   withPlanletLock,
   type PlanletLockDependencies,
 } from "../planlet-lock.js";
@@ -115,6 +120,7 @@ function rewriteForArchive(
   archiveName: string,
   fileName: string,
   markdown: string,
+  plansDir: string,
 ): {
   readonly markdown: string;
   readonly rewrites: number;
@@ -122,8 +128,8 @@ function rewriteForArchive(
 } {
   const result = rewriteArchiveLinks({
     fileName,
-    planDir: `plans/${slug}`,
-    archiveDir: `plans/completed/${archiveName}`,
+    planDir: joinPlansRelative(plansDir, slug),
+    archiveDir: joinPlansRelative(plansDir, "completed", archiveName),
     exists: (path) => tryLstat(join(options.repositoryRoot, path)) !== null,
     text: markdown,
   });
@@ -205,6 +211,7 @@ function resumeRecordedCompletion(
   planPath: string,
   planMarkdown: string,
   tasksMarkdown: string,
+  plansDir: string,
 ): CompletePlanletResult {
   const slug = options.slug;
   const active = validatePlanletStructure({
@@ -239,6 +246,7 @@ function resumeRecordedCompletion(
     archiveName,
     "plan.md",
     planMarkdown,
+    plansDir,
   );
   const completedValidation = validatePlanletStructure({
     directoryName: archiveName,
@@ -250,14 +258,14 @@ function resumeRecordedCompletion(
   let completedPath: string;
   let destination: string;
   try {
-    completedPath = resolveSafePath(
+    completedPath = resolveUnderPlans(
       options.repositoryRoot,
-      "plans",
+      plansDir,
       "completed",
     );
-    destination = resolveSafePath(
+    destination = resolveUnderPlans(
       options.repositoryRoot,
-      "plans",
+      plansDir,
       "completed",
       archiveName,
     );
@@ -359,7 +367,7 @@ function completePlanletLocked(
   dependencies: CompletePlanletDependencies,
   slug: string,
 ): CompletePlanletResult {
-  const plansPath = resolveSafePath(options.repositoryRoot, "plans");
+  const { plansDir, plansPath } = requirePlansDirectory(options.repositoryRoot);
   // Keep the lexical planlet entry as the move source. resolveSafePath follows
   // symlinks, which is correct for containment checks but unsafe for a rename.
   const source = resolve(plansPath, slug);
@@ -383,6 +391,7 @@ function completePlanletLocked(
       planPath,
       planMarkdown,
       tasksMarkdown,
+      plansDir,
     );
   }
 
@@ -433,14 +442,14 @@ function completePlanletLocked(
   let completedPath: string;
   let destination: string;
   try {
-    completedPath = resolveSafePath(
+    completedPath = resolveUnderPlans(
       options.repositoryRoot,
-      "plans",
+      plansDir,
       "completed",
     );
-    destination = resolveSafePath(
+    destination = resolveUnderPlans(
       options.repositoryRoot,
-      "plans",
+      plansDir,
       "completed",
       archiveName,
     );
@@ -465,6 +474,7 @@ function completePlanletLocked(
     archiveName,
     "plan.md",
     planMarkdown,
+    plansDir,
   );
   const rewrittenTasks = rewriteForArchive(
     options,
@@ -472,6 +482,7 @@ function completePlanletLocked(
     archiveName,
     "tasks.md",
     tasksMarkdown,
+    plansDir,
   );
   const updatedTasks = appendCompletionRecord(
     rewrittenTasks.markdown,

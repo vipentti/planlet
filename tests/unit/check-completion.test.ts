@@ -66,6 +66,38 @@ test("extractCompletedSlugs matches changed active and archive paths", () => {
   );
 });
 
+test("slug extraction strips a two-segment plansDir prefix", () => {
+  assert.deepEqual(
+    extractTouchedSlugs(
+      [
+        "docs/plans/ready-plan/plan.md",
+        "docs/plans/completed/2028-01-01-old-plan/tasks.md",
+        "plans/ready-plan/plan.md",
+        "docs/plans/README.md",
+      ],
+      "docs/plans",
+    ),
+    ["ready-plan"],
+  );
+  assert.deepEqual(
+    extractCompletedSlugs(
+      [
+        "docs/plans/finished-plan/tasks.md",
+        "docs/plans/completed/2028-01-01-finished-plan/tasks.md",
+        "plans/finished-plan/tasks.md",
+        "plans/completed/2028-01-01-finished-plan/tasks.md",
+      ],
+      "docs/plans",
+    ),
+    [
+      {
+        slug: "finished-plan",
+        archiveName: "2028-01-01-finished-plan",
+      },
+    ],
+  );
+});
+
 test("deriveCompletionResult uses one validation snapshot for active state and uniqueness", () => {
   const ready = summary(
     "unique-ready",

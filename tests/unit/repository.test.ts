@@ -55,6 +55,19 @@ test("explicit roots and unmarked current-directory fallbacks are supported", ()
   });
 });
 
+test("unmarked discovery treats a readable .planlet.json as a layout marker", () => {
+  withTempDirectory((directory) => {
+    writeFileSync(
+      join(directory, ".planlet.json"),
+      JSON.stringify({ plansDir: "docs/plans" }),
+    );
+    assert.equal(
+      discoverRepositoryRoot({ startPath: directory }),
+      realpathSync(directory),
+    );
+  });
+});
+
 test("repository discovery reports a structured error when no root exists", () => {
   withTempDirectory((directory) => {
     assert.throws(

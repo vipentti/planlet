@@ -3,6 +3,7 @@ import { dirname, join, resolve } from "node:path";
 
 import { PlanletError } from "../errors/planlet-error.js";
 import { tryLstat } from "./paths.js";
+import { hasPlansLayoutMarker } from "./plans-dir.js";
 
 export interface DiscoverRepositoryOptions {
   readonly startPath: string;
@@ -24,7 +25,7 @@ function hasRepositoryMarker(path: string): boolean {
 }
 
 function hasPlansDirectory(path: string): boolean {
-  return tryLstat(join(path, "plans"))?.isDirectory() ?? false;
+  return hasPlansLayoutMarker(path);
 }
 
 export function discoverRepositoryRoot(

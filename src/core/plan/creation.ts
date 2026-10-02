@@ -9,6 +9,7 @@ import { randomUUID } from "node:crypto";
 
 import type { PlanSummary } from "./models.js";
 import { atomicPublish, resolveSafePath, tryLstat } from "../paths.js";
+import { resolvePlansLocation } from "../plans-dir.js";
 import {
   assertCreatableSlug,
   assertValidSlug,
@@ -109,7 +110,7 @@ export function createPlanlet(options: CreatePlanletOptions): PlanSummary {
 
   let plansPath: string;
   try {
-    plansPath = resolveSafePath(options.repositoryRoot, "plans");
+    plansPath = resolvePlansLocation(options.repositoryRoot).plansPath;
     mkdirSync(plansPath, { recursive: true });
     assertNoActiveCollision(plansPath, slug);
     assertNoCompletedCollision(plansPath, slug);

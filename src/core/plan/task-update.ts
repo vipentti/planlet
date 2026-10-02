@@ -10,6 +10,7 @@ import {
 } from "../planlet-lock.js";
 import { assertActivePlanletDirectory, readMarkdown } from "./planlet-files.js";
 import { atomicPublish, resolveSafePath } from "../paths.js";
+import { requirePlansDirectory } from "../plans-dir.js";
 import { tryStage } from "../git.js";
 import { assertValidSlug } from "./slugs.js";
 import { parseTaskLine } from "./task-parser.js";
@@ -129,7 +130,7 @@ function updateTaskLocked(
   dependencies: UpdateTaskDependencies,
   slug: string,
 ): UpdateTaskResult {
-  const plansPath = resolveSafePath(options.repositoryRoot, "plans");
+  const plansPath = requirePlansDirectory(options.repositoryRoot).plansPath;
   const planletPath = resolve(plansPath, slug);
   assertActivePlanletDirectory(planletPath, slug);
 

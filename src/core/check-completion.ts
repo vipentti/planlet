@@ -7,6 +7,11 @@ import {
   type ParsedArchiveName,
 } from "./plan/slugs.js";
 import { byName } from "./paths.js";
+import {
+  DEFAULT_PLANS_DIR,
+  plansDirPathspec,
+  readPlansDir,
+} from "./plans-dir.js";
 
 interface CompletionViolation {
   readonly slug: string;
@@ -26,12 +31,29 @@ export interface CheckCompletionOptions {
   readonly base: string;
 }
 
-function extractActiveSlug(path: string): string | undefined {
+function remainingAfterPlansDir(
+  path: string,
+  plansDir: string,
+): readonly string[] | undefined {
+  const prefix = plansDir.split("/");
   const segments = path.split("/");
-  const slug = segments[1];
+  if (segments.length <= prefix.length) {
+    return undefined;
+  }
+  for (let index = 0; index < prefix.length; index += 1) {
+    if (segments[index] !== prefix[index]) {
+      return undefined;
+    }
+  }
+  return segments.slice(prefix.length);
+}
+
+function extractActiveSlug(path: string, plansDir: string): string | undefined {
+  const rest = remainingAfterPlansDir(path, plansDir);
+  const slug = rest?.[0];
   if (
-    segments.length < 3 ||
-    segments[0] !== "plans" ||
+    rest === undefined ||
+    rest.length < 2 ||
     slug === undefined ||
     slug === "completed" ||
     !isValidSlug(slug)
@@ -44,22 +66,26 @@ function extractActiveSlug(path: string): string | undefined {
 /** Extracts valid active-planlet slug segments from repository-relative paths. */
 export function extractTouchedSlugs(
   paths: readonly string[],
+  plansDir = DEFAULT_PLANS_DIR,
 ): readonly string[] {
   const slugs = new Set<string>();
   for (const path of paths) {
-    const slug = extractActiveSlug(path);
+    const slug = extractActiveSlug(path, plansDir);
     if (slug !== undefined) slugs.add(slug);
   }
   return [...slugs].sort(byName);
 }
 
-function extractArchivedPath(path: string): ParsedArchiveName | undefined {
-  const segments = path.split("/");
-  const archiveName = segments[2];
+function extractArchivedPath(
+  path: string,
+  plansDir: string,
+): ParsedArchiveName | undefined {
+  const rest = remainingAfterPlansDir(path, plansDir);
+  const archiveName = rest?.[1];
   if (
-    segments.length < 4 ||
-    segments[0] !== "plans" ||
-    segments[1] !== "completed" ||
+    rest === undefined ||
+    rest.length < 3 ||
+    rest[0] !== "completed" ||
     archiveName === undefined
   ) {
     return undefined;
@@ -75,14 +101,15 @@ export interface CompletedPathCandidate {
 /** Extracts active/archive path pairs changed in the Git range. */
 export function extractCompletedSlugs(
   paths: readonly string[],
+  plansDir = DEFAULT_PLANS_DIR,
 ): readonly CompletedPathCandidate[] {
   const activeSlugs = new Set<string>();
   const archiveNamesBySlug = new Map<string, Set<string>>();
   for (const path of paths) {
-    const activeSlug = extractActiveSlug(path);
+    const activeSlug = extractActiveSlug(path, plansDir);
     if (activeSlug !== undefined) activeSlugs.add(activeSlug);
 
-    const archive = extractArchivedPath(path);
+    const archive = extractArchivedPath(path, plansDir);
     if (archive === undefined) continue;
     const archiveNames = archiveNamesBySlug.get(archive.slug) ?? new Set();
     archiveNames.add(archive.archiveName);
@@ -157,9 +184,10 @@ export function deriveCompletionResult(
 export function checkCompletion(
   options: CheckCompletionOptions,
 ): CheckCompletionResult {
+  const plansDir = readPlansDir(options.repositoryRoot);
   const changedPaths = listDiffPaths(options.repositoryRoot, {
     base: options.base,
-    pathspec: "plans/",
+    pathspec: plansDirPathspec(plansDir),
   });
   let validation: ValidationResult;
   try {
@@ -182,8 +210,8 @@ export function checkCompletion(
   }
   return deriveCompletionResult(
     options.base,
-    extractTouchedSlugs(changedPaths),
+    extractTouchedSlugs(changedPaths, plansDir),
     validation,
-    extractCompletedSlugs(changedPaths),
+    extractCompletedSlugs(changedPaths, plansDir),
   );
 }

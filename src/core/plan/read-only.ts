@@ -7,6 +7,7 @@ import {
   type PlanSummary,
 } from "./models.js";
 import { byName, resolveSafePath, tryLstat } from "../paths.js";
+import { requirePlansDirectory } from "../plans-dir.js";
 import { assertValidSlug, isValidSlug, parseArchiveName } from "./slugs.js";
 import type { PlanletLocation } from "./status.js";
 import {
@@ -92,15 +93,7 @@ interface LoadedPlanlet {
 }
 
 function plansPath(repositoryRoot: string): string {
-  const path = resolveSafePath(repositoryRoot, "plans");
-  if (!tryLstat(path)?.isDirectory()) {
-    throw new PlanletError(
-      "plans_not_initialized",
-      "Repository does not contain a plans directory",
-      { details: { path } },
-    );
-  }
-  return path;
+  return requirePlansDirectory(repositoryRoot).plansPath;
 }
 
 function directoryEntries(path: string): readonly Dirent[] {

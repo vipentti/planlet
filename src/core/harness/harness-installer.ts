@@ -11,6 +11,7 @@ import {
   type HarnessToolId,
 } from "./harnesses.js";
 import { byName, pathKind, resolveSafePath, sortedRecord } from "../paths.js";
+import { resolvePlansLocation } from "../plans-dir.js";
 import {
   INSTALLATION_MANIFEST,
   createInstallationManifest,
@@ -246,7 +247,7 @@ export function installHarnessSkills(options: {
     options.repositoryRoot,
     selectedToolIds,
   );
-  const plansPath = resolveSafePath(options.repositoryRoot, "plans");
+  const plansPath = resolvePlansLocation(options.repositoryRoot).plansPath;
   const plansKind = pathKind(plansPath);
   if (
     options.operation === "init" &&

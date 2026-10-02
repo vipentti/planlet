@@ -4,7 +4,7 @@
       guard, and `invalid_config` / `plans_dir_conflict` error codes.
       Verify: unit tests for absent file, unknown keys, reserved names,
       invalid JSON, `..`, leftover vs empty `plans/`.
-- [ ] T2 Wire the resolver through readers, writers, create, task update,
+- [x] T2 Wire the resolver through readers, writers, create, task update,
       complete, link-rewrite prefixes, init mkdir, and both completion-gate
       functions. Verify: default-path suite still passes; gate extracts
       slugs for `docs/plans`.
