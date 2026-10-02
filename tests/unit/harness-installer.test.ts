@@ -181,6 +181,286 @@ test("init with none creates plans without resolving or installing skills", () =
     assert.deepEqual(result.data.destinations, []);
     assert.equal(existsSync(join(root, "plans")), true);
     assert.equal(existsSync(join(root, ".agents")), false);
+    assert.equal(existsSync(join(root, ".planlet.json")), false);
+  });
+});
+
+test("init accepts an in-repository default plans/ symlink", () => {
+  withRoot((root) => {
+    mkdirSync(join(root, "store"));
+    symlinkSync(join(root, "store"), join(root, "plans"));
+    const result = installHarnessSkills({
+      repositoryRoot: root,
+      operation: "init",
+      tools: "none",
+      noAgents: true,
+    });
+    assert.equal(result.data.plansInitialized, false);
+    assert.equal(existsSync(join(root, ".planlet.json")), false);
+  });
+});
+
+test("init --plans-dir plans writes no config file", () => {
+  withRoot((root) => {
+    const result = installHarnessSkills({
+      repositoryRoot: root,
+      operation: "init",
+      tools: "none",
+      plansDir: "plans",
+    });
+    assert.equal(result.data.plansInitialized, true);
+    assert.equal(existsSync(join(root, "plans")), true);
+    assert.equal(existsSync(join(root, ".planlet.json")), false);
+  });
+});
+
+test("init --plans-dir docs/plans writes config and creates that directory", () => {
+  withRoot((root) => {
+    const result = installHarnessSkills({
+      repositoryRoot: root,
+      operation: "init",
+      tools: "none",
+      noAgents: true,
+      plansDir: "docs/plans",
+    });
+    assert.equal(result.data.plansInitialized, true);
+    assert.equal(existsSync(join(root, "plans")), false);
+    assert.equal(existsSync(join(root, "docs", "plans")), true);
+    assert.equal(
+      readFileSync(join(root, ".planlet.json"), "utf8"),
+      `${JSON.stringify({ plansDir: "docs/plans" }, null, 2)}\n`,
+    );
+  });
+});
+
+test("init --plans-dir plans/custom is rejected before writing a config", () => {
+  withRoot((root) => {
+    assert.throws(
+      () =>
+        installHarnessSkills({
+          repositoryRoot: root,
+          operation: "init",
+          tools: "none",
+          noAgents: true,
+          plansDir: "plans/custom",
+        }),
+      (error: unknown) =>
+        error instanceof PlanletError && error.code === "invalid_config",
+    );
+    assert.equal(existsSync(join(root, ".planlet.json")), false);
+    assert.equal(existsSync(join(root, "plans", "custom")), false);
+  });
+});
+
+test("init --plans-dir rejects reserved first segments", () => {
+  for (const plansDir of [
+    ".git",
+    ".planlet.json",
+    ".planlet.yaml",
+    "docs/.git/plans",
+    "docs/.GIT/plans",
+    ".agents.",
+    "AGENTS.md.",
+    "NUL",
+    "con.txt",
+    "docs/COM1/plans",
+  ]) {
+    withRoot((root) => {
+      assert.throws(
+        () =>
+          installHarnessSkills({
+            repositoryRoot: root,
+            operation: "init",
+            tools: "none",
+            noAgents: true,
+            plansDir,
+          }),
+        (error: unknown) =>
+          error instanceof PlanletError && error.code === "invalid_config",
+      );
+      assert.equal(existsSync(join(root, ".planlet.json")), false);
+    });
+  }
+});
+
+test("init --plans-dir docs/plans is write_conflict when docs is a file", () => {
+  withRoot((root) => {
+    writeFileSync(join(root, "docs"), "not a directory\n");
+    assert.throws(
+      () =>
+        installHarnessSkills({
+          repositoryRoot: root,
+          operation: "init",
+          tools: "none",
+          noAgents: true,
+          plansDir: "docs/plans",
+        }),
+      (error: unknown) =>
+        error instanceof PlanletError && error.code === "write_conflict",
+    );
+    assert.equal(existsSync(join(root, ".planlet.json")), false);
+  });
+});
+
+test("init --plans-dir Docs/plans is invalid_config when docs exists", () => {
+  withRoot((root) => {
+    mkdirSync(join(root, "docs"));
+    assert.throws(
+      () =>
+        installHarnessSkills({
+          repositoryRoot: root,
+          operation: "init",
+          tools: "none",
+          noAgents: true,
+          plansDir: "Docs/plans",
+        }),
+      (error: unknown) =>
+        error instanceof PlanletError && error.code === "invalid_config",
+    );
+    assert.equal(existsSync(join(root, ".planlet.json")), false);
+  });
+});
+
+test("init --plans-dir .agents with default tools is invalid_config", () => {
+  withRoot((root) => {
+    assert.throws(
+      () =>
+        installHarnessSkills({
+          repositoryRoot: root,
+          operation: "init",
+          noAgents: true,
+          plansDir: ".agents",
+          source: BASE_SOURCE,
+        }),
+      (error: unknown) =>
+        error instanceof PlanletError && error.code === "invalid_config",
+    );
+    assert.equal(existsSync(join(root, ".planlet.json")), false);
+    assert.equal(existsSync(join(root, ".agents")), false);
+  });
+});
+
+test("init --plans-dir .agents/skills with default tools is invalid_config", () => {
+  withRoot((root) => {
+    assert.throws(
+      () =>
+        installHarnessSkills({
+          repositoryRoot: root,
+          operation: "init",
+          noAgents: true,
+          plansDir: ".agents/skills",
+          source: BASE_SOURCE,
+        }),
+      (error: unknown) =>
+        error instanceof PlanletError && error.code === "invalid_config",
+    );
+    assert.equal(existsSync(join(root, ".planlet.json")), false);
+    assert.equal(existsSync(join(root, ".agents")), false);
+  });
+});
+
+test("init --plans-dir AGENTS.md without --no-agents is invalid_config", () => {
+  withRoot((root) => {
+    assert.throws(
+      () =>
+        installHarnessSkills({
+          repositoryRoot: root,
+          operation: "init",
+          tools: "none",
+          plansDir: "AGENTS.md",
+        }),
+      (error: unknown) =>
+        error instanceof PlanletError && error.code === "invalid_config",
+    );
+    assert.equal(existsSync(join(root, ".planlet.json")), false);
+    assert.equal(existsSync(join(root, "AGENTS.md")), false);
+  });
+});
+
+test("init --plans-dir .AGENTS with default tools is invalid_config", () => {
+  withRoot((root) => {
+    assert.throws(
+      () =>
+        installHarnessSkills({
+          repositoryRoot: root,
+          operation: "init",
+          noAgents: true,
+          plansDir: ".AGENTS",
+          source: BASE_SOURCE,
+        }),
+      (error: unknown) =>
+        error instanceof PlanletError && error.code === "invalid_config",
+    );
+    assert.equal(existsSync(join(root, ".planlet.json")), false);
+    assert.equal(existsSync(join(root, ".AGENTS")), false);
+    assert.equal(existsSync(join(root, ".agents")), false);
+  });
+});
+
+test("init --plans-dir agents.MD without --no-agents is invalid_config", () => {
+  withRoot((root) => {
+    assert.throws(
+      () =>
+        installHarnessSkills({
+          repositoryRoot: root,
+          operation: "init",
+          tools: "none",
+          plansDir: "agents.MD",
+        }),
+      (error: unknown) =>
+        error instanceof PlanletError && error.code === "invalid_config",
+    );
+    assert.equal(existsSync(join(root, ".planlet.json")), false);
+    assert.equal(existsSync(join(root, "agents.MD")), false);
+    assert.equal(existsSync(join(root, "AGENTS.md")), false);
+  });
+});
+
+test("init --plans-dir rejects a plans path that physically aliases a harness destination", () => {
+  withRoot((root) => {
+    mkdirSync(join(root, "store", "skills"), { recursive: true });
+    mkdirSync(join(root, ".claude"));
+    symlinkSync(join(root, "store", "skills"), join(root, ".claude", "skills"));
+    assert.throws(
+      () =>
+        installHarnessSkills({
+          repositoryRoot: root,
+          operation: "init",
+          tools: "claude",
+          noAgents: true,
+          plansDir: "store",
+          source: BASE_SOURCE,
+        }),
+      (error: unknown) =>
+        error instanceof PlanletError && error.code === "invalid_config",
+    );
+    assert.equal(existsSync(join(root, ".planlet.json")), false);
+  });
+});
+
+test("init skips a symlinked AGENTS.md and still writes a custom plansDir", () => {
+  withRoot((root) => {
+    const outside = join(
+      root,
+      "..",
+      `planlet-agents-outside-${process.pid}.md`,
+    );
+    writeFileSync(outside, "# outside\n");
+    try {
+      symlinkSync(outside, join(root, "AGENTS.md"));
+      const outcome = installHarnessSkills({
+        repositoryRoot: root,
+        operation: "init",
+        tools: "none",
+        plansDir: "docs/plans",
+        source: BASE_SOURCE,
+      });
+      assert.equal(existsSync(join(root, ".planlet.json")), true);
+      assert.equal(existsSync(join(root, "docs", "plans")), true);
+      assert.equal(outcome.data.agentFiles["AGENTS.md"], "skipped");
+    } finally {
+      unlinkSync(outside);
+    }
   });
 });
 

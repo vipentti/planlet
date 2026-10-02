@@ -25,11 +25,14 @@ export function assertValidSlug(value: string): string {
   return value;
 }
 
-export function assertCreatableSlug(value: string): string {
+export function assertCreatableSlug(
+  value: string,
+  archiveDirectory = "plans/completed/",
+): string {
   if (DATE_PREFIX_PATTERN.test(value)) {
     throw new PlanletError("invalid_slug", `Invalid planlet slug: ${value}`, {
       details: { slug: value },
-      next: "Slugs must not start with a date (YYYY-MM-DD-); that prefix is reserved for archived plans under plans/completed/.",
+      next: `Slugs must not start with a date (YYYY-MM-DD-); that prefix is reserved for archived plans under ${archiveDirectory}.`,
     });
   }
 

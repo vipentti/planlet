@@ -135,6 +135,7 @@ test("no arguments renders the dashboard as TOON on stdout", () => {
     assert.equal(result.exitCode, EXIT_CODES.success);
     assert.equal(result.stderr, "");
     assert.deepEqual(decode(result.stdout.trimEnd()), {
+      plansDir: "plans",
       plans: [
         { slug: "alpha", state: "ready_to_complete", done: 1, total: 1 },
         { slug: "beta", state: "planned", done: 0, total: 1 },
@@ -381,6 +382,7 @@ test("warnings reach stderr while data stays on stdout and the exit code stays s
 
     assert.equal(listed.exitCode, EXIT_CODES.success);
     assert.deepEqual(decode(listed.stdout.trimEnd()), {
+      plansDir: "plans",
       plans: [{ slug: "override", state: "completed", done: 0, total: 1 }],
     });
     assert.doesNotMatch(listed.stdout, /diagnostics/);

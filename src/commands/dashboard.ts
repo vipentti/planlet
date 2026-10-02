@@ -1,4 +1,5 @@
 import { listPlanlets } from "../core/plan/read-only.js";
+import { readPlansDir } from "../core/plans-dir.js";
 import type { ExitCode } from "../errors/codes.js";
 import {
   compactSummary,
@@ -12,6 +13,7 @@ export function handleDashboard(context: ExecutionContext): ExitCode {
     const summaries = listPlanlets({ repositoryRoot: context.root });
     return {
       data: {
+        plansDir: readPlansDir(context.root),
         plans: summaries.map(compactSummary),
         summary: {
           active: summaries.length,

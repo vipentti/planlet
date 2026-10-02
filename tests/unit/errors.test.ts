@@ -15,6 +15,8 @@ test("each error code is locked to its exact exit-code category", () => {
   const expected: Record<ErrorCode, number> = {
     repo_not_found: EXIT_CODES.operational,
     plans_not_initialized: EXIT_CODES.operational,
+    invalid_config: EXIT_CODES.operational,
+    plans_dir_conflict: EXIT_CODES.operational,
     invalid_slug: EXIT_CODES.usage,
     plan_not_found: EXIT_CODES.operational,
     plan_already_exists: EXIT_CODES.stateTransition,

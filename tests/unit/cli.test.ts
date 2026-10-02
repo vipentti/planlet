@@ -51,7 +51,10 @@ test("the README command table lists exactly the commands help does", async () =
 
 test("installation command help documents selectors and force flags", async () => {
   for (const [command, pattern] of [
-    ["init", /init \[--tools <ids>\] \[--force\]/],
+    [
+      "init",
+      /init \[--tools <ids>\] \[--force\] \[--no-agents\] \[--plans-dir <relative>\]/,
+    ],
     ["update", /update \[--tools <ids>\] \[--force\]/],
     ["tools", /planlet tools/],
     ["onboard", /planlet onboard/],

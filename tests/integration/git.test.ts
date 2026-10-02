@@ -4,7 +4,11 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
 
-import { listDiffPaths, tryStage } from "../../src/core/git.js";
+import {
+  listDiffEntries,
+  listDiffPaths,
+  tryStage,
+} from "../../src/core/git.js";
 import { PlanletError } from "../../src/errors/planlet-error.js";
 import {
   addWorktree,
@@ -31,6 +35,17 @@ test("listDiffPaths resolves base refs and preserves NUL-delimited paths", async
       listDiffPaths(root, { base: "HEAD~1", pathspec: "plans/" }),
       ["plans/space-plan/file with space name.md"],
     );
+    const entries = listDiffEntries(root, {
+      base: "HEAD~1",
+      pathspec: "plans/",
+    });
+    assert.equal(entries.length, 1);
+    assert.equal(entries[0]!.path, "plans/space-plan/file with space name.md");
+    assert.equal(entries[0]!.srcMode, "000000");
+    assert.equal(entries[0]!.dstMode, "100644");
+    assert.equal(entries[0]!.status, "A");
+    assert.match(entries[0]!.srcSha, /^0{40}$/);
+    assert.match(entries[0]!.dstSha, /^[0-9a-f]{40}$/);
   });
 });
 
@@ -138,3 +153,44 @@ test("tryStage finds a git marker in a parent directory for a nested root", asyn
     assert.ok(porcelain(root).includes("A  packages/pkg/a.txt"));
   });
 });
+
+test(
+  "listDiffEntries preserves non-UTF8 Git path bytes",
+  {
+    skip:
+      process.platform === "win32" || process.platform === "darwin"
+        ? "filesystem rejects non-UTF8 names"
+        : false,
+  },
+  async () => {
+    await withGitRoot(async (root) => {
+      writeFileSync(join(root, "placeholder.txt"), "base\n");
+      commitAll(root, "base");
+      const planDir = join(root, "plans", "byte-plan");
+      mkdirSync(planDir, { recursive: true });
+      writeFileSync(
+        Buffer.concat([
+          Buffer.from(`${planDir}/`, "utf8"),
+          Buffer.from([0xff]),
+        ]),
+        "changed\n",
+      );
+      writeFileSync(join(planDir, "plan.md"), "# byte-plan\n");
+      commitAll(root, "change");
+
+      const entries = listDiffEntries(root, {
+        base: "HEAD~1",
+        pathspec: "plans/",
+      });
+      const expected = Buffer.concat([
+        Buffer.from("plans/byte-plan/", "utf8"),
+        Buffer.from([0xff]),
+      ]).toString("latin1");
+      assert.ok(
+        entries.some(
+          (entry) => entry.path === expected && entry.status === "A",
+        ),
+      );
+    });
+  },
+);

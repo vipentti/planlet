@@ -1,5 +1,6 @@
 import type { PlanletState } from "../core/plan/models.js";
 import { listPlanlets } from "../core/plan/read-only.js";
+import { readPlansDir } from "../core/plans-dir.js";
 import type { ExitCode } from "../errors/codes.js";
 import {
   compactSummary,
@@ -23,7 +24,10 @@ export function handleList(
       ...arguments_,
     });
     return {
-      data: { plans: summaries.map(compactSummary) },
+      data: {
+        plansDir: readPlansDir(context.root),
+        plans: summaries.map(compactSummary),
+      },
       warnings: warningsFromSummaries(summaries),
     };
   }).exitCode;

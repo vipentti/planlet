@@ -10,7 +10,20 @@ import {
   type HarnessDestination,
   type HarnessToolId,
 } from "./harnesses.js";
-import { byName, pathKind, resolveSafePath, sortedRecord } from "../paths.js";
+import { tryStage } from "../git.js";
+import {
+  byName,
+  isPathWithinRoot,
+  pathKind,
+  resolveSafePath,
+  sortedRecord,
+  tryLstat,
+} from "../paths.js";
+import {
+  prepareInitPlansDirectory,
+  resolvePlansLocation,
+  writePlansDirConfig,
+} from "../plans-dir.js";
 import {
   INSTALLATION_MANIFEST,
   createInstallationManifest,
@@ -230,12 +243,89 @@ function inspectDestination(
   };
 }
 
+function posixPathOverlaps(left: string, right: string): boolean {
+  const a = left.split("/");
+  const b = right.split("/");
+  const n = Math.min(a.length, b.length);
+  for (let i = 0; i < n; i += 1) {
+    if (a[i]!.toLowerCase() !== b[i]!.toLowerCase()) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function ownedAgentFiles(
+  repositoryRoot: string,
+  operation: "init" | "update",
+  skip: boolean | undefined,
+): readonly { readonly relativePath: string; readonly path: string }[] {
+  return agentFileRelativePaths(repositoryRoot, operation, skip).map(
+    (relativePath) => ({
+      relativePath,
+      path: join(repositoryRoot, relativePath),
+    }),
+  );
+}
+
+function agentFileRelativePaths(
+  repositoryRoot: string,
+  operation: "init" | "update",
+  skip: boolean | undefined,
+): readonly string[] {
+  if (skip === true) {
+    return [];
+  }
+  const names: string[] = [];
+  for (const file of ["AGENTS.md", "CLAUDE.md"] as const) {
+    const stats = tryLstat(join(repositoryRoot, file));
+    if (stats === null) {
+      if (operation === "init" && file === "AGENTS.md") {
+        names.push(file);
+      }
+      continue;
+    }
+    if (stats.isFile()) {
+      names.push(file);
+    }
+  }
+  return names;
+}
+
+function resolvedPathOverlaps(left: string, right: string): boolean {
+  return isPathWithinRoot(left, right) || isPathWithinRoot(right, left);
+}
+
+function assertPlansDirClearOfOwnedPaths(
+  plansDir: string,
+  plansPath: string,
+  owned: readonly { readonly relativePath: string; readonly path: string }[],
+): void {
+  for (const item of owned) {
+    if (
+      !posixPathOverlaps(plansDir, item.relativePath) &&
+      !resolvedPathOverlaps(plansPath, item.path)
+    ) {
+      continue;
+    }
+    throw new PlanletError(
+      "invalid_config",
+      `plansDir overlaps a path this operation owns: ${item.relativePath}`,
+      {
+        details: { plansDir, owned: item.relativePath },
+        next: "Choose a plansDir that is not equal to, inside, or a parent of a harness destination or agent file this command will write",
+      },
+    );
+  }
+}
+
 export function installHarnessSkills(options: {
   readonly repositoryRoot: string;
   readonly operation: "init" | "update";
   readonly tools?: string | undefined;
   readonly force?: boolean | undefined;
   readonly noAgents?: boolean | undefined;
+  readonly plansDir?: string | undefined;
   readonly source?: CanonicalSkillSource | undefined;
   /** @internal Fault-injection seam for the publish transaction. Tests only. */
   readonly transactionHooks?: InstallTransactionHooks | undefined;
@@ -246,30 +336,56 @@ export function installHarnessSkills(options: {
     options.repositoryRoot,
     selectedToolIds,
   );
-  const plansPath = resolveSafePath(options.repositoryRoot, "plans");
-  const plansKind = pathKind(plansPath);
-  if (
-    options.operation === "init" &&
-    plansKind !== "missing" &&
-    plansKind !== "directory"
-  ) {
-    throw new PlanletError(
-      "write_conflict",
-      `Plans path is not a directory: ${plansPath}`,
-      {
-        details: { path: plansPath },
-      },
-    );
-  }
-
   const warnings: string[] = [];
   const { value, releaseWarning } = withHarnessInstallLock(
     options.repositoryRoot,
     () => {
+      const prepared =
+        options.operation === "init"
+          ? prepareInitPlansDirectory(options.repositoryRoot, options.plansDir)
+          : resolvePlansLocation(options.repositoryRoot);
+      const plansPath = prepared.plansPath;
+      const plansKind = pathKind(plansPath);
+      if (
+        options.operation === "init" &&
+        plansKind !== "missing" &&
+        plansKind !== "directory"
+      ) {
+        throw new PlanletError(
+          "write_conflict",
+          `Plans path is not a directory: ${plansPath}`,
+          {
+            details: { path: plansPath },
+          },
+        );
+      }
+
       const plansInitialized =
         options.operation === "init" && plansKind === "missing";
 
+      const writeConfigIfNeeded = (): boolean => {
+        if (
+          options.operation !== "init" ||
+          !("shouldWriteConfig" in prepared) ||
+          !prepared.shouldWriteConfig
+        ) {
+          return false;
+        }
+        const configPath = writePlansDirConfig(
+          options.repositoryRoot,
+          prepared.plansDir,
+        );
+        tryStage(
+          options.repositoryRoot,
+          [configPath],
+          warnings,
+          ".planlet.json",
+        );
+        return true;
+      };
+
       let summaries: readonly HarnessInstallationSummary[] = [];
+      let wroteConfig = false;
       if (destinations.length > 0) {
         const source = options.source ?? enumerateCanonicalSkills();
         const inspections = destinations.map((destination) =>
@@ -293,7 +409,20 @@ export function installHarnessSkills(options: {
           );
         }
 
+        assertPlansDirClearOfOwnedPaths(prepared.plansDir, plansPath, [
+          ...actionable.map((inspection) => ({
+            relativePath: inspection.destination.relativePath,
+            path: inspection.destination.path,
+          })),
+          ...ownedAgentFiles(
+            options.repositoryRoot,
+            options.operation,
+            options.noAgents,
+          ),
+        ]);
+
         // Preflight passed: only now mutate the repository.
+        wroteConfig = writeConfigIfNeeded();
         if (plansInitialized) mkdirSync(plansPath, { recursive: true });
         summaries = inspections.map((inspection) =>
           options.operation === "update" && inspection.state === "missing"
@@ -311,8 +440,18 @@ export function installHarnessSkills(options: {
                 options.transactionHooks,
               ),
         );
-      } else if (plansInitialized) {
-        mkdirSync(plansPath, { recursive: true });
+      } else {
+        assertPlansDirClearOfOwnedPaths(
+          prepared.plansDir,
+          plansPath,
+          ownedAgentFiles(
+            options.repositoryRoot,
+            options.operation,
+            options.noAgents,
+          ),
+        );
+        wroteConfig = writeConfigIfNeeded();
+        if (plansInitialized) mkdirSync(plansPath, { recursive: true });
       }
 
       // Agent files are written only after every destination inspected and
@@ -329,6 +468,7 @@ export function installHarnessSkills(options: {
         operation: options.operation,
         changed:
           plansInitialized ||
+          wroteConfig ||
           summaries.some((summary) => summary.changed) ||
           agents.changed,
         plansInitialized,

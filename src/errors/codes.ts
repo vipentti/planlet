@@ -12,6 +12,8 @@ export type ExitCode = (typeof EXIT_CODES)[keyof typeof EXIT_CODES];
 export const ERROR_EXIT_CODES = Object.freeze({
   repo_not_found: EXIT_CODES.operational,
   plans_not_initialized: EXIT_CODES.operational,
+  invalid_config: EXIT_CODES.operational,
+  plans_dir_conflict: EXIT_CODES.operational,
   invalid_slug: EXIT_CODES.usage,
   plan_not_found: EXIT_CODES.operational,
   plan_already_exists: EXIT_CODES.stateTransition,

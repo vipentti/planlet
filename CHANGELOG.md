@@ -6,6 +6,31 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and thi
 
 ## [Unreleased]
 
+### Added
+
+- Optional committed `.planlet.json` at the discovered repository root may set
+  `plansDir` (relative posix path). Absent file keeps `plans/`. `planlet init
+--plans-dir <relative>` writes the file only when the value is not `plans`,
+  and refuses a path that equals, contains, or sits inside a harness
+  destination or agent file that same init/update will write. Segments ending
+  in a period, or Win32 reserved device names, are invalid. Config filenames
+  and `plansDir` segments must match on-disk spelling, including the default
+  `plans/` segment and leftover default storage. `list` and the
+  dashboard report the effective `plansDir`. YAML siblings and rejected
+  config names fail closed; unknown JSON keys are ignored. Leftover `plans/`
+  after a non-default `plansDir` is `plans_dir_conflict`, distinct from
+  `plans_not_initialized`. A `git mv` of unchanged planlets onto a new
+  `plansDir` does not make `check-completion` treat them as newly touched:
+  Git modes must match, and `plan.md`/`tasks.md` may differ only when
+  relative destinations keep the same repository targets after the prefix
+  change, with scheme, absolute, and invalid destinations plus query and
+  fragment suffixes kept byte-identical. Overlapping old and new `plansDir`
+  prefixes pair by Git add/delete side, not lexical membership in both
+  namespaces. Relocation matching keeps Git
+  filename bytes, so distinct non-UTF8 names cannot collapse. A directory
+  that cannot be listed is `invalid_config`, not a silent fallback to
+  `plans/`.
+
 ## [0.8.0] - 2026-09-27
 
 ### Added

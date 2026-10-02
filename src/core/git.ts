@@ -30,6 +30,38 @@ function runGitOutput(
   }
 }
 
+function runGitBlob(
+  repositoryRoot: string,
+  args: readonly string[],
+): { stdout: Buffer; failure: string | undefined } {
+  try {
+    const result = spawnSync("git", args, {
+      cwd: repositoryRoot,
+    });
+    if (result.error !== undefined) {
+      return { stdout: Buffer.alloc(0), failure: result.error.message };
+    }
+    if (result.status !== 0) {
+      const stderr =
+        result.stderr instanceof Buffer
+          ? result.stderr.toString("utf8")
+          : String(result.stderr);
+      return {
+        stdout: Buffer.alloc(0),
+        failure:
+          stderr.trim() || `git ${args[0]} exited with status ${result.status}`,
+      };
+    }
+    const stdout =
+      result.stdout instanceof Buffer
+        ? result.stdout
+        : Buffer.from(result.stdout ?? "");
+    return { stdout, failure: undefined };
+  } catch (error) {
+    return { stdout: Buffer.alloc(0), failure: errorMessage(error) };
+  }
+}
+
 function runGit(
   repositoryRoot: string,
   args: readonly string[],
@@ -135,6 +167,23 @@ function resolveBaseOid(repositoryRoot: string, base: string): string {
   return oid;
 }
 
+export function resolveMergeBase(repositoryRoot: string, base: string): string {
+  const oid = resolveBaseOid(repositoryRoot, base);
+  const mergeBase = runGitOutput(repositoryRoot, ["merge-base", oid, "HEAD"]);
+  if (mergeBase.failure !== undefined) {
+    throw new PlanletError("git_error", "Could not resolve Git merge base", {
+      details: { base, reason: mergeBase.failure },
+    });
+  }
+  const mergeOid = mergeBase.stdout.trim();
+  if (mergeOid.length === 0) {
+    throw new PlanletError("git_error", "Git returned an empty merge base", {
+      details: { base },
+    });
+  }
+  return mergeOid;
+}
+
 /**
  * Resolves a caller-supplied base ref and lists changed paths from its
  * three-dot range to HEAD. Rename detection is disabled so an archive move
@@ -148,7 +197,7 @@ export function listDiffPaths(
 ): readonly string[] {
   const oid = resolveBaseOid(repositoryRoot, options.base);
   const pathspec = options.pathspec ?? "plans/";
-  const diff = runGitOutput(repositoryRoot, [
+  const diff = runGitBlob(repositoryRoot, [
     "diff",
     "--name-only",
     "--no-renames",
@@ -164,7 +213,138 @@ export function listDiffPaths(
     });
   }
 
-  return diff.stdout.split("\0").filter((path) => path.length > 0);
+  return splitGitNul(diff.stdout);
+}
+
+export interface DiffPathEntry {
+  readonly path: string;
+  readonly srcMode: string;
+  readonly dstMode: string;
+  readonly srcSha: string;
+  readonly dstSha: string;
+  readonly status: string;
+}
+
+const RAW_DIFF_META =
+  /^:(\d+) (\d+) ([0-9a-f]{40}) ([0-9a-f]{40}) ([A-Z](?:\d{3})?)$/;
+
+/**
+ * Same range and rename policy as `listDiffPaths`, plus blob SHAs so a
+ * plansDir relocation can be distinguished from an in-place edit.
+ */
+export function listDiffEntries(
+  repositoryRoot: string,
+  options: ListDiffPathsOptions,
+): readonly DiffPathEntry[] {
+  const oid = resolveBaseOid(repositoryRoot, options.base);
+  const pathspec = options.pathspec ?? "plans/";
+  const diff = runGitBlob(repositoryRoot, [
+    "diff",
+    "--raw",
+    "--abbrev=40",
+    "--no-renames",
+    "--relative",
+    "-z",
+    `${oid}...HEAD`,
+    "--",
+    pathspec,
+  ]);
+  if (diff.failure !== undefined) {
+    throw new PlanletError("git_error", "Could not list Git changes", {
+      details: { base: options.base, reason: diff.failure },
+    });
+  }
+
+  const parts = splitGitNulKeepEmpty(diff.stdout);
+  const entries: DiffPathEntry[] = [];
+  for (let index = 0; index + 1 < parts.length; index += 2) {
+    const meta = parts[index]!;
+    const path = parts[index + 1]!;
+    if (path.length === 0) {
+      continue;
+    }
+    const match = RAW_DIFF_META.exec(meta);
+    if (match === null) {
+      throw new PlanletError("git_error", "Could not parse Git raw diff", {
+        details: { base: options.base, record: meta },
+      });
+    }
+    entries.push({
+      path,
+      srcMode: match[1]!,
+      dstMode: match[2]!,
+      srcSha: match[3]!,
+      dstSha: match[4]!,
+      status: match[5]!,
+    });
+  }
+  return entries;
+}
+
+/** Git `-z` paths as latin1 so each filename byte stays distinct. */
+function splitGitNul(stdout: Buffer): string[] {
+  return splitGitNulKeepEmpty(stdout).filter((path) => path.length > 0);
+}
+
+function splitGitNulKeepEmpty(stdout: Buffer): string[] {
+  return stdout.toString("latin1").split("\0");
+}
+
+export function readCommitFile(
+  repositoryRoot: string,
+  options: { readonly base: string; readonly path: string },
+): string | undefined {
+  const oid = resolveBaseOid(repositoryRoot, options.base);
+  const gitPath = options.path.startsWith("./")
+    ? options.path
+    : `./${options.path}`;
+  const listed = runGitOutput(repositoryRoot, [
+    "ls-tree",
+    "--name-only",
+    "-z",
+    oid,
+    "--",
+    gitPath,
+  ]);
+  if (listed.failure !== undefined) {
+    throw new PlanletError("git_error", "Could not read Git tree path", {
+      details: {
+        base: options.base,
+        path: options.path,
+        reason: listed.failure,
+      },
+    });
+  }
+  const names = listed.stdout.split("\0").filter((name) => name.length > 0);
+  if (names.length === 0) {
+    return undefined;
+  }
+  const shown = runGitOutput(repositoryRoot, ["show", `${oid}:${gitPath}`]);
+  if (shown.failure !== undefined) {
+    throw new PlanletError("git_error", "Could not read Git blob", {
+      details: {
+        base: options.base,
+        path: options.path,
+        reason: shown.failure,
+      },
+    });
+  }
+  return shown.stdout;
+}
+
+export function readGitBlob(repositoryRoot: string, sha: string): Buffer {
+  if (!/^[0-9a-f]{40}$/.test(sha) || sha === "0".repeat(40)) {
+    throw new PlanletError("git_error", "Could not read Git blob", {
+      details: { sha },
+    });
+  }
+  const shown = runGitBlob(repositoryRoot, ["cat-file", "-p", sha]);
+  if (shown.failure !== undefined) {
+    throw new PlanletError("git_error", "Could not read Git blob", {
+      details: { sha, reason: shown.failure },
+    });
+  }
+  return shown.stdout;
 }
 
 /**

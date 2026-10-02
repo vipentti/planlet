@@ -1,5 +1,11 @@
 import { isPlanletError } from "../errors/planlet-error.js";
-import { listDiffPaths } from "./git.js";
+import {
+  listDiffEntries,
+  readCommitFile,
+  readGitBlob,
+  resolveMergeBase,
+  type DiffPathEntry,
+} from "./git.js";
 import { validatePlanlets, type ValidationResult } from "./plan/read-only.js";
 import {
   isValidSlug,
@@ -7,6 +13,14 @@ import {
   type ParsedArchiveName,
 } from "./plan/slugs.js";
 import { byName } from "./paths.js";
+import { relocationMarkdownPreservesTargets } from "./plan/link-rewrite.js";
+import {
+  DEFAULT_PLANS_DIR,
+  joinPlansRelative,
+  parsePlansDirDocument,
+  plansDirPathspec,
+  readPlansDir,
+} from "./plans-dir.js";
 
 interface CompletionViolation {
   readonly slug: string;
@@ -26,12 +40,29 @@ export interface CheckCompletionOptions {
   readonly base: string;
 }
 
-function extractActiveSlug(path: string): string | undefined {
+function remainingAfterPlansDir(
+  path: string,
+  plansDir: string,
+): readonly string[] | undefined {
+  const prefix = plansDir.split("/");
   const segments = path.split("/");
-  const slug = segments[1];
+  if (segments.length <= prefix.length) {
+    return undefined;
+  }
+  for (let index = 0; index < prefix.length; index += 1) {
+    if (segments[index] !== prefix[index]) {
+      return undefined;
+    }
+  }
+  return segments.slice(prefix.length);
+}
+
+function extractActiveSlug(path: string, plansDir: string): string | undefined {
+  const rest = remainingAfterPlansDir(path, plansDir);
+  const slug = rest?.[0];
   if (
-    segments.length < 3 ||
-    segments[0] !== "plans" ||
+    rest === undefined ||
+    rest.length < 2 ||
     slug === undefined ||
     slug === "completed" ||
     !isValidSlug(slug)
@@ -44,22 +75,26 @@ function extractActiveSlug(path: string): string | undefined {
 /** Extracts valid active-planlet slug segments from repository-relative paths. */
 export function extractTouchedSlugs(
   paths: readonly string[],
+  plansDir = DEFAULT_PLANS_DIR,
 ): readonly string[] {
   const slugs = new Set<string>();
   for (const path of paths) {
-    const slug = extractActiveSlug(path);
+    const slug = extractActiveSlug(path, plansDir);
     if (slug !== undefined) slugs.add(slug);
   }
   return [...slugs].sort(byName);
 }
 
-function extractArchivedPath(path: string): ParsedArchiveName | undefined {
-  const segments = path.split("/");
-  const archiveName = segments[2];
+function extractArchivedPath(
+  path: string,
+  plansDir: string,
+): ParsedArchiveName | undefined {
+  const rest = remainingAfterPlansDir(path, plansDir);
+  const archiveName = rest?.[1];
   if (
-    segments.length < 4 ||
-    segments[0] !== "plans" ||
-    segments[1] !== "completed" ||
+    rest === undefined ||
+    rest.length < 3 ||
+    rest[0] !== "completed" ||
     archiveName === undefined
   ) {
     return undefined;
@@ -75,14 +110,15 @@ export interface CompletedPathCandidate {
 /** Extracts active/archive path pairs changed in the Git range. */
 export function extractCompletedSlugs(
   paths: readonly string[],
+  plansDir = DEFAULT_PLANS_DIR,
 ): readonly CompletedPathCandidate[] {
   const activeSlugs = new Set<string>();
   const archiveNamesBySlug = new Map<string, Set<string>>();
   for (const path of paths) {
-    const activeSlug = extractActiveSlug(path);
+    const activeSlug = extractActiveSlug(path, plansDir);
     if (activeSlug !== undefined) activeSlugs.add(activeSlug);
 
-    const archive = extractArchivedPath(path);
+    const archive = extractArchivedPath(path, plansDir);
     if (archive === undefined) continue;
     const archiveNames = archiveNamesBySlug.get(archive.slug) ?? new Set();
     archiveNames.add(archive.archiveName);
@@ -157,10 +193,24 @@ export function deriveCompletionResult(
 export function checkCompletion(
   options: CheckCompletionOptions,
 ): CheckCompletionResult {
-  const changedPaths = listDiffPaths(options.repositoryRoot, {
-    base: options.base,
-    pathspec: "plans/",
+  const plansDir = readPlansDir(options.repositoryRoot);
+  const mergeBase = resolveMergeBase(options.repositoryRoot, options.base);
+  const basePlansDir = readBasePlansDir(options.repositoryRoot, mergeBase);
+  const currentEntries = listDiffEntries(options.repositoryRoot, {
+    base: mergeBase,
+    pathspec: plansDirPathspec(plansDir),
   });
+  const baseEntries =
+    basePlansDir === plansDir
+      ? []
+      : listDiffEntries(options.repositoryRoot, {
+          base: mergeBase,
+          pathspec: plansDirPathspec(basePlansDir),
+        });
+  const entries = [...currentEntries, ...baseEntries];
+  const changedPaths = [...new Set(entries.map((entry) => entry.path))].sort(
+    byName,
+  );
   let validation: ValidationResult;
   try {
     validation = validatePlanlets({
@@ -182,8 +232,149 @@ export function checkCompletion(
   }
   return deriveCompletionResult(
     options.base,
-    extractTouchedSlugs(changedPaths),
+    excludeExactPrefixRelocations(
+      extractTouchedSlugs(changedPaths, plansDir),
+      entries,
+      basePlansDir,
+      plansDir,
+      options.repositoryRoot,
+    ),
     validation,
-    extractCompletedSlugs(changedPaths),
+    extractCompletedSlugs(changedPaths, plansDir),
+  );
+}
+
+function readBasePlansDir(repositoryRoot: string, base: string): string {
+  const text = readCommitFile(repositoryRoot, {
+    base,
+    path: ".planlet.json",
+  });
+  if (text === undefined) {
+    return DEFAULT_PLANS_DIR;
+  }
+  return parsePlansDirDocument(text, ".planlet.json");
+}
+
+function slugFileRest(
+  path: string,
+  plansDir: string,
+  slug: string,
+): string | undefined {
+  const rest = remainingAfterPlansDir(path, plansDir);
+  if (rest === undefined || rest[0] !== slug || rest.length < 2) {
+    return undefined;
+  }
+  return rest.slice(1).join("/");
+}
+
+function decodeUtf8Strict(bytes: Buffer): string | undefined {
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    return undefined;
+  }
+}
+
+function isExactPrefixRelocation(
+  slug: string,
+  entries: readonly DiffPathEntry[],
+  fromPlansDir: string,
+  toPlansDir: string,
+  repositoryRoot?: string,
+): boolean {
+  const fromFiles = new Map<
+    string,
+    { readonly sha: string; readonly mode: string }
+  >();
+  const toFiles = new Map<
+    string,
+    { readonly sha: string; readonly mode: string }
+  >();
+  for (const entry of entries) {
+    const fromRest = slugFileRest(entry.path, fromPlansDir, slug);
+    const toRest = slugFileRest(entry.path, toPlansDir, slug);
+    if (entry.status === "D") {
+      if (fromRest !== undefined) {
+        fromFiles.set(fromRest, { sha: entry.srcSha, mode: entry.srcMode });
+        continue;
+      }
+      if (toRest !== undefined) {
+        return false;
+      }
+      continue;
+    }
+    if (entry.status === "A") {
+      if (toRest !== undefined) {
+        toFiles.set(toRest, { sha: entry.dstSha, mode: entry.dstMode });
+        continue;
+      }
+      if (fromRest !== undefined) {
+        return false;
+      }
+      continue;
+    }
+    if (fromRest !== undefined || toRest !== undefined) {
+      return false;
+    }
+  }
+  if (fromFiles.size === 0 || fromFiles.size !== toFiles.size) {
+    return false;
+  }
+  for (const [rest, from] of fromFiles) {
+    const to = toFiles.get(rest);
+    if (to === undefined || to.mode !== from.mode) {
+      return false;
+    }
+    if (rest !== "plan.md" && rest !== "tasks.md") {
+      if (to.sha !== from.sha) {
+        return false;
+      }
+      continue;
+    }
+    if (to.sha === from.sha && repositoryRoot === undefined) {
+      continue;
+    }
+    if (repositoryRoot === undefined) {
+      return false;
+    }
+    const oldText = decodeUtf8Strict(readGitBlob(repositoryRoot, from.sha));
+    const newText = decodeUtf8Strict(readGitBlob(repositoryRoot, to.sha));
+    if (oldText === undefined || newText === undefined) {
+      return false;
+    }
+    if (
+      !relocationMarkdownPreservesTargets({
+        planDir: joinPlansRelative(fromPlansDir, slug),
+        fromPrefix: fromPlansDir,
+        toPrefix: toPlansDir,
+        oldText,
+        newText,
+      })
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+export function excludeExactPrefixRelocations(
+  slugs: readonly string[],
+  entries: readonly DiffPathEntry[],
+  fromPlansDir: string,
+  toPlansDir: string,
+  repositoryRoot?: string,
+): readonly string[] {
+  if (fromPlansDir === toPlansDir) {
+    return slugs;
+  }
+  return slugs.filter(
+    (slug) =>
+      !isExactPrefixRelocation(
+        slug,
+        entries,
+        fromPlansDir,
+        toPlansDir,
+        repositoryRoot,
+      ),
   );
 }

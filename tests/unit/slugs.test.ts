@@ -66,6 +66,19 @@ test("slug validation keeps persistent syntax backward compatible while creation
     );
   }
 
+  assert.throws(
+    () => assertCreatableSlug("2026-08-25-my-plan", "docs/plans/completed/"),
+    (error) => {
+      assert.ok(error instanceof PlanletError);
+      assert.equal(error.code, "invalid_slug");
+      assert.match(
+        error.next ?? "",
+        /reserved for archived plans under docs\/plans\/completed\//,
+      );
+      return true;
+    },
+  );
+
   for (const slug of ["my-2026-plan", "cli-2024-01-01", "a-2026-08-25"]) {
     assert.equal(isValidSlug(slug), true, slug);
     assert.equal(assertValidSlug(slug), slug);

@@ -80,6 +80,7 @@ test("command handlers are directly callable with an injected execution context"
 
     assert.equal(handleList({}, executionContext(root, capture)), 0);
     assert.deepEqual(decoded(capture.stdout), {
+      plansDir: "plans",
       plans: [
         {
           slug: "direct-call",
@@ -163,6 +164,7 @@ test("in-process dispatch routes create and read-only command flags", async () =
     ) as Array<Record<string, unknown>>;
     assert.equal((outputs[0]?.plan as { slug: string }).slug, "routed-plan");
     assert.deepEqual(outputs[1], {
+      plansDir: "plans",
       plans: [{ slug: "routed-plan", state: "planned", done: 0, total: 1 }],
     });
     assert.equal(outputs[2]?.part, "plan");
@@ -250,6 +252,7 @@ test("no arguments render the compact active-plan dashboard", async () => {
 
     assert.equal(await main([], runtime), 0);
     assert.deepEqual(decoded(capture.stdout), {
+      plansDir: "plans",
       plans: [
         { slug: "active-plan", state: "in_progress", done: 1, total: 2 },
         {

@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   deriveCompletionResult,
+  excludeExactPrefixRelocations,
   extractCompletedSlugs,
   extractTouchedSlugs,
 } from "../../src/core/check-completion.js";
@@ -63,6 +64,223 @@ test("extractCompletedSlugs matches changed active and archive paths", () => {
         archiveName: "2028-01-01-removed-plan",
       },
     ],
+  );
+});
+
+test("slug extraction strips a two-segment plansDir prefix", () => {
+  assert.deepEqual(
+    extractTouchedSlugs(
+      [
+        "docs/plans/ready-plan/plan.md",
+        "docs/plans/completed/2028-01-01-old-plan/tasks.md",
+        "plans/ready-plan/plan.md",
+        "docs/plans/README.md",
+      ],
+      "docs/plans",
+    ),
+    ["ready-plan"],
+  );
+  assert.deepEqual(
+    extractCompletedSlugs(
+      [
+        "docs/plans/finished-plan/tasks.md",
+        "docs/plans/completed/2028-01-01-finished-plan/tasks.md",
+        "plans/finished-plan/tasks.md",
+        "plans/completed/2028-01-01-finished-plan/tasks.md",
+      ],
+      "docs/plans",
+    ),
+    [
+      {
+        slug: "finished-plan",
+        archiveName: "2028-01-01-finished-plan",
+      },
+    ],
+  );
+});
+
+test("exact old-prefix to new-prefix moves are not treated as touched edits", () => {
+  const sha = "a".repeat(40);
+  const edited = "b".repeat(40);
+  assert.deepEqual(
+    excludeExactPrefixRelocations(
+      ["ready-plan", "edited-plan"],
+      [
+        {
+          path: "plans/ready-plan/plan.md",
+          srcSha: sha,
+          dstSha: "0".repeat(40),
+          srcMode: "100644",
+          dstMode: "000000",
+          status: "D",
+        },
+        {
+          path: "docs/plans/ready-plan/plan.md",
+          srcSha: "0".repeat(40),
+          dstSha: sha,
+          srcMode: "000000",
+          dstMode: "100644",
+          status: "A",
+        },
+        {
+          path: "plans/edited-plan/plan.md",
+          srcSha: sha,
+          dstSha: "0".repeat(40),
+          srcMode: "100644",
+          dstMode: "000000",
+          status: "D",
+        },
+        {
+          path: "docs/plans/edited-plan/plan.md",
+          srcSha: "0".repeat(40),
+          dstSha: edited,
+          srcMode: "000000",
+          dstMode: "100644",
+          status: "A",
+        },
+      ],
+      "plans",
+      "docs/plans",
+    ),
+    ["edited-plan"],
+  );
+  assert.deepEqual(
+    excludeExactPrefixRelocations(
+      ["ready-plan"],
+      [
+        {
+          path: "plans/ready-plan/plan.md",
+          srcSha: sha,
+          dstSha: "0".repeat(40),
+          srcMode: "100644",
+          dstMode: "000000",
+          status: "D",
+        },
+        {
+          path: "docs/plans/ready-plan/plan.md",
+          srcSha: "0".repeat(40),
+          dstSha: sha,
+          srcMode: "000000",
+          dstMode: "100644",
+          status: "M",
+        },
+      ],
+      "plans",
+      "docs/plans",
+    ),
+    ["ready-plan"],
+  );
+  assert.deepEqual(
+    excludeExactPrefixRelocations(
+      ["ready-plan"],
+      [
+        {
+          path: "plans/ready-plan/plan.md",
+          srcSha: sha,
+          dstSha: "0".repeat(40),
+          srcMode: "100644",
+          dstMode: "000000",
+          status: "D",
+        },
+        {
+          path: "docs/plans/ready-plan/plan.md",
+          srcSha: "0".repeat(40),
+          dstSha: sha,
+          srcMode: "000000",
+          dstMode: "100644",
+          status: "A",
+        },
+        {
+          path: "docs/plans/ready-plan/extra.md",
+          srcSha: edited,
+          dstSha: "0".repeat(40),
+          srcMode: "100644",
+          dstMode: "000000",
+          status: "D",
+        },
+      ],
+      "plans",
+      "docs/plans",
+    ),
+    ["ready-plan"],
+  );
+  assert.deepEqual(
+    excludeExactPrefixRelocations(
+      ["ready-plan"],
+      [
+        {
+          path: "plans/ready-plan/plan.md",
+          srcSha: sha,
+          dstSha: "0".repeat(40),
+          srcMode: "100644",
+          dstMode: "000000",
+          status: "D",
+        },
+        {
+          path: "docs/plans/ready-plan/plan.md",
+          srcSha: "0".repeat(40),
+          dstSha: sha,
+          srcMode: "000000",
+          dstMode: "100755",
+          status: "A",
+        },
+      ],
+      "plans",
+      "docs/plans",
+    ),
+    ["ready-plan"],
+  );
+  assert.deepEqual(
+    excludeExactPrefixRelocations(
+      ["plans"],
+      [
+        {
+          path: "docs/plans/plan.md",
+          srcSha: sha,
+          dstSha: "0".repeat(40),
+          srcMode: "100644",
+          dstMode: "000000",
+          status: "D",
+        },
+        {
+          path: "docs/plans/plans/plan.md",
+          srcSha: "0".repeat(40),
+          dstSha: sha,
+          srcMode: "000000",
+          dstMode: "100644",
+          status: "A",
+        },
+      ],
+      "docs",
+      "docs/plans",
+    ),
+    [],
+  );
+  assert.deepEqual(
+    excludeExactPrefixRelocations(
+      ["plans"],
+      [
+        {
+          path: "docs/plans/plans/plan.md",
+          srcSha: sha,
+          dstSha: "0".repeat(40),
+          srcMode: "100644",
+          dstMode: "000000",
+          status: "D",
+        },
+        {
+          path: "docs/plans/plan.md",
+          srcSha: "0".repeat(40),
+          dstSha: sha,
+          srcMode: "000000",
+          dstMode: "100644",
+          status: "A",
+        },
+      ],
+      "docs/plans",
+      "docs",
+    ),
+    [],
   );
 });
 

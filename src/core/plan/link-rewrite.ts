@@ -142,6 +142,166 @@ function decide(decoded: string, options: LinkRewriteOptions): Decision {
   return { kind: "note", reason: "unresolved target" };
 }
 
+/**
+ * True when `newText` keeps the same repository targets as `oldText` after a
+ * plansDir prefix change: destinations inside the old tree map onto the new
+ * tree, and destinations outside it stay on the same repository path.
+ */
+export function relocationMarkdownPreservesTargets(options: {
+  readonly planDir: string;
+  readonly fromPrefix: string;
+  readonly toPrefix: string;
+  readonly oldText: string;
+  readonly newText: string;
+}): boolean {
+  const oldDestinations = collectDestinations(options.oldText);
+  const newDestinations = collectDestinations(options.newText);
+  if (oldDestinations.length !== newDestinations.length) {
+    return false;
+  }
+  if (
+    destinationSkeleton(options.oldText, oldDestinations) !==
+    destinationSkeleton(options.newText, newDestinations)
+  ) {
+    return false;
+  }
+  const newPlanDir = `${options.toPrefix}${options.planDir.slice(options.fromPrefix.length)}`;
+  for (let index = 0; index < oldDestinations.length; index += 1) {
+    if (
+      !relocationDestinationPreserved(
+        oldDestinations[index]!.raw,
+        newDestinations[index]!.raw,
+        options.planDir,
+        options.fromPrefix,
+        options.toPrefix,
+        newPlanDir,
+      )
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function destinationSkeleton(
+  text: string,
+  destinations: readonly Destination[],
+): string {
+  let skeleton = text;
+  for (const destination of destinations.toReversed()) {
+    skeleton = `${skeleton.slice(0, destination.offset)}${skeleton.slice(destination.offset + destination.raw.length)}`;
+  }
+  return skeleton;
+}
+
+function relocationDestinationPreserved(
+  oldRaw: string,
+  newRaw: string,
+  planDir: string,
+  fromPrefix: string,
+  toPrefix: string,
+  newPlanDir: string,
+): boolean {
+  const oldDestination = parseRelocationDestination(oldRaw, planDir);
+  const newDestination = parseRelocationDestination(newRaw, newPlanDir);
+  if (oldDestination.kind === "fixed" || newDestination.kind === "fixed") {
+    return oldRaw === newRaw;
+  }
+  if (oldDestination.suffix !== newDestination.suffix) {
+    return false;
+  }
+  const mapped = isInside(fromPrefix, oldDestination.path)
+    ? `${toPrefix}${oldDestination.path.slice(fromPrefix.length)}`
+    : oldDestination.path;
+  return mapped === newDestination.path;
+}
+
+function parseRelocationDestination(
+  raw: string,
+  planDir: string,
+):
+  | { readonly kind: "fixed" }
+  | {
+      readonly kind: "relative";
+      readonly path: string;
+      readonly suffix: string;
+    } {
+  const decoded = decodeString(raw);
+  if (
+    decoded === "" ||
+    decoded.startsWith("/") ||
+    decoded.startsWith("#") ||
+    decoded.startsWith("?") ||
+    SCHEME_PATTERN.test(decoded)
+  ) {
+    return { kind: "fixed" };
+  }
+  const split = splitRawPathAndSuffix(raw, decoded);
+  if (split === undefined) {
+    return { kind: "fixed" };
+  }
+  let path: string;
+  try {
+    path = decodeURIComponent(decodeString(split.pathRaw));
+  } catch {
+    return { kind: "fixed" };
+  }
+  if (path.includes("\0")) {
+    return { kind: "fixed" };
+  }
+  const resolved = resolveTarget(planDir, path).path;
+  if (resolved === null) {
+    return { kind: "fixed" };
+  }
+  return { kind: "relative", path: resolved, suffix: split.suffixRaw };
+}
+
+const MARKDOWN_ESCAPE_OR_REFERENCE =
+  /\\([!-/:-@[-`{-~])|&(#(?:\d{1,7}|x[\da-f]{1,6})|[\da-z]{1,31});/gi;
+
+function splitRawPathAndSuffix(
+  raw: string,
+  markdown: string,
+): { readonly pathRaw: string; readonly suffixRaw: string } | undefined {
+  const rawEndAfter = rawOffsetsAfterMarkdown(raw, markdown);
+  if (rawEndAfter === undefined) {
+    return undefined;
+  }
+  const separator = markdown.search(QUERY_OR_FRAGMENT_PATTERN);
+  if (separator === -1) {
+    return { pathRaw: raw, suffixRaw: "" };
+  }
+  const rawStart = separator === 0 ? 0 : rawEndAfter[separator - 1]!;
+  return {
+    pathRaw: raw.slice(0, rawStart),
+    suffixRaw: raw.slice(rawStart),
+  };
+}
+
+function rawOffsetsAfterMarkdown(
+  raw: string,
+  markdown: string,
+): readonly number[] | undefined {
+  const rawEndAfter: number[] = [];
+  MARKDOWN_ESCAPE_OR_REFERENCE.lastIndex = 0;
+  let last = 0;
+  for (const match of raw.matchAll(MARKDOWN_ESCAPE_OR_REFERENCE)) {
+    const start = match.index;
+    for (let index = last; index < start; index += 1) {
+      rawEndAfter.push(index + 1);
+    }
+    const decoded = decodeString(match[0]);
+    for (let offset = 0; offset < decoded.length; offset += 1) {
+      rawEndAfter.push(start + match[0].length);
+    }
+    last = start + match[0].length;
+  }
+  for (let index = last; index < raw.length; index += 1) {
+    rawEndAfter.push(index + 1);
+  }
+  return rawEndAfter.length === markdown.length ? rawEndAfter : undefined;
+}
+
 function collectDestinations(text: string): readonly Destination[] {
   const found: Destination[] = [];
   const toDestination = (token: Token): Destination => {

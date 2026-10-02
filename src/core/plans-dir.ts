@@ -1,0 +1,544 @@
+import { readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+
+import {
+  PlanletError,
+  asWriteConflict,
+  isPlanletError,
+} from "../errors/planlet-error.js";
+import { errnoIs, resolveSafePath, tryLstat } from "./paths.js";
+
+export const DEFAULT_PLANS_DIR = "plans";
+const PLANLET_CONFIG_FILENAME = ".planlet.json";
+
+const RESERVED_CONFIG_FILENAMES = [
+  ".planlet.yaml",
+  ".planlet.yml",
+  ".planletrc.json",
+  ".planlet.config.json",
+] as const;
+
+const CONFIG_CANDIDATE_FILENAMES = [
+  PLANLET_CONFIG_FILENAME,
+  ...RESERVED_CONFIG_FILENAMES,
+] as const;
+
+const CONTROL_FIRST_SEGMENTS = [...CONFIG_CANDIDATE_FILENAMES] as const;
+
+const PLANS_DIR_SEGMENT = /^[A-Za-z0-9._-]+$/;
+const PLANS_DIR_FORBIDDEN = /[\s*?[\]]/;
+
+export interface ResolvedPlansLocation {
+  readonly plansDir: string;
+  readonly plansPath: string;
+}
+
+/** @internal Directory-listing seam. Tests only. */
+export interface PlansDirDependencies {
+  readonly listNames?: (directory: string) => string[];
+}
+
+const WIN32_RESERVED_SEGMENT =
+  /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/i;
+
+export function hasPlansLayoutMarker(
+  path: string,
+  dependencies?: PlansDirDependencies,
+): boolean {
+  return (
+    hasExactNamedChild(path, DEFAULT_PLANS_DIR, dependencies) === "directory" ||
+    presentConfigFiles(path, dependencies).length > 0
+  );
+}
+
+export function assertValidPlansDir(value: string): string {
+  if (
+    value.length === 0 ||
+    value.startsWith("/") ||
+    value.endsWith("/") ||
+    value.includes("\\") ||
+    PLANS_DIR_FORBIDDEN.test(value)
+  ) {
+    throw invalidPlansDir(value);
+  }
+  const segments = value.split("/");
+  if (
+    segments.some(
+      (segment) =>
+        segment === "" ||
+        segment === "." ||
+        segment === ".." ||
+        segment.endsWith(".") ||
+        !PLANS_DIR_SEGMENT.test(segment),
+    )
+  ) {
+    throw invalidPlansDir(value);
+  }
+  if (
+    value !== DEFAULT_PLANS_DIR &&
+    segments[0]!.toLowerCase() === DEFAULT_PLANS_DIR
+  ) {
+    throw invalidPlansDir(value);
+  }
+  if (
+    segments.some(
+      (segment) =>
+        segment.toLowerCase() === ".git" ||
+        WIN32_RESERVED_SEGMENT.test(segment),
+    )
+  ) {
+    throw invalidPlansDir(value);
+  }
+  if (
+    CONTROL_FIRST_SEGMENTS.some(
+      (name) => segments[0]!.toLowerCase() === name.toLowerCase(),
+    )
+  ) {
+    throw invalidPlansDir(value);
+  }
+  return value;
+}
+
+export function joinPlansRelative(
+  plansDir: string,
+  ...parts: readonly string[]
+): string {
+  return [plansDir, ...parts].join("/");
+}
+
+export function plansDirPathspec(plansDir: string): string {
+  return `${plansDir}/`;
+}
+
+export function resolveUnderPlans(
+  repositoryRoot: string,
+  plansDir: string,
+  ...relativeSegments: readonly string[]
+): string {
+  return resolveSafePath(
+    repositoryRoot,
+    ...plansDir.split("/"),
+    ...relativeSegments,
+  );
+}
+
+export function readPlansDir(
+  repositoryRoot: string,
+  dependencies?: PlansDirDependencies,
+): string {
+  const { plansDir } = committedPlansDir(repositoryRoot, dependencies);
+  inspectPlansDirComponents(repositoryRoot, plansDir, dependencies);
+  assertNoLeftoverDefaultPlans(repositoryRoot, plansDir, dependencies);
+  return plansDir;
+}
+
+export function resolvePlansLocation(
+  repositoryRoot: string,
+  dependencies?: PlansDirDependencies,
+): ResolvedPlansLocation {
+  const plansDir = readPlansDir(repositoryRoot, dependencies);
+  return {
+    plansDir,
+    plansPath: resolveUnderPlans(repositoryRoot, plansDir),
+  };
+}
+
+export function requirePlansDirectory(
+  repositoryRoot: string,
+  dependencies?: PlansDirDependencies,
+): ResolvedPlansLocation {
+  const location = resolvePlansLocation(repositoryRoot, dependencies);
+  if (tryLstat(location.plansPath)?.isDirectory() !== true) {
+    throw new PlanletError(
+      "plans_not_initialized",
+      "Repository does not contain a plans directory",
+      { details: { path: location.plansPath, plansDir: location.plansDir } },
+    );
+  }
+  return location;
+}
+
+export interface InitPlansDirectory extends ResolvedPlansLocation {
+  readonly shouldWriteConfig: boolean;
+}
+
+export function prepareInitPlansDirectory(
+  repositoryRoot: string,
+  requestedPlansDir?: string,
+  dependencies?: PlansDirDependencies,
+): InitPlansDirectory {
+  const committed = committedPlansDir(repositoryRoot, dependencies);
+  const plansDir =
+    requestedPlansDir === undefined
+      ? committed.plansDir
+      : assertValidPlansDir(requestedPlansDir);
+  if (
+    requestedPlansDir !== undefined &&
+    committed.present[0] === PLANLET_CONFIG_FILENAME &&
+    committed.plansDir !== plansDir
+  ) {
+    throw new PlanletError(
+      "write_conflict",
+      `Existing ${PLANLET_CONFIG_FILENAME} already sets plansDir to ${committed.plansDir}`,
+      {
+        details: {
+          path: join(repositoryRoot, PLANLET_CONFIG_FILENAME),
+          plansDir: committed.plansDir,
+        },
+        next: `Keep the committed ${PLANLET_CONFIG_FILENAME} or change it in the same commit as a git mv`,
+      },
+    );
+  }
+  inspectPlansDirComponents(repositoryRoot, plansDir, dependencies);
+  assertNoLeftoverDefaultPlans(repositoryRoot, plansDir, dependencies);
+  return {
+    plansDir,
+    plansPath: resolveUnderPlans(repositoryRoot, plansDir),
+    shouldWriteConfig:
+      requestedPlansDir !== undefined &&
+      plansDir !== DEFAULT_PLANS_DIR &&
+      committed.present.length === 0,
+  };
+}
+
+export function writePlansDirConfig(
+  repositoryRoot: string,
+  plansDir: string,
+): string {
+  const path = join(repositoryRoot, PLANLET_CONFIG_FILENAME);
+  const content = `${JSON.stringify({ plansDir }, null, 2)}\n`;
+  try {
+    writeFileSync(path, content, { encoding: "utf8", flag: "wx" });
+  } catch (error) {
+    throw asWriteConflict(error, `Could not write ${PLANLET_CONFIG_FILENAME}`, {
+      path,
+    });
+  }
+  return path;
+}
+
+function committedPlansDir(
+  repositoryRoot: string,
+  dependencies?: PlansDirDependencies,
+): { readonly present: readonly string[]; readonly plansDir: string } {
+  const present = presentConfigFiles(repositoryRoot, dependencies);
+  if (present.length > 1) {
+    throw new PlanletError(
+      "invalid_config",
+      `Multiple Planlet config files: ${present.join(", ")}`,
+      {
+        details: { files: present },
+        next: "Keep exactly one config file named .planlet.json",
+      },
+    );
+  }
+  if (present[0] !== undefined && present[0] !== PLANLET_CONFIG_FILENAME) {
+    throw reservedConfigError(present[0]);
+  }
+  return {
+    present,
+    plansDir:
+      present[0] === PLANLET_CONFIG_FILENAME
+        ? parsePlansDirFile(repositoryRoot)
+        : DEFAULT_PLANS_DIR,
+  };
+}
+
+function presentConfigFiles(
+  repositoryRoot: string,
+  dependencies?: PlansDirDependencies,
+): string[] {
+  const names = listDirectoryNames(repositoryRoot, dependencies);
+  if (names === undefined) {
+    throw new PlanletError(
+      "invalid_config",
+      `Cannot list directory: ${repositoryRoot}`,
+      {
+        details: { path: repositoryRoot },
+        next: "Make the directory listable or fix the path",
+      },
+    );
+  }
+  const present: string[] = [];
+  for (const candidate of CONFIG_CANDIDATE_FILENAMES) {
+    const aliases = names.filter(
+      (name) =>
+        name !== candidate && name.toLowerCase() === candidate.toLowerCase(),
+    );
+    if (aliases.length > 0) {
+      throw new PlanletError(
+        "invalid_config",
+        `Planlet config name must match exactly: ${candidate}`,
+        {
+          details: { path: join(repositoryRoot, aliases[0]!), files: aliases },
+          next: `Rename ${aliases[0]} to ${candidate}`,
+        },
+      );
+    }
+    const configPath = join(repositoryRoot, candidate);
+    if (names.includes(candidate) || tryLstat(configPath) !== null) {
+      present.push(candidate);
+    }
+  }
+  return present;
+}
+
+function hasExactNamedChild(
+  parent: string,
+  segment: string,
+  dependencies?: PlansDirDependencies,
+): "missing" | "directory" | "other" {
+  const childPath = join(parent, segment);
+  const stats = tryLstat(childPath);
+  const parentStats = tryLstat(parent);
+  if (parentStats === null || !parentStats.isDirectory()) {
+    return "missing";
+  }
+  const names = listDirectoryNames(parent, dependencies);
+  if (names === undefined) {
+    return "missing";
+  }
+  const aliases = names.filter(
+    (name) => name !== segment && name.toLowerCase() === segment.toLowerCase(),
+  );
+  if (aliases.length > 0) {
+    throw new PlanletError(
+      "invalid_config",
+      `plansDir segment must match on-disk spelling: ${segment}`,
+      {
+        details: { path: join(parent, aliases[0]!), plansDir: segment },
+        next: `Use the exact directory name ${aliases[0]} or rename it`,
+      },
+    );
+  }
+  if (stats === null) {
+    return "missing";
+  }
+  return stats.isDirectory() ? "directory" : "other";
+}
+
+function listDirectoryNames(
+  directory: string,
+  dependencies?: PlansDirDependencies,
+): string[] | undefined {
+  try {
+    return (dependencies?.listNames ?? ((path) => readdirSync(path)))(
+      directory,
+    );
+  } catch (error) {
+    if (errnoIs(error, "ENOENT")) {
+      return undefined;
+    }
+    throw cannotListDirectory(directory, error);
+  }
+}
+
+function cannotListDirectory(path: string, error: unknown): PlanletError {
+  if (isPlanletError(error)) {
+    return error;
+  }
+  return new PlanletError("invalid_config", `Cannot list directory: ${path}`, {
+    details: { path },
+    cause: error,
+    next: "Make the directory listable or fix the path",
+  });
+}
+
+function parsePlansDirFile(repositoryRoot: string): string {
+  const configPath = join(repositoryRoot, PLANLET_CONFIG_FILENAME);
+  const stats = tryLstat(configPath);
+  if (stats === null || stats.isSymbolicLink() || !stats.isFile()) {
+    throw new PlanletError(
+      "invalid_config",
+      `Planlet config path is not a regular file: ${configPath}`,
+      {
+        details: { path: configPath },
+        next: "Replace .planlet.json with a JSON object that may set plansDir",
+      },
+    );
+  }
+
+  let text: string;
+  try {
+    text = readFileSync(configPath, "utf8");
+  } catch (error) {
+    throw new PlanletError(
+      "invalid_config",
+      `Cannot read Planlet config: ${configPath}`,
+      { details: { path: configPath }, cause: error },
+    );
+  }
+  return parsePlansDirDocument(text, configPath);
+}
+
+export function parsePlansDirDocument(
+  text: string,
+  configPath: string,
+): string {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text) as unknown;
+  } catch (error) {
+    throw new PlanletError(
+      "invalid_config",
+      `Invalid JSON in ${PLANLET_CONFIG_FILENAME}`,
+      { details: { path: configPath }, cause: error },
+    );
+  }
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new PlanletError(
+      "invalid_config",
+      `${PLANLET_CONFIG_FILENAME} must be a JSON object`,
+      {
+        details: { path: configPath },
+        next: 'Use a JSON object such as { "plansDir": "docs/plans" }',
+      },
+    );
+  }
+  const record = parsed as Record<string, unknown>;
+  if (!Object.hasOwn(record, "plansDir")) {
+    return DEFAULT_PLANS_DIR;
+  }
+  if (typeof record.plansDir !== "string") {
+    throw new PlanletError("invalid_config", "plansDir must be a string", {
+      details: { path: configPath, plansDir: record.plansDir },
+      next: "Set plansDir to a relative posix path such as docs/plans",
+    });
+  }
+  return assertValidPlansDir(record.plansDir);
+}
+
+function inspectPlansDirComponents(
+  repositoryRoot: string,
+  plansDir: string,
+  dependencies?: PlansDirDependencies,
+): void {
+  const rejectSymlinkAndNonDirectory = plansDir !== DEFAULT_PLANS_DIR;
+  let cursor = repositoryRoot;
+  for (const segment of plansDir.split("/")) {
+    const child = hasExactNamedChild(cursor, segment, dependencies);
+    if (child === "missing") {
+      return;
+    }
+    cursor = join(cursor, segment);
+    if (!rejectSymlinkAndNonDirectory) {
+      continue;
+    }
+    const stats = tryLstat(cursor);
+    if (stats === null) {
+      return;
+    }
+    if (stats.isSymbolicLink()) {
+      throw new PlanletError(
+        "invalid_config",
+        `plansDir path contains a symlink: ${plansDir}`,
+        {
+          details: { plansDir, path: cursor },
+          next: "Point plansDir at a real directory inside the repository, not a symlink",
+        },
+      );
+    }
+    if (!stats.isDirectory()) {
+      throw new PlanletError(
+        "write_conflict",
+        `Plans path is not a directory: ${cursor}`,
+        { details: { path: cursor, plansDir } },
+      );
+    }
+  }
+}
+
+function assertNoLeftoverDefaultPlans(
+  repositoryRoot: string,
+  plansDir: string,
+  dependencies?: PlansDirDependencies,
+): void {
+  if (plansDir === DEFAULT_PLANS_DIR) {
+    return;
+  }
+  const leftoverKind = hasExactNamedChild(
+    repositoryRoot,
+    DEFAULT_PLANS_DIR,
+    dependencies,
+  );
+  if (leftoverKind === "missing") {
+    return;
+  }
+  const leftoverPath = join(repositoryRoot, DEFAULT_PLANS_DIR);
+  const stats = tryLstat(leftoverPath);
+  if (stats === null) {
+    return;
+  }
+  let inspectPath = leftoverPath;
+  if (stats.isSymbolicLink()) {
+    inspectPath = resolveSafePath(repositoryRoot, DEFAULT_PLANS_DIR);
+    if (tryLstat(inspectPath)?.isDirectory() !== true) {
+      return;
+    }
+  } else if (!stats.isDirectory()) {
+    return;
+  }
+  let entries: readonly { readonly name: string }[];
+  try {
+    entries = readdirSync(inspectPath, { withFileTypes: true });
+  } catch (error) {
+    throw new PlanletError(
+      "plans_dir_conflict",
+      `Cannot inspect leftover ${DEFAULT_PLANS_DIR}/ directory`,
+      { details: { path: leftoverPath, plansDir }, cause: error },
+    );
+  }
+  const leftoverNames = entries
+    .filter((entry) => isLeftoverDirectory(join(inspectPath, entry.name)))
+    .map((entry) => entry.name);
+  if (leftoverNames.length === 0) {
+    return;
+  }
+  throw new PlanletError(
+    "plans_dir_conflict",
+    `Leftover ${DEFAULT_PLANS_DIR}/ still contains planlet directories while plansDir is ${plansDir}`,
+    {
+      details: { path: leftoverPath, plansDir, leftover: leftoverNames },
+      next: `git mv the contents of ${DEFAULT_PLANS_DIR}/ to ${plansDir}/ and keep ${PLANLET_CONFIG_FILENAME} in the same commit`,
+    },
+  );
+}
+
+function isLeftoverDirectory(path: string): boolean {
+  const stats = tryLstat(path);
+  if (stats === null) {
+    return false;
+  }
+  if (stats.isDirectory()) {
+    return true;
+  }
+  if (!stats.isSymbolicLink()) {
+    return false;
+  }
+  try {
+    return statSync(path).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+function reservedConfigError(name: string): PlanletError {
+  const yaml = name.endsWith(".yaml") || name.endsWith(".yml");
+  return new PlanletError(
+    "invalid_config",
+    yaml
+      ? `YAML Planlet config is not supported yet: ${name}`
+      : `Unrecognized Planlet config file: ${name}`,
+    {
+      details: { file: name },
+      next: "Use .planlet.json with a plansDir string",
+    },
+  );
+}
+
+function invalidPlansDir(value: string): PlanletError {
+  return new PlanletError("invalid_config", `Invalid plansDir: ${value}`, {
+    details: { plansDir: value },
+    next: "Use a relative posix path with no .., empty, glob, or plans-prefixed segments",
+  });
+}

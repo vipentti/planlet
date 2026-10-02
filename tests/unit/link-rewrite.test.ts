@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  relocationMarkdownPreservesTargets,
   rewriteArchiveLinks,
   type LinkRewriteResult,
 } from "../../src/core/plan/link-rewrite.js";
@@ -404,4 +405,73 @@ test("a second pass over rewritten output changes nothing", () => {
   assert.equal(second.text, first.text);
   assert.equal(second.rewrites, 0);
   assert.deepEqual(second.notes, first.notes);
+});
+
+test("relocationMarkdownPreservesTargets maps same-depth prefix moves", () => {
+  const oldText =
+    "See [sib](../other-plan/plan.md) and [guide](../../guide.md).\n";
+  assert.equal(
+    relocationMarkdownPreservesTargets({
+      planDir: "docs/plans/foo",
+      fromPrefix: "docs/plans",
+      toPrefix: "specs/plans",
+      oldText,
+      newText: oldText,
+    }),
+    false,
+  );
+  assert.equal(
+    relocationMarkdownPreservesTargets({
+      planDir: "docs/plans/foo",
+      fromPrefix: "docs/plans",
+      toPrefix: "specs/plans",
+      oldText,
+      newText:
+        "See [sib](../other-plan/plan.md) and [guide](../../../docs/guide.md).\n",
+    }),
+    true,
+  );
+});
+
+test("relocationMarkdownPreservesTargets rejects scheme and fragment edits", () => {
+  assert.equal(
+    relocationMarkdownPreservesTargets({
+      planDir: "plans/foo",
+      fromPrefix: "plans",
+      toPrefix: "docs/plans",
+      oldText: "See [site](https://old.example/x).\n",
+      newText: "See [site](https://new.example/x).\n",
+    }),
+    false,
+  );
+  assert.equal(
+    relocationMarkdownPreservesTargets({
+      planDir: "plans/foo",
+      fromPrefix: "plans",
+      toPrefix: "docs/plans",
+      oldText: "See [design](../../placeholder.txt#keep).\n",
+      newText: "See [design](../../../placeholder.txt#changed).\n",
+    }),
+    false,
+  );
+  assert.equal(
+    relocationMarkdownPreservesTargets({
+      planDir: "plans/foo",
+      fromPrefix: "plans",
+      toPrefix: "docs/plans",
+      oldText: "See [design](../../placeholder.txt#keep).\n",
+      newText: "See [design](../../../placeholder.txt#keep).\n",
+    }),
+    true,
+  );
+  assert.equal(
+    relocationMarkdownPreservesTargets({
+      planDir: "plans/foo",
+      fromPrefix: "plans",
+      toPrefix: "docs/plans",
+      oldText: "See [guide](../../guide.md?x=1&amp;y=2).\n",
+      newText: "See [guide](../../../guide.md?x=1&y=2).\n",
+    }),
+    false,
+  );
 });
