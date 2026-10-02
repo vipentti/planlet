@@ -3,6 +3,7 @@ import {
   chmodSync,
   mkdirSync,
   readFileSync,
+  renameSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -325,6 +326,64 @@ test("chmod during plansDir relocation stays touched", async () => {
     assert.deepEqual(output(result.capture).touched, ["ready-plan"]);
   });
 });
+
+test(
+  "distinct non-UTF8 Git path bytes during relocation stay touched",
+  {
+    skip: process.platform === "win32",
+  },
+  async () => {
+    await withGitRoot(async (root) => {
+      makeBase(root);
+      writePlanlet(root, "ready-plan", READY_TASKS);
+      const planDir = join(root, "plans", "ready-plan");
+      writeFileSync(
+        Buffer.concat([
+          Buffer.from(`${planDir}/`, "utf8"),
+          Buffer.from([0xff]),
+        ]),
+        "extra\n",
+      );
+      commitAll(root, "ready plan");
+      const relocateBase = spawnSync("git", ["branch", "bytes-base"], {
+        cwd: root,
+        encoding: "utf8",
+      });
+      assert.equal(relocateBase.status, 0, relocateBase.stderr);
+      mkdirSync(join(root, "docs"));
+      const moved = spawnSync("git", ["mv", "plans", "docs/plans"], {
+        cwd: root,
+        encoding: "utf8",
+      });
+      assert.equal(moved.status, 0, moved.stderr);
+      const destDir = join(root, "docs", "plans", "ready-plan");
+      renameSync(
+        Buffer.concat([
+          Buffer.from(`${destDir}/`, "utf8"),
+          Buffer.from([0xff]),
+        ]),
+        Buffer.concat([
+          Buffer.from(`${destDir}/`, "utf8"),
+          Buffer.from([0xfe]),
+        ]),
+      );
+      writeFileSync(
+        join(root, ".planlet.json"),
+        `${JSON.stringify({ plansDir: "docs/plans" }, null, 2)}\n`,
+      );
+      commitAll(root, "relocate with path-byte rename");
+
+      const result = await invoke(root, [
+        "check-completion",
+        "--base",
+        "bytes-base",
+      ]);
+
+      assert.equal(result.exitCode, 4);
+      assert.deepEqual(output(result.capture).touched, ["ready-plan"]);
+    });
+  },
+);
 
 test("non-UTF8 blob edits during plansDir relocation stay touched", async () => {
   await withGitRoot(async (root) => {

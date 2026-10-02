@@ -197,7 +197,7 @@ export function listDiffPaths(
 ): readonly string[] {
   const oid = resolveBaseOid(repositoryRoot, options.base);
   const pathspec = options.pathspec ?? "plans/";
-  const diff = runGitOutput(repositoryRoot, [
+  const diff = runGitBlob(repositoryRoot, [
     "diff",
     "--name-only",
     "--no-renames",
@@ -213,7 +213,7 @@ export function listDiffPaths(
     });
   }
 
-  return diff.stdout.split("\0").filter((path) => path.length > 0);
+  return splitGitNul(diff.stdout);
 }
 
 export interface DiffPathEntry {
@@ -238,7 +238,7 @@ export function listDiffEntries(
 ): readonly DiffPathEntry[] {
   const oid = resolveBaseOid(repositoryRoot, options.base);
   const pathspec = options.pathspec ?? "plans/";
-  const diff = runGitOutput(repositoryRoot, [
+  const diff = runGitBlob(repositoryRoot, [
     "diff",
     "--raw",
     "--abbrev=40",
@@ -255,7 +255,7 @@ export function listDiffEntries(
     });
   }
 
-  const parts = diff.stdout.split("\0");
+  const parts = splitGitNulKeepEmpty(diff.stdout);
   const entries: DiffPathEntry[] = [];
   for (let index = 0; index + 1 < parts.length; index += 2) {
     const meta = parts[index]!;
@@ -279,6 +279,15 @@ export function listDiffEntries(
     });
   }
   return entries;
+}
+
+/** Git `-z` paths as latin1 so each filename byte stays distinct. */
+function splitGitNul(stdout: Buffer): string[] {
+  return splitGitNulKeepEmpty(stdout).filter((path) => path.length > 0);
+}
+
+function splitGitNulKeepEmpty(stdout: Buffer): string[] {
+  return stdout.toString("latin1").split("\0");
 }
 
 export function readCommitFile(

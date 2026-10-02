@@ -10,7 +10,9 @@ import { main, type CliRuntime } from "../../src/cli.js";
 import { checkCompletion } from "../../src/core/check-completion.js";
 import { completePlanlet } from "../../src/core/plan/planlet-completion.js";
 import { createPlanlet } from "../../src/core/plan/creation.js";
+import { readPlansDir } from "../../src/core/plans-dir.js";
 import { updateTask } from "../../src/core/plan/task-update.js";
+import { PlanletError } from "../../src/errors/planlet-error.js";
 import { commitAll, withGitRoot } from "./git-fixtures.js";
 
 const PLAN = `# Fixture Plan
@@ -232,5 +234,17 @@ test("a plansDir symlink component fails the gate with invalid_config", async ()
     assert.equal(result.exitCode, 1);
     assert.equal(errorCode(result.capture), "invalid_config");
     assert.equal(result.capture.stdout.join(""), "");
+  });
+});
+
+test("a git repo with Plans and no config is invalid_config", async () => {
+  await withGitRoot(async (root) => {
+    makeGitBase(root);
+    mkdirSync(join(root, "Plans"));
+    assert.throws(
+      () => readPlansDir(root),
+      (error: unknown) =>
+        error instanceof PlanletError && error.code === "invalid_config",
+    );
   });
 });

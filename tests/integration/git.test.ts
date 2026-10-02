@@ -153,3 +153,41 @@ test("tryStage finds a git marker in a parent directory for a nested root", asyn
     assert.ok(porcelain(root).includes("A  packages/pkg/a.txt"));
   });
 });
+
+test(
+  "listDiffEntries preserves non-UTF8 Git path bytes",
+  {
+    skip: process.platform === "win32",
+  },
+  async () => {
+    await withGitRoot(async (root) => {
+      writeFileSync(join(root, "placeholder.txt"), "base\n");
+      commitAll(root, "base");
+      const planDir = join(root, "plans", "byte-plan");
+      mkdirSync(planDir, { recursive: true });
+      writeFileSync(
+        Buffer.concat([
+          Buffer.from(`${planDir}/`, "utf8"),
+          Buffer.from([0xff]),
+        ]),
+        "changed\n",
+      );
+      writeFileSync(join(planDir, "plan.md"), "# byte-plan\n");
+      commitAll(root, "change");
+
+      const entries = listDiffEntries(root, {
+        base: "HEAD~1",
+        pathspec: "plans/",
+      });
+      const expected = Buffer.concat([
+        Buffer.from("plans/byte-plan/", "utf8"),
+        Buffer.from([0xff]),
+      ]).toString("latin1");
+      assert.ok(
+        entries.some(
+          (entry) => entry.path === expected && entry.status === "A",
+        ),
+      );
+    });
+  },
+);
