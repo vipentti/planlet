@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   rewriteArchiveLinks,
+  rewritePlanletDepthLinks,
   type LinkRewriteResult,
 } from "../../src/core/plan/link-rewrite.js";
 
@@ -404,4 +405,24 @@ test("a second pass over rewritten output changes nothing", () => {
   assert.equal(second.text, first.text);
   assert.equal(second.rewrites, 0);
   assert.deepEqual(second.notes, first.notes);
+});
+
+test("rewritePlanletDepthLinks prepends one ../ per extra plansDir segment", () => {
+  const text = "See [design](../../README.md).\n";
+  const one = rewritePlanletDepthLinks({
+    fileName: "plan.md",
+    fromDir: "plans/foo",
+    toDir: "docs/plans/foo",
+    text,
+  });
+  assert.equal(one.text, "See [design](../../../README.md).\n");
+  assert.equal(one.rewrites, 1);
+  const two = rewritePlanletDepthLinks({
+    fileName: "plan.md",
+    fromDir: "plans/foo",
+    toDir: "docs/team/plans/foo",
+    text,
+  });
+  assert.equal(two.text, "See [design](../../../../README.md).\n");
+  assert.equal(two.rewrites, 1);
 });

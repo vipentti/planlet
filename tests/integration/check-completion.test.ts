@@ -313,6 +313,117 @@ test("a plansDir git mv plus outbound link rewrite does not false-fail", async (
   });
 });
 
+test("a two-segment plansDir git mv plus link rewrite does not false-fail", async () => {
+  await withGitRoot(async (root) => {
+    makeBase(root);
+    writePlanlet(root, "ready-plan", READY_TASKS);
+    writeFileSync(
+      join(root, "plans", "ready-plan", "plan.md"),
+      "# ready-plan\n\nSee [design](../../placeholder.txt).\n",
+    );
+    commitAll(root, "ready plan");
+    const relocateBase = spawnSync("git", ["branch", "two-seg-base"], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    assert.equal(relocateBase.status, 0, relocateBase.stderr);
+    mkdirSync(join(root, "docs", "team"), { recursive: true });
+    const moved = spawnSync("git", ["mv", "plans", "docs/team/plans"], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    assert.equal(moved.status, 0, moved.stderr);
+    const planPath = join(
+      root,
+      "docs",
+      "team",
+      "plans",
+      "ready-plan",
+      "plan.md",
+    );
+    writeFileSync(
+      planPath,
+      readFileSync(planPath, "utf8").replace(
+        "../../placeholder.txt",
+        "../../../../placeholder.txt",
+      ),
+    );
+    writeFileSync(
+      join(root, ".planlet.json"),
+      `${JSON.stringify({ plansDir: "docs/team/plans" }, null, 2)}\n`,
+    );
+    commitAll(root, "relocate two segments");
+
+    const result = await invoke(root, [
+      "check-completion",
+      "--base",
+      "two-seg-base",
+    ]);
+
+    assert.equal(result.exitCode, 0);
+    assert.deepEqual(output(result.capture), {
+      ok: true,
+      base: "two-seg-base",
+      touched: [],
+      completed: [],
+      violations: [],
+    });
+  });
+});
+
+test("a one-level move still relocates when the unadjusted new-relative target exists", async () => {
+  await withGitRoot(async (root) => {
+    makeBase(root);
+    writeFileSync(join(root, "README.md"), "# root\n");
+    writePlanlet(root, "ready-plan", READY_TASKS);
+    writeFileSync(
+      join(root, "plans", "ready-plan", "plan.md"),
+      "# ready-plan\n\nSee [design](../../README.md).\n",
+    );
+    commitAll(root, "ready plan");
+    const relocateBase = spawnSync("git", ["branch", "ambiguous-base"], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    assert.equal(relocateBase.status, 0, relocateBase.stderr);
+    mkdirSync(join(root, "docs"));
+    writeFileSync(join(root, "docs", "README.md"), "# docs\n");
+    const moved = spawnSync("git", ["mv", "plans", "docs/plans"], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    assert.equal(moved.status, 0, moved.stderr);
+    const planPath = join(root, "docs", "plans", "ready-plan", "plan.md");
+    writeFileSync(
+      planPath,
+      readFileSync(planPath, "utf8").replace(
+        "../../README.md",
+        "../../../README.md",
+      ),
+    );
+    writeFileSync(
+      join(root, ".planlet.json"),
+      `${JSON.stringify({ plansDir: "docs/plans" }, null, 2)}\n`,
+    );
+    commitAll(root, "relocate with sibling README");
+
+    const result = await invoke(root, [
+      "check-completion",
+      "--base",
+      "ambiguous-base",
+    ]);
+
+    assert.equal(result.exitCode, 0);
+    assert.deepEqual(output(result.capture), {
+      ok: true,
+      base: "ambiguous-base",
+      touched: [],
+      completed: [],
+      violations: [],
+    });
+  });
+});
+
 test("check-completion uses merge-base plansDir when the named base later diverges", async () => {
   await withGitRoot(async (root) => {
     makeBase(root);

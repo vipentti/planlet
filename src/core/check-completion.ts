@@ -1,5 +1,3 @@
-import { join } from "node:path";
-
 import { isPlanletError } from "../errors/planlet-error.js";
 import {
   listDiffEntries,
@@ -14,8 +12,8 @@ import {
   parseArchiveName,
   type ParsedArchiveName,
 } from "./plan/slugs.js";
-import { byName, tryLstat } from "./paths.js";
-import { rewriteArchiveLinks } from "./plan/link-rewrite.js";
+import { byName } from "./paths.js";
+import { rewritePlanletDepthLinks } from "./plan/link-rewrite.js";
 import {
   DEFAULT_PLANS_DIR,
   joinPlansRelative,
@@ -314,21 +312,13 @@ function isExactPrefixRelocation(
     if (fileName === undefined) {
       return false;
     }
-    let expected = readGitBlob(repositoryRoot, sha);
+    const expected = rewritePlanletDepthLinks({
+      fileName,
+      fromDir: joinPlansRelative(fromPlansDir, slug),
+      toDir: joinPlansRelative(toPlansDir, slug),
+      text: readGitBlob(repositoryRoot, sha),
+    }).text;
     const newText = readGitBlob(repositoryRoot, toSha);
-    const planDir = joinPlansRelative(fromPlansDir, slug);
-    const archiveDir = joinPlansRelative(toPlansDir, slug);
-    const exists = (path: string): boolean =>
-      tryLstat(join(repositoryRoot, ...path.split("/"))) !== null;
-    for (let index = 0; index < extraDepth; index += 1) {
-      expected = rewriteArchiveLinks({
-        fileName,
-        planDir,
-        archiveDir,
-        exists,
-        text: expected,
-      }).text;
-    }
     if (expected !== newText) {
       return false;
     }

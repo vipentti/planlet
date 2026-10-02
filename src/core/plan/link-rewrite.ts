@@ -142,6 +142,69 @@ function decide(decoded: string, options: LinkRewriteOptions): Decision {
   return { kind: "note", reason: "unresolved target" };
 }
 
+function isOutboundRelativeDestination(
+  decoded: string,
+  planDir: string,
+): boolean {
+  if (
+    decoded === "" ||
+    decoded.startsWith("/") ||
+    decoded.startsWith("#") ||
+    decoded.startsWith("?") ||
+    SCHEME_PATTERN.test(decoded)
+  ) {
+    return false;
+  }
+  const separator = decoded.search(QUERY_OR_FRAGMENT_PATTERN);
+  const rawPath = separator === -1 ? decoded : decoded.slice(0, separator);
+  let path: string;
+  try {
+    path = decodeURIComponent(rawPath);
+  } catch {
+    return false;
+  }
+  if (path.includes("\0")) {
+    return false;
+  }
+  const active = resolveTarget(planDir, path);
+  return active.path === null || !isInside(planDir, active.path);
+}
+
+/**
+ * Prepends one `../` per extra plansDir segment to outbound relative
+ * destinations, so a git mv of a planlet to a deeper prefix keeps the same
+ * repository targets. Internal destinations are left unchanged.
+ */
+export function rewritePlanletDepthLinks(options: {
+  readonly fileName: string;
+  readonly fromDir: string;
+  readonly toDir: string;
+  readonly text: string;
+}): LinkRewriteResult {
+  const extraDepth =
+    options.toDir.split("/").length - options.fromDir.split("/").length;
+  if (extraDepth < 1) {
+    return { text: options.text, rewrites: 0, notes: [] };
+  }
+  const prefix = PREFIX.repeat(extraDepth);
+  const edits: number[] = [];
+  for (const destination of collectDestinations(options.text)) {
+    if (
+      isOutboundRelativeDestination(
+        decodeString(destination.raw),
+        options.fromDir,
+      )
+    ) {
+      edits.push(destination.offset);
+    }
+  }
+  let text = options.text;
+  for (const offset of edits.toReversed()) {
+    text = `${text.slice(0, offset)}${prefix}${text.slice(offset)}`;
+  }
+  return { text, rewrites: edits.length, notes: [] };
+}
+
 function collectDestinations(text: string): readonly Destination[] {
   const found: Destination[] = [];
   const toDestination = (token: Token): Destination => {
