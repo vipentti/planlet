@@ -114,9 +114,10 @@ one consumer `planlet update`.
 
 **Migration (docs only).** Operator-run, one commit: `git mv` active
 planlets and `plans/completed/` to `<plansDir>/`, add `.planlet.json`, and
-add `../` prefixes only to relative links whose resolved targets sit outside
-the old plans tree. Links into that moved tree, including sibling planlets,
-stay unchanged. Completion rewrite is not a relocation rewriter.
+adjust relative links whose resolved targets sit outside the old plans tree
+(add one `../` per extra plansDir segment, or remove one per removed
+segment). Links into that moved tree, including sibling planlets, stay
+unchanged. Completion rewrite is not a relocation rewriter.
 
 ## Acceptance Criteria
 

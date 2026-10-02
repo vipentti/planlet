@@ -86,10 +86,11 @@ not a silent default. `plansDir` must not start with a case-insensitive
 period. Read from the working tree of that root only.
 
 To move an existing tree: `git mv` active planlets and `plans/completed/` to
-the new directory, add `.planlet.json`, and add `../` prefixes only to
-relative links whose resolved targets sit outside the old plans tree. Links
-into that moved tree, including sibling planlets, stay unchanged. There is
-no `planlet move` command. If leftover `plans/` still contains a child
+the new directory, add `.planlet.json`, and adjust relative links whose
+resolved targets sit outside the old plans tree: add one `../` per extra
+plansDir segment, or remove one `../` per removed segment. Links into that
+moved tree, including sibling planlets, stay unchanged. There is no
+`planlet move` command. If leftover `plans/` still contains a child
 directory, Planlet fails with `plans_dir_conflict`.
 
 ## The skill-first flow

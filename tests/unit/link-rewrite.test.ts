@@ -466,3 +466,24 @@ test("rewritePlanletDepthLinks leaves sibling planlet links unchanged", () => {
   );
   assert.equal(shallower.rewrites, 1);
 });
+
+test("rewritePlanletDepthLinks strips encoded leading parent segments", () => {
+  const percent = rewritePlanletDepthLinks({
+    fileName: "plan.md",
+    planDir: "docs/team/plans/foo",
+    fromPrefix: "docs/team/plans",
+    toPrefix: "docs/plans",
+    text: "See [design](%2E%2E/%2E%2E/%2E%2E/README.md).\n",
+  });
+  assert.equal(percent.text, "See [design](%2E%2E/%2E%2E/README.md).\n");
+  assert.equal(percent.rewrites, 1);
+  const entities = rewritePlanletDepthLinks({
+    fileName: "plan.md",
+    planDir: "docs/team/plans/foo",
+    fromPrefix: "docs/team/plans",
+    toPrefix: "docs/plans",
+    text: "See [design](&#46;&#46;/../../README.md).\n",
+  });
+  assert.equal(entities.text, "See [design](../../README.md).\n");
+  assert.equal(entities.rewrites, 1);
+});

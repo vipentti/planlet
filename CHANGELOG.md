@@ -22,7 +22,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and thi
   `plans_not_initialized`. A `git mv` of unchanged planlets onto a new
   `plansDir` does not make `check-completion` treat them as newly touched:
   Git modes must match, and only `plan.md`/`tasks.md` may differ by the
-  depth-link rewrite in either direction. Relocation matching keeps Git
+  depth-link rewrite in either direction, including encoded leading `../`
+  segments. Relocation matching keeps Git
   filename bytes, so distinct non-UTF8 names cannot collapse. A directory
   that cannot be listed is `invalid_config`, not a silent fallback to
   `plans/`.

@@ -333,7 +333,10 @@ Completed archive name, `plan.md`, and `tasks.md` are unchanged. `completed/`
 stays a child of the plans directory, so completion still rewrites outbound
 relative links by one `../`. There is no `planlet move` command. Relocating an
 existing tree is a documented `git mv` plus a manual link fix in the same
-commit as `.planlet.json`. If `plansDir` is not `plans` and leftover `plans/`
+commit as `.planlet.json`: add one `../` per extra plansDir segment, or
+remove one `../` per removed segment, on relative links whose targets sit
+outside the moved plans tree. Sibling and in-tree links stay unchanged. If
+`plansDir` is not `plans` and leftover `plans/`
 still contains a child directory, commands fail with `plans_dir_conflict`
 instead of splitting trees.
 

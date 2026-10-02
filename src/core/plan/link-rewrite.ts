@@ -161,7 +161,7 @@ export function rewritePlanletDepthLinks(options: {
     return { text: options.text, rewrites: 0, notes: [] };
   }
   const prefix = PREFIX.repeat(Math.abs(extraDepth));
-  const edits: number[] = [];
+  const edits: { readonly offset: number; readonly length: number }[] = [];
   for (const destination of collectDestinations(options.text)) {
     if (
       !leavesPlansTree(
@@ -173,19 +173,117 @@ export function rewritePlanletDepthLinks(options: {
       continue;
     }
     if (extraDepth > 0) {
-      edits.push(destination.offset);
-    } else if (destination.raw.startsWith(prefix)) {
-      edits.push(destination.offset);
+      edits.push({ offset: destination.offset, length: 0 });
+      continue;
     }
+    const remainder = skipLeadingParentSegments(destination.raw, -extraDepth);
+    if (remainder === undefined || remainder === 0) {
+      continue;
+    }
+    edits.push({ offset: destination.offset, length: remainder });
   }
   let text = options.text;
-  for (const offset of edits.toReversed()) {
+  for (const edit of edits.toReversed()) {
     text =
       extraDepth > 0
-        ? `${text.slice(0, offset)}${prefix}${text.slice(offset)}`
-        : `${text.slice(0, offset)}${text.slice(offset + prefix.length)}`;
+        ? `${text.slice(0, edit.offset)}${prefix}${text.slice(edit.offset)}`
+        : `${text.slice(0, edit.offset)}${text.slice(edit.offset + edit.length)}`;
   }
   return { text, rewrites: edits.length, notes: [] };
+}
+
+function skipLeadingParentSegments(
+  raw: string,
+  count: number,
+): number | undefined {
+  let index = 0;
+  let skipped = 0;
+  while (skipped < count) {
+    const segment = readPathSegment(raw, index);
+    if (segment === undefined) {
+      return undefined;
+    }
+    if (segment.value === "" || segment.value === ".") {
+      index = segment.next;
+      continue;
+    }
+    if (segment.value !== "..") {
+      return undefined;
+    }
+    skipped += 1;
+    index = segment.next;
+  }
+  return index;
+}
+
+function readPathSegment(
+  raw: string,
+  start: number,
+): { readonly value: string; readonly next: number } | undefined {
+  if (start >= raw.length) {
+    return undefined;
+  }
+  let index = start;
+  let value = "";
+  while (index < raw.length) {
+    const unit = nextDecodedUnit(raw, index);
+    if (unit === undefined) {
+      return undefined;
+    }
+    for (const char of unit.chars) {
+      if (char === "?" || char === "#") {
+        return value.length === 0 ? undefined : { value, next: index };
+      }
+      if (char === "/") {
+        return { value, next: unit.next };
+      }
+      value += char;
+    }
+    index = unit.next;
+  }
+  return { value, next: index };
+}
+
+function nextDecodedUnit(
+  raw: string,
+  index: number,
+): { readonly chars: string; readonly next: number } | undefined {
+  const current = raw[index];
+  if (current === undefined) {
+    return undefined;
+  }
+  if (current === "\\" && index + 1 < raw.length) {
+    return { chars: raw[index + 1]!, next: index + 2 };
+  }
+  if (current === "&") {
+    const semi = raw.indexOf(";", index + 1);
+    if (semi !== -1) {
+      const piece = raw.slice(index, semi + 1);
+      const decoded = decodeString(piece);
+      if (decoded !== piece) {
+        return { chars: decoded, next: semi + 1 };
+      }
+    }
+  }
+  if (current === "%") {
+    for (const units of [1, 2, 3, 4]) {
+      const end = index + 3 * units;
+      const slice = raw.slice(index, end);
+      if (!/^(?:%[0-9A-Fa-f]{2})+$/.test(slice)) {
+        continue;
+      }
+      try {
+        const chars = decodeURIComponent(slice);
+        if (chars.length > 0) {
+          return { chars, next: end };
+        }
+      } catch {
+        continue;
+      }
+    }
+    return undefined;
+  }
+  return { chars: current, next: index + 1 };
 }
 
 function leavesPlansTree(
