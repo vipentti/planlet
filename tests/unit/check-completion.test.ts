@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   deriveCompletionResult,
+  excludeExactPrefixRelocations,
   extractCompletedSlugs,
   extractTouchedSlugs,
 } from "../../src/core/check-completion.js";
@@ -95,6 +96,45 @@ test("slug extraction strips a two-segment plansDir prefix", () => {
         archiveName: "2028-01-01-finished-plan",
       },
     ],
+  );
+});
+
+test("exact old-prefix to new-prefix moves are not treated as touched edits", () => {
+  const sha = "a".repeat(40);
+  const edited = "b".repeat(40);
+  assert.deepEqual(
+    excludeExactPrefixRelocations(
+      ["ready-plan", "edited-plan"],
+      [
+        {
+          path: "plans/ready-plan/plan.md",
+          srcSha: sha,
+          dstSha: "0".repeat(40),
+          status: "D",
+        },
+        {
+          path: "docs/plans/ready-plan/plan.md",
+          srcSha: "0".repeat(40),
+          dstSha: sha,
+          status: "A",
+        },
+        {
+          path: "plans/edited-plan/plan.md",
+          srcSha: sha,
+          dstSha: "0".repeat(40),
+          status: "D",
+        },
+        {
+          path: "docs/plans/edited-plan/plan.md",
+          srcSha: "0".repeat(40),
+          dstSha: edited,
+          status: "A",
+        },
+      ],
+      "plans",
+      "docs/plans",
+    ),
+    ["edited-plan"],
   );
 });
 

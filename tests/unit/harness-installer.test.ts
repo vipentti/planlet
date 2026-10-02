@@ -253,7 +253,13 @@ test("init --plans-dir plans/custom is rejected before writing a config", () => 
 });
 
 test("init --plans-dir rejects reserved first segments", () => {
-  for (const plansDir of [".git", ".planlet.json", ".planlet.yaml"]) {
+  for (const plansDir of [
+    ".git",
+    ".planlet.json",
+    ".planlet.yaml",
+    "docs/.git/plans",
+    "docs/.GIT/plans",
+  ]) {
     withRoot((root) => {
       assert.throws(
         () =>
@@ -383,6 +389,28 @@ test("init --plans-dir agents.MD without --no-agents is invalid_config", () => {
     assert.equal(existsSync(join(root, ".planlet.json")), false);
     assert.equal(existsSync(join(root, "agents.MD")), false);
     assert.equal(existsSync(join(root, "AGENTS.md")), false);
+  });
+});
+
+test("init --plans-dir rejects a plans path that physically aliases a harness destination", () => {
+  withRoot((root) => {
+    mkdirSync(join(root, "store", "skills"), { recursive: true });
+    mkdirSync(join(root, ".claude"));
+    symlinkSync(join(root, "store", "skills"), join(root, ".claude", "skills"));
+    assert.throws(
+      () =>
+        installHarnessSkills({
+          repositoryRoot: root,
+          operation: "init",
+          tools: "claude",
+          noAgents: true,
+          plansDir: "store",
+          source: BASE_SOURCE,
+        }),
+      (error: unknown) =>
+        error instanceof PlanletError && error.code === "invalid_config",
+    );
+    assert.equal(existsSync(join(root, ".planlet.json")), false);
   });
 });
 

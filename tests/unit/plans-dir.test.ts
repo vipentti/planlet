@@ -189,6 +189,8 @@ test("plansDir traversal, globs, and empty segments fail closed", () => {
     ".git",
     ".planlet.json",
     ".planlet.yaml",
+    "docs/.git/plans",
+    "docs/.GIT/plans",
   ]) {
     assert.throws(
       () => assertValidPlansDir(value),

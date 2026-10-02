@@ -1,5 +1,5 @@
 import { isPlanletError } from "../errors/planlet-error.js";
-import { listDiffPaths } from "./git.js";
+import { listDiffEntries, readCommitFile, type DiffPathEntry } from "./git.js";
 import { validatePlanlets, type ValidationResult } from "./plan/read-only.js";
 import {
   isValidSlug,
@@ -9,6 +9,7 @@ import {
 import { byName } from "./paths.js";
 import {
   DEFAULT_PLANS_DIR,
+  parsePlansDirDocument,
   plansDirPathspec,
   readPlansDir,
 } from "./plans-dir.js";
@@ -185,10 +186,22 @@ export function checkCompletion(
   options: CheckCompletionOptions,
 ): CheckCompletionResult {
   const plansDir = readPlansDir(options.repositoryRoot);
-  const changedPaths = listDiffPaths(options.repositoryRoot, {
+  const basePlansDir = readBasePlansDir(options.repositoryRoot, options.base);
+  const currentEntries = listDiffEntries(options.repositoryRoot, {
     base: options.base,
     pathspec: plansDirPathspec(plansDir),
   });
+  const baseEntries =
+    basePlansDir === plansDir
+      ? []
+      : listDiffEntries(options.repositoryRoot, {
+          base: options.base,
+          pathspec: plansDirPathspec(basePlansDir),
+        });
+  const entries = [...currentEntries, ...baseEntries];
+  const changedPaths = [...new Set(entries.map((entry) => entry.path))].sort(
+    byName,
+  );
   let validation: ValidationResult;
   try {
     validation = validatePlanlets({
@@ -210,8 +223,85 @@ export function checkCompletion(
   }
   return deriveCompletionResult(
     options.base,
-    extractTouchedSlugs(changedPaths, plansDir),
+    excludeExactPrefixRelocations(
+      extractTouchedSlugs(changedPaths, plansDir),
+      entries,
+      basePlansDir,
+      plansDir,
+    ),
     validation,
     extractCompletedSlugs(changedPaths, plansDir),
+  );
+}
+
+function readBasePlansDir(repositoryRoot: string, base: string): string {
+  const text = readCommitFile(repositoryRoot, {
+    base,
+    path: ".planlet.json",
+  });
+  if (text === undefined) {
+    return DEFAULT_PLANS_DIR;
+  }
+  return parsePlansDirDocument(text, ".planlet.json");
+}
+
+function slugFileRest(
+  path: string,
+  plansDir: string,
+  slug: string,
+): string | undefined {
+  const rest = remainingAfterPlansDir(path, plansDir);
+  if (rest === undefined || rest[0] !== slug || rest.length < 2) {
+    return undefined;
+  }
+  return rest.slice(1).join("/");
+}
+
+function isExactPrefixRelocation(
+  slug: string,
+  entries: readonly DiffPathEntry[],
+  fromPlansDir: string,
+  toPlansDir: string,
+): boolean {
+  const fromFiles = new Map<string, string>();
+  const toFiles = new Map<string, string>();
+  for (const entry of entries) {
+    const fromRest = slugFileRest(entry.path, fromPlansDir, slug);
+    if (
+      fromRest !== undefined &&
+      (entry.status === "D" || entry.status === "M")
+    ) {
+      fromFiles.set(fromRest, entry.srcSha);
+    }
+    const toRest = slugFileRest(entry.path, toPlansDir, slug);
+    if (
+      toRest !== undefined &&
+      (entry.status === "A" || entry.status === "M")
+    ) {
+      toFiles.set(toRest, entry.dstSha);
+    }
+  }
+  if (fromFiles.size === 0 || fromFiles.size !== toFiles.size) {
+    return false;
+  }
+  for (const [rest, sha] of fromFiles) {
+    if (toFiles.get(rest) !== sha) {
+      return false;
+    }
+  }
+  return true;
+}
+
+export function excludeExactPrefixRelocations(
+  slugs: readonly string[],
+  entries: readonly DiffPathEntry[],
+  fromPlansDir: string,
+  toPlansDir: string,
+): readonly string[] {
+  if (fromPlansDir === toPlansDir) {
+    return slugs;
+  }
+  return slugs.filter(
+    (slug) => !isExactPrefixRelocation(slug, entries, fromPlansDir, toPlansDir),
   );
 }

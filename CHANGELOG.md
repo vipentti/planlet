@@ -16,7 +16,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and thi
   dashboard report the effective `plansDir`. YAML siblings and rejected
   config names fail closed; unknown JSON keys are ignored. Leftover `plans/`
   after a non-default `plansDir` is `plans_dir_conflict`, distinct from
-  `plans_not_initialized`.
+  `plans_not_initialized`. A `git mv` of unchanged planlets onto a new
+  `plansDir` does not make `check-completion` treat them as newly touched.
 
 ## [0.8.0] - 2026-09-27
 

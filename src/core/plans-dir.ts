@@ -19,7 +19,7 @@ const CONFIG_CANDIDATE_FILENAMES = [
   ...RESERVED_CONFIG_FILENAMES,
 ] as const;
 
-const CONTROL_FIRST_SEGMENTS = [...CONFIG_CANDIDATE_FILENAMES, ".git"] as const;
+const CONTROL_FIRST_SEGMENTS = [...CONFIG_CANDIDATE_FILENAMES] as const;
 
 const PLANS_DIR_SEGMENT = /^[A-Za-z0-9._-]+$/;
 const PLANS_DIR_FORBIDDEN = /[\s*?[\]]/;
@@ -64,6 +64,9 @@ export function assertValidPlansDir(value: string): string {
     value !== DEFAULT_PLANS_DIR &&
     segments[0]!.toLowerCase() === DEFAULT_PLANS_DIR
   ) {
+    throw invalidPlansDir(value);
+  }
+  if (segments.some((segment) => segment.toLowerCase() === ".git")) {
     throw invalidPlansDir(value);
   }
   if (
@@ -260,7 +263,13 @@ function parsePlansDirFile(repositoryRoot: string): string {
       { details: { path: configPath }, cause: error },
     );
   }
+  return parsePlansDirDocument(text, configPath);
+}
 
+export function parsePlansDirDocument(
+  text: string,
+  configPath: string,
+): string {
   let parsed: unknown;
   try {
     parsed = JSON.parse(text) as unknown;

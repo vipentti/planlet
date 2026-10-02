@@ -223,6 +223,45 @@ test("active and completed logical-slug collision does not recommend completion"
   });
 });
 
+test("a plansDir git mv of an already-ready planlet does not false-fail", async () => {
+  await withGitRoot(async (root) => {
+    makeBase(root);
+    writePlanlet(root, "ready-plan", READY_TASKS);
+    commitAll(root, "ready plan");
+    const relocateBase = spawnSync("git", ["branch", "relocate-base"], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    assert.equal(relocateBase.status, 0, relocateBase.stderr);
+    mkdirSync(join(root, "docs"));
+    const moved = spawnSync("git", ["mv", "plans", "docs/plans"], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    assert.equal(moved.status, 0, moved.stderr);
+    writeFileSync(
+      join(root, ".planlet.json"),
+      `${JSON.stringify({ plansDir: "docs/plans" }, null, 2)}\n`,
+    );
+    commitAll(root, "relocate plans");
+
+    const result = await invoke(root, [
+      "check-completion",
+      "--base",
+      "relocate-base",
+    ]);
+
+    assert.equal(result.exitCode, 0);
+    assert.deepEqual(output(result.capture), {
+      ok: true,
+      base: "relocate-base",
+      touched: [],
+      completed: [],
+      violations: [],
+    });
+  });
+});
+
 test("unresolvable and empty bases return git_error without mutation", async () => {
   await withGitRoot(async (root) => {
     makeBase(root);

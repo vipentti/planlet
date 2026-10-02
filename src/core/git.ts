@@ -167,6 +167,109 @@ export function listDiffPaths(
   return diff.stdout.split("\0").filter((path) => path.length > 0);
 }
 
+export interface DiffPathEntry {
+  readonly path: string;
+  readonly srcSha: string;
+  readonly dstSha: string;
+  readonly status: string;
+}
+
+const RAW_DIFF_META =
+  /^:(\d+) (\d+) ([0-9a-f]{40}) ([0-9a-f]{40}) ([A-Z](?:\d{3})?)$/;
+
+/**
+ * Same range and rename policy as `listDiffPaths`, plus blob SHAs so a
+ * plansDir relocation can be distinguished from an in-place edit.
+ */
+export function listDiffEntries(
+  repositoryRoot: string,
+  options: ListDiffPathsOptions,
+): readonly DiffPathEntry[] {
+  const oid = resolveBaseOid(repositoryRoot, options.base);
+  const pathspec = options.pathspec ?? "plans/";
+  const diff = runGitOutput(repositoryRoot, [
+    "diff",
+    "--raw",
+    "--abbrev=40",
+    "--no-renames",
+    "--relative",
+    "-z",
+    `${oid}...HEAD`,
+    "--",
+    pathspec,
+  ]);
+  if (diff.failure !== undefined) {
+    throw new PlanletError("git_error", "Could not list Git changes", {
+      details: { base: options.base, reason: diff.failure },
+    });
+  }
+
+  const parts = diff.stdout.split("\0");
+  const entries: DiffPathEntry[] = [];
+  for (let index = 0; index + 1 < parts.length; index += 2) {
+    const meta = parts[index]!;
+    const path = parts[index + 1]!;
+    if (path.length === 0) {
+      continue;
+    }
+    const match = RAW_DIFF_META.exec(meta);
+    if (match === null) {
+      throw new PlanletError("git_error", "Could not parse Git raw diff", {
+        details: { base: options.base, record: meta },
+      });
+    }
+    entries.push({
+      path,
+      srcSha: match[3]!,
+      dstSha: match[4]!,
+      status: match[5]!,
+    });
+  }
+  return entries;
+}
+
+export function readCommitFile(
+  repositoryRoot: string,
+  options: { readonly base: string; readonly path: string },
+): string | undefined {
+  const oid = resolveBaseOid(repositoryRoot, options.base);
+  const listed = runGitOutput(repositoryRoot, [
+    "ls-tree",
+    "--name-only",
+    "-z",
+    oid,
+    "--",
+    options.path,
+  ]);
+  if (listed.failure !== undefined) {
+    throw new PlanletError("git_error", "Could not read Git tree path", {
+      details: {
+        base: options.base,
+        path: options.path,
+        reason: listed.failure,
+      },
+    });
+  }
+  const names = listed.stdout.split("\0").filter((name) => name.length > 0);
+  if (!names.includes(options.path)) {
+    return undefined;
+  }
+  const shown = runGitOutput(repositoryRoot, [
+    "show",
+    `${oid}:${options.path}`,
+  ]);
+  if (shown.failure !== undefined) {
+    throw new PlanletError("git_error", "Could not read Git blob", {
+      details: {
+        base: options.base,
+        path: options.path,
+        reason: shown.failure,
+      },
+    });
+  }
+  return shown.stdout;
+}
+
 /**
  * Stages a planlet move with exactly one index mutation. Inspects the source
  * with `git ls-files` first: when the source has index entries (tracked, or

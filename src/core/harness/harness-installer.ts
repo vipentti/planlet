@@ -13,6 +13,7 @@ import {
 import { tryStage } from "../git.js";
 import {
   byName,
+  isPathWithinRoot,
   pathKind,
   resolveSafePath,
   sortedRecord,
@@ -254,6 +255,19 @@ function posixPathOverlaps(left: string, right: string): boolean {
   return true;
 }
 
+function ownedAgentFiles(
+  repositoryRoot: string,
+  operation: "init" | "update",
+  skip: boolean | undefined,
+): readonly { readonly relativePath: string; readonly path: string }[] {
+  return agentFileRelativePaths(repositoryRoot, operation, skip).map(
+    (relativePath) => ({
+      relativePath,
+      path: resolveSafePath(repositoryRoot, relativePath),
+    }),
+  );
+}
+
 function agentFileRelativePaths(
   repositoryRoot: string,
   operation: "init" | "update",
@@ -274,19 +288,27 @@ function agentFileRelativePaths(
   return [...new Set(names)];
 }
 
+function resolvedPathOverlaps(left: string, right: string): boolean {
+  return isPathWithinRoot(left, right) || isPathWithinRoot(right, left);
+}
+
 function assertPlansDirClearOfOwnedPaths(
   plansDir: string,
-  ownedRelativePaths: readonly string[],
+  plansPath: string,
+  owned: readonly { readonly relativePath: string; readonly path: string }[],
 ): void {
-  for (const owned of ownedRelativePaths) {
-    if (!posixPathOverlaps(plansDir, owned)) {
+  for (const item of owned) {
+    if (
+      !posixPathOverlaps(plansDir, item.relativePath) &&
+      !resolvedPathOverlaps(plansPath, item.path)
+    ) {
       continue;
     }
     throw new PlanletError(
       "invalid_config",
-      `plansDir overlaps a path this operation owns: ${owned}`,
+      `plansDir overlaps a path this operation owns: ${item.relativePath}`,
       {
-        details: { plansDir, owned },
+        details: { plansDir, owned: item.relativePath },
         next: "Choose a plansDir that is not equal to, inside, or a parent of a harness destination or agent file this command will write",
       },
     );
@@ -383,11 +405,12 @@ export function installHarnessSkills(options: {
           );
         }
 
-        assertPlansDirClearOfOwnedPaths(prepared.plansDir, [
-          ...actionable.map(
-            (inspection) => inspection.destination.relativePath,
-          ),
-          ...agentFileRelativePaths(
+        assertPlansDirClearOfOwnedPaths(prepared.plansDir, plansPath, [
+          ...actionable.map((inspection) => ({
+            relativePath: inspection.destination.relativePath,
+            path: inspection.destination.path,
+          })),
+          ...ownedAgentFiles(
             options.repositoryRoot,
             options.operation,
             options.noAgents,
@@ -416,7 +439,8 @@ export function installHarnessSkills(options: {
       } else {
         assertPlansDirClearOfOwnedPaths(
           prepared.plansDir,
-          agentFileRelativePaths(
+          plansPath,
+          ownedAgentFiles(
             options.repositoryRoot,
             options.operation,
             options.noAgents,
