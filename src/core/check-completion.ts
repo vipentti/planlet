@@ -314,8 +314,9 @@ function isExactPrefixRelocation(
     }
     const expected = rewritePlanletDepthLinks({
       fileName,
-      fromDir: joinPlansRelative(fromPlansDir, slug),
-      toDir: joinPlansRelative(toPlansDir, slug),
+      planDir: joinPlansRelative(fromPlansDir, slug),
+      fromPrefix: fromPlansDir,
+      toPrefix: toPlansDir,
       text: readGitBlob(repositoryRoot, sha),
     }).text;
     const newText = readGitBlob(repositoryRoot, toSha);

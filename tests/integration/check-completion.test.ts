@@ -268,7 +268,7 @@ test("a plansDir git mv plus outbound link rewrite does not false-fail", async (
     writePlanlet(root, "ready-plan", READY_TASKS);
     writeFileSync(
       join(root, "plans", "ready-plan", "plan.md"),
-      "# ready-plan\n\nSee [design](../../placeholder.txt).\n",
+      "# ready-plan\n\nSee [sib](../other-plan/plan.md) and [design](../../placeholder.txt).\n",
     );
     commitAll(root, "ready plan");
     const relocateBase = spawnSync("git", ["branch", "link-relocate-base"], {

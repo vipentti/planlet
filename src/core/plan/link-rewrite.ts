@@ -142,9 +142,47 @@ function decide(decoded: string, options: LinkRewriteOptions): Decision {
   return { kind: "note", reason: "unresolved target" };
 }
 
-function isOutboundRelativeDestination(
+/**
+ * Prepends one `../` per extra plansDir segment to destinations that leave
+ * the old plans tree. Sibling planlets move with that tree, so their relative
+ * links stay byte-identical.
+ */
+export function rewritePlanletDepthLinks(options: {
+  readonly fileName: string;
+  readonly planDir: string;
+  readonly fromPrefix: string;
+  readonly toPrefix: string;
+  readonly text: string;
+}): LinkRewriteResult {
+  const extraDepth =
+    options.toPrefix.split("/").length - options.fromPrefix.split("/").length;
+  if (extraDepth < 1) {
+    return { text: options.text, rewrites: 0, notes: [] };
+  }
+  const prefix = PREFIX.repeat(extraDepth);
+  const edits: number[] = [];
+  for (const destination of collectDestinations(options.text)) {
+    if (
+      leavesPlansTree(
+        decodeString(destination.raw),
+        options.planDir,
+        options.fromPrefix,
+      )
+    ) {
+      edits.push(destination.offset);
+    }
+  }
+  let text = options.text;
+  for (const offset of edits.toReversed()) {
+    text = `${text.slice(0, offset)}${prefix}${text.slice(offset)}`;
+  }
+  return { text, rewrites: edits.length, notes: [] };
+}
+
+function leavesPlansTree(
   decoded: string,
   planDir: string,
+  plansPrefix: string,
 ): boolean {
   if (
     decoded === "" ||
@@ -167,42 +205,7 @@ function isOutboundRelativeDestination(
     return false;
   }
   const active = resolveTarget(planDir, path);
-  return active.path === null || !isInside(planDir, active.path);
-}
-
-/**
- * Prepends one `../` per extra plansDir segment to outbound relative
- * destinations, so a git mv of a planlet to a deeper prefix keeps the same
- * repository targets. Internal destinations are left unchanged.
- */
-export function rewritePlanletDepthLinks(options: {
-  readonly fileName: string;
-  readonly fromDir: string;
-  readonly toDir: string;
-  readonly text: string;
-}): LinkRewriteResult {
-  const extraDepth =
-    options.toDir.split("/").length - options.fromDir.split("/").length;
-  if (extraDepth < 1) {
-    return { text: options.text, rewrites: 0, notes: [] };
-  }
-  const prefix = PREFIX.repeat(extraDepth);
-  const edits: number[] = [];
-  for (const destination of collectDestinations(options.text)) {
-    if (
-      isOutboundRelativeDestination(
-        decodeString(destination.raw),
-        options.fromDir,
-      )
-    ) {
-      edits.push(destination.offset);
-    }
-  }
-  let text = options.text;
-  for (const offset of edits.toReversed()) {
-    text = `${text.slice(0, offset)}${prefix}${text.slice(offset)}`;
-  }
-  return { text, rewrites: edits.length, notes: [] };
+  return active.path === null || !isInside(plansPrefix, active.path);
 }
 
 function collectDestinations(text: string): readonly Destination[] {
