@@ -160,6 +160,17 @@ test("invalid JSON and non-object documents fail closed", () => {
   });
 });
 
+test("a directory at .planlet.json is invalid_config", () => {
+  withRoot((root) => {
+    mkdirSync(join(root, ".planlet.json"));
+    assert.throws(
+      () => readPlansDir(root),
+      (error: unknown) =>
+        error instanceof PlanletError && error.code === "invalid_config",
+    );
+  });
+});
+
 test("plansDir traversal, globs, and empty segments fail closed", () => {
   for (const value of [
     "..",
@@ -175,6 +186,9 @@ test("plansDir traversal, globs, and empty segments fail closed", () => {
     "plans/custom",
     "Plans/custom",
     "PLANS",
+    ".git",
+    ".planlet.json",
+    ".planlet.yaml",
   ]) {
     assert.throws(
       () => assertValidPlansDir(value),
@@ -198,6 +212,23 @@ test("leftover plans/ with nested directories is plans_dir_conflict", () => {
   withRoot((root) => {
     mkdirSync(join(root, "docs", "plans"), { recursive: true });
     mkdirSync(join(root, "plans", "old-plan"), { recursive: true });
+    writeConfig(root, JSON.stringify({ plansDir: "docs/plans" }));
+    assert.throws(
+      () => readPlansDir(root),
+      (error: unknown) => {
+        assert.ok(error instanceof PlanletError);
+        assert.equal(error.code, "plans_dir_conflict");
+        return true;
+      },
+    );
+  });
+});
+
+test("a leftover plans/ symlink to an in-repository tree is plans_dir_conflict", () => {
+  withRoot((root) => {
+    mkdirSync(join(root, "docs", "plans"), { recursive: true });
+    mkdirSync(join(root, "store", "old-plan"), { recursive: true });
+    symlinkSync(join(root, "store"), join(root, "plans"));
     writeConfig(root, JSON.stringify({ plansDir: "docs/plans" }));
     assert.throws(
       () => readPlansDir(root),

@@ -252,6 +252,26 @@ test("init --plans-dir plans/custom is rejected before writing a config", () => 
   });
 });
 
+test("init --plans-dir rejects reserved first segments", () => {
+  for (const plansDir of [".git", ".planlet.json", ".planlet.yaml"]) {
+    withRoot((root) => {
+      assert.throws(
+        () =>
+          installHarnessSkills({
+            repositoryRoot: root,
+            operation: "init",
+            tools: "none",
+            noAgents: true,
+            plansDir,
+          }),
+        (error: unknown) =>
+          error instanceof PlanletError && error.code === "invalid_config",
+      );
+      assert.equal(existsSync(join(root, ".planlet.json")), false);
+    });
+  }
+});
+
 test("init --plans-dir docs/plans is write_conflict when docs is a file", () => {
   withRoot((root) => {
     writeFileSync(join(root, "docs"), "not a directory\n");

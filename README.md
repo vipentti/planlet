@@ -215,22 +215,22 @@ scaffold stubs and does not stage them. The CLI never commits, and Planlet opera
 
 ## Commands
 
-| Command                                                                 | Purpose                                                                                                      |
-| ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `init [--tools <ids>] [--force] [--no-agents] [--plans-dir <relative>]` | Create the plans directory, optional `.planlet.json`, install harness skills, write agent onboarding section |
-| `update [--tools <ids>] [--force]`                                      | Refresh installed skill copies from canonical sources                                                        |
-| `tools`                                                                 | Report skill destinations and installation state                                                             |
-| `onboard`                                                               | Print the agent onboarding snippet                                                                           |
-| `list [--state <state>] [--completed]`                                  | List planlets                                                                                                |
-| `create <slug> [--title <title>]`                                       | Scaffold a new planlet                                                                                       |
-| `show <slug> [--part plan\|tasks\|summary]`                             | Show planlet content                                                                                         |
-| `status <slug>`                                                         | Report state and task counts                                                                                 |
-| `validate [<slug>\|--all]`                                              | Validate planlet structure                                                                                   |
-| `tasks <slug> [--remaining\|--completed]`                               | List tasks                                                                                                   |
-| `task check\|uncheck <slug> <task-id>`                                  | Toggle a task checkbox                                                                                       |
-| `complete <slug> [--allow-incomplete --reason <text>]`                  | Archive a planlet under `plans/completed/`, rewriting its outbound relative links for the archive depth      |
-| `check-completion --base <git-ref>`                                     | Report completed planlets and fail when changed ready planlets remain active                                 |
-| `help [command]`                                                        | Show usage                                                                                                   |
+| Command                                                                 | Purpose                                                                                                                                   |
+| ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `init [--tools <ids>] [--force] [--no-agents] [--plans-dir <relative>]` | Create the plans directory, optional `.planlet.json`, install harness skills, write agent onboarding section                              |
+| `update [--tools <ids>] [--force]`                                      | Refresh installed skill copies from canonical sources                                                                                     |
+| `tools`                                                                 | Report skill destinations and installation state                                                                                          |
+| `onboard`                                                               | Print the agent onboarding snippet                                                                                                        |
+| `list [--state <state>] [--completed]`                                  | List planlets                                                                                                                             |
+| `create <slug> [--title <title>]`                                       | Scaffold a new planlet                                                                                                                    |
+| `show <slug> [--part plan\|tasks\|summary]`                             | Show planlet content                                                                                                                      |
+| `status <slug>`                                                         | Report state and task counts                                                                                                              |
+| `validate [<slug>\|--all]`                                              | Validate planlet structure                                                                                                                |
+| `tasks <slug> [--remaining\|--completed]`                               | List tasks                                                                                                                                |
+| `task check\|uncheck <slug> <task-id>`                                  | Toggle a task checkbox                                                                                                                    |
+| `complete <slug> [--allow-incomplete --reason <text>]`                  | Archive a planlet under `<plansDir>/completed/` (default `plans/completed/`), rewriting its outbound relative links for the archive depth |
+| `check-completion --base <git-ref>`                                     | Report completed planlets and fail when changed ready planlets remain active                                                              |
+| `help [command]`                                                        | Show usage                                                                                                                                |
 
 Global options: `--root <path>` selects the repository root, `--full` returns
 complete `show --part plan|tasks` content, and `--version` prints the version

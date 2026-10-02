@@ -234,3 +234,18 @@ test("creation rejects date-prefixed slugs reserved for archives", () => {
     assert.equal(summary.slug, "my-2026-plan");
   });
 });
+
+test("creation is write_conflict when a configured plansDir parent is a file", () => {
+  withRepository((root) => {
+    writeFileSync(join(root, "docs"), "not a directory\n");
+    writeFileSync(
+      join(root, ".planlet.json"),
+      `${JSON.stringify({ plansDir: "docs/plans" }, null, 2)}\n`,
+    );
+    assert.throws(
+      () => createPlanlet({ repositoryRoot: root, slug: "new-plan" }),
+      (error) =>
+        error instanceof PlanletError && error.code === "write_conflict",
+    );
+  });
+});

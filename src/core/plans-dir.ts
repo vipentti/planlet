@@ -19,6 +19,8 @@ const CONFIG_CANDIDATE_FILENAMES = [
   ...RESERVED_CONFIG_FILENAMES,
 ] as const;
 
+const CONTROL_FIRST_SEGMENTS = [...CONFIG_CANDIDATE_FILENAMES, ".git"] as const;
+
 const PLANS_DIR_SEGMENT = /^[A-Za-z0-9._-]+$/;
 const PLANS_DIR_FORBIDDEN = /[\s*?[\]]/;
 
@@ -61,6 +63,13 @@ export function assertValidPlansDir(value: string): string {
   if (
     value !== DEFAULT_PLANS_DIR &&
     segments[0]!.toLowerCase() === DEFAULT_PLANS_DIR
+  ) {
+    throw invalidPlansDir(value);
+  }
+  if (
+    CONTROL_FIRST_SEGMENTS.some(
+      (name) => segments[0]!.toLowerCase() === name.toLowerCase(),
+    )
   ) {
     throw invalidPlansDir(value);
   }
@@ -113,6 +122,7 @@ export function readPlansDir(repositoryRoot: string): string {
       : DEFAULT_PLANS_DIR;
   if (plansDir !== DEFAULT_PLANS_DIR) {
     assertNoPlansDirSymlinks(repositoryRoot, plansDir);
+    assertPlansDirComponentsAreDirectories(repositoryRoot, plansDir);
   }
   assertNoLeftoverDefaultPlans(repositoryRoot, plansDir);
   return plansDir;
@@ -228,7 +238,8 @@ function presentConfigFiles(repositoryRoot: string): string[] {
 
 function parsePlansDirFile(repositoryRoot: string): string {
   const configPath = join(repositoryRoot, PLANLET_CONFIG_FILENAME);
-  if (pathKind(configPath) !== "file") {
+  const stats = tryLstat(configPath);
+  if (stats === null || stats.isSymbolicLink() || !stats.isFile()) {
     throw new PlanletError(
       "invalid_config",
       `Planlet config path is not a regular file: ${configPath}`,
@@ -336,12 +347,22 @@ function assertNoLeftoverDefaultPlans(
     return;
   }
   const leftoverPath = join(repositoryRoot, DEFAULT_PLANS_DIR);
-  if (tryLstat(leftoverPath)?.isDirectory() !== true) {
+  const stats = tryLstat(leftoverPath);
+  if (stats === null) {
+    return;
+  }
+  let inspectPath = leftoverPath;
+  if (stats.isSymbolicLink()) {
+    inspectPath = resolveSafePath(repositoryRoot, DEFAULT_PLANS_DIR);
+    if (tryLstat(inspectPath)?.isDirectory() !== true) {
+      return;
+    }
+  } else if (!stats.isDirectory()) {
     return;
   }
   let entries: readonly { readonly name: string }[];
   try {
-    entries = readdirSync(leftoverPath, { withFileTypes: true });
+    entries = readdirSync(inspectPath, { withFileTypes: true });
   } catch (error) {
     throw new PlanletError(
       "plans_dir_conflict",
@@ -350,7 +371,7 @@ function assertNoLeftoverDefaultPlans(
     );
   }
   const leftoverNames = entries
-    .filter((entry) => isLeftoverDirectory(join(leftoverPath, entry.name)))
+    .filter((entry) => isLeftoverDirectory(join(inspectPath, entry.name)))
     .map((entry) => entry.name);
   if (leftoverNames.length === 0) {
     return;
