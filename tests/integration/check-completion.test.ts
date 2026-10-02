@@ -269,6 +269,96 @@ test("a plansDir git mv of an already-ready planlet does not false-fail", async 
   });
 });
 
+test("unrewritten outbound links after a deeper git mv stay touched", async () => {
+  await withGitRoot(async (root) => {
+    makeBase(root);
+    writePlanlet(root, "ready-plan", READY_TASKS);
+    writeFileSync(
+      join(root, "plans", "ready-plan", "plan.md"),
+      "# ready-plan\n\nSee [design](../../placeholder.txt).\n",
+    );
+    commitAll(root, "ready plan");
+    const relocateBase = spawnSync("git", ["branch", "stale-link-base"], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    assert.equal(relocateBase.status, 0, relocateBase.stderr);
+    mkdirSync(join(root, "docs"));
+    const moved = spawnSync("git", ["mv", "plans", "docs/plans"], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    assert.equal(moved.status, 0, moved.stderr);
+    writeFileSync(
+      join(root, ".planlet.json"),
+      `${JSON.stringify({ plansDir: "docs/plans" }, null, 2)}\n`,
+    );
+    commitAll(root, "relocate without rewriting links");
+
+    const result = await invoke(root, [
+      "check-completion",
+      "--base",
+      "stale-link-base",
+    ]);
+
+    assert.equal(result.exitCode, 4);
+    assert.deepEqual(output(result.capture).touched, ["ready-plan"]);
+  });
+});
+
+test("a same-depth plansDir git mv rewrites outside-tree links", async () => {
+  await withGitRoot(async (root) => {
+    makeBase(root);
+    writePlanlet(root, "ready-plan", READY_TASKS);
+    commitAll(root, "ready plan");
+    mkdirSync(join(root, "docs"));
+    const moved = spawnSync("git", ["mv", "plans", "docs/plans"], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    assert.equal(moved.status, 0, moved.stderr);
+    writeFileSync(join(root, "docs", "guide.md"), "# guide\n");
+    writeFileSync(
+      join(root, "docs", "plans", "ready-plan", "plan.md"),
+      "# ready-plan\n\nSee [sib](../other-plan/plan.md) and [guide](../../guide.md).\n",
+    );
+    writeFileSync(
+      join(root, ".planlet.json"),
+      `${JSON.stringify({ plansDir: "docs/plans" }, null, 2)}\n`,
+    );
+    commitAll(root, "docs/plans");
+    const relocateBase = spawnSync("git", ["branch", "same-depth-base"], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    assert.equal(relocateBase.status, 0, relocateBase.stderr);
+    mkdirSync(join(root, "specs"));
+    const relocated = spawnSync("git", ["mv", "docs/plans", "specs/plans"], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    assert.equal(relocated.status, 0, relocated.stderr);
+    writeFileSync(
+      join(root, "specs", "plans", "ready-plan", "plan.md"),
+      "# ready-plan\n\nSee [sib](../other-plan/plan.md) and [guide](../../../docs/guide.md).\n",
+    );
+    writeFileSync(
+      join(root, ".planlet.json"),
+      `${JSON.stringify({ plansDir: "specs/plans" }, null, 2)}\n`,
+    );
+    commitAll(root, "same-depth relocate");
+
+    const result = await invoke(root, [
+      "check-completion",
+      "--base",
+      "same-depth-base",
+    ]);
+
+    assert.equal(result.exitCode, 0);
+    assert.deepEqual(output(result.capture).touched, []);
+  });
+});
+
 test("chmod during plansDir relocation stays touched", async () => {
   await withGitRoot(async (root) => {
     makeBase(root);

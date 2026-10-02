@@ -13,7 +13,7 @@ import {
   type ParsedArchiveName,
 } from "./plan/slugs.js";
 import { byName } from "./paths.js";
-import { rewritePlanletDepthLinks } from "./plan/link-rewrite.js";
+import { relocationMarkdownPreservesTargets } from "./plan/link-rewrite.js";
 import {
   DEFAULT_PLANS_DIR,
   joinPlansRelative,
@@ -309,38 +309,37 @@ function isExactPrefixRelocation(
   if (fromFiles.size === 0 || fromFiles.size !== toFiles.size) {
     return false;
   }
-  const extraDepth =
-    toPlansDir.split("/").length - fromPlansDir.split("/").length;
   for (const [rest, from] of fromFiles) {
     const to = toFiles.get(rest);
     if (to === undefined || to.mode !== from.mode) {
       return false;
     }
-    if (to.sha === from.sha) {
+    if (rest !== "plan.md" && rest !== "tasks.md") {
+      if (to.sha !== from.sha) {
+        return false;
+      }
       continue;
     }
-    if (
-      repositoryRoot === undefined ||
-      extraDepth === 0 ||
-      (rest !== "plan.md" && rest !== "tasks.md")
-    ) {
+    if (to.sha === from.sha && repositoryRoot === undefined) {
+      continue;
+    }
+    if (repositoryRoot === undefined) {
       return false;
     }
     const oldText = decodeUtf8Strict(readGitBlob(repositoryRoot, from.sha));
-    if (oldText === undefined) {
+    const newText = decodeUtf8Strict(readGitBlob(repositoryRoot, to.sha));
+    if (oldText === undefined || newText === undefined) {
       return false;
     }
-    const expected = Buffer.from(
-      rewritePlanletDepthLinks({
-        fileName: rest,
+    if (
+      !relocationMarkdownPreservesTargets({
         planDir: joinPlansRelative(fromPlansDir, slug),
         fromPrefix: fromPlansDir,
         toPrefix: toPlansDir,
-        text: oldText,
-      }).text,
-      "utf8",
-    );
-    if (!expected.equals(readGitBlob(repositoryRoot, to.sha))) {
+        oldText,
+        newText,
+      })
+    ) {
       return false;
     }
   }

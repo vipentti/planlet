@@ -334,10 +334,11 @@ stays a child of the plans directory, so completion still rewrites outbound
 relative links by one `../`. There is no `planlet move` command. Relocating an
 existing tree is a documented `git mv` of `<oldPlansDir>/` (including
 `completed/`) to `<newPlansDir>/` plus a manual link fix in the same
-commit as `.planlet.json`: add one `../` per extra plansDir segment, or
-remove one `../` per removed segment, on relative links whose targets sit
-outside the moved plans tree. Sibling and in-tree links stay unchanged.
-Default source is `plans/`. If `plansDir` is not `plans` and leftover
+commit as `.planlet.json`: rewrite relative links so repository targets stay
+the same (inside the old plans tree they follow the new prefix; outside it
+they stay put). Adding or removing `../` is enough only when the new prefix
+is a nested depth change that keeps those targets. Sibling and in-tree links
+stay unchanged. Default source is `plans/`. If `plansDir` is not `plans` and leftover
 `plans/` still contains a child directory, commands fail with `plans_dir_conflict`
 instead of splitting trees.
 

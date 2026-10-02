@@ -87,12 +87,12 @@ period. Read from the working tree of that root only.
 
 To move an existing tree: `git mv` active planlets and
 `<oldPlansDir>/completed/` (default `plans/completed/`) to `<newPlansDir>/`,
-commit `.planlet.json`, and adjust relative links whose resolved targets sit
-outside the old plans tree: add one `../` per extra plansDir segment, or
-remove one `../` per removed segment. Links into that moved tree, including
-sibling planlets, stay unchanged. There is no `planlet move` command. If
-leftover `plans/` still contains a child directory, Planlet fails with
-`plans_dir_conflict`.
+commit `.planlet.json`, and rewrite relative links so each destination still
+resolves to the same repository path: links inside the old plans tree follow
+the move, and links outside it stay on that outside target (which may change
+more than a `../` count when the prefix is not nested). Sibling planlets stay
+unchanged. There is no `planlet move` command. If leftover `plans/` still
+contains a child directory, Planlet fails with `plans_dir_conflict`.
 
 ## The skill-first flow
 

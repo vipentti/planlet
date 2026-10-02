@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  relocationMarkdownPreservesTargets,
   rewriteArchiveLinks,
   rewritePlanletDepthLinks,
   type LinkRewriteResult,
@@ -498,4 +499,30 @@ test("rewritePlanletDepthLinks strips encoded leading parent segments", () => {
     "See [design](\\%2E\\%2E/\\%2E\\%2E/README.md).\n",
   );
   assert.equal(escaped.rewrites, 1);
+});
+
+test("relocationMarkdownPreservesTargets maps same-depth prefix moves", () => {
+  const oldText =
+    "See [sib](../other-plan/plan.md) and [guide](../../guide.md).\n";
+  assert.equal(
+    relocationMarkdownPreservesTargets({
+      planDir: "docs/plans/foo",
+      fromPrefix: "docs/plans",
+      toPrefix: "specs/plans",
+      oldText,
+      newText: oldText,
+    }),
+    false,
+  );
+  assert.equal(
+    relocationMarkdownPreservesTargets({
+      planDir: "docs/plans/foo",
+      fromPrefix: "docs/plans",
+      toPrefix: "specs/plans",
+      oldText,
+      newText:
+        "See [sib](../other-plan/plan.md) and [guide](../../../docs/guide.md).\n",
+    }),
+    true,
+  );
 });

@@ -143,6 +143,100 @@ function decide(decoded: string, options: LinkRewriteOptions): Decision {
 }
 
 /**
+ * True when `newText` keeps the same repository targets as `oldText` after a
+ * plansDir prefix change: destinations inside the old tree map onto the new
+ * tree, and destinations outside it stay on the same repository path.
+ */
+export function relocationMarkdownPreservesTargets(options: {
+  readonly planDir: string;
+  readonly fromPrefix: string;
+  readonly toPrefix: string;
+  readonly oldText: string;
+  readonly newText: string;
+}): boolean {
+  const oldDestinations = collectDestinations(options.oldText);
+  const newDestinations = collectDestinations(options.newText);
+  if (oldDestinations.length !== newDestinations.length) {
+    return false;
+  }
+  if (
+    destinationSkeleton(options.oldText, oldDestinations) !==
+    destinationSkeleton(options.newText, newDestinations)
+  ) {
+    return false;
+  }
+  const newPlanDir = `${options.toPrefix}${options.planDir.slice(options.fromPrefix.length)}`;
+  for (let index = 0; index < oldDestinations.length; index += 1) {
+    const mapped = mappedDestinationTarget(
+      oldDestinations[index]!.raw,
+      options.planDir,
+      options.fromPrefix,
+      options.toPrefix,
+    );
+    const actual = resolvedDestinationTarget(
+      newDestinations[index]!.raw,
+      newPlanDir,
+    );
+    if (mapped !== actual) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function destinationSkeleton(
+  text: string,
+  destinations: readonly Destination[],
+): string {
+  let skeleton = text;
+  for (const destination of destinations.toReversed()) {
+    skeleton = `${skeleton.slice(0, destination.offset)}${skeleton.slice(destination.offset + destination.raw.length)}`;
+  }
+  return skeleton;
+}
+
+function mappedDestinationTarget(
+  raw: string,
+  planDir: string,
+  fromPrefix: string,
+  toPrefix: string,
+): string | undefined {
+  const resolved = resolvedDestinationTarget(raw, planDir);
+  if (resolved === undefined || !isInside(fromPrefix, resolved)) {
+    return resolved;
+  }
+  return `${toPrefix}${resolved.slice(fromPrefix.length)}`;
+}
+
+function resolvedDestinationTarget(
+  raw: string,
+  planDir: string,
+): string | undefined {
+  const decoded = decodeString(raw);
+  if (
+    decoded === "" ||
+    decoded.startsWith("/") ||
+    decoded.startsWith("#") ||
+    decoded.startsWith("?") ||
+    SCHEME_PATTERN.test(decoded)
+  ) {
+    return undefined;
+  }
+  const separator = decoded.search(QUERY_OR_FRAGMENT_PATTERN);
+  const rawPath = separator === -1 ? decoded : decoded.slice(0, separator);
+  let path: string;
+  try {
+    path = decodeURIComponent(rawPath);
+  } catch {
+    return "\0";
+  }
+  if (path.includes("\0")) {
+    return "\0";
+  }
+  return resolveTarget(planDir, path).path ?? "\0";
+}
+
+/**
  * Adjusts relative destinations that leave the old plans tree by one `../`
  * per extra plansDir segment. Deeper trees prepend; shallower trees strip
  * matching leading `../`. Sibling planlets move with that tree, so their
