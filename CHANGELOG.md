@@ -6,6 +6,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and thi
 
 ## [Unreleased]
 
+### Added
+
+- Optional committed `.planlet.json` at the discovered repository root may set
+  `plansDir` (relative posix path). Absent file keeps `plans/`. `planlet init
+--plans-dir <relative>` writes the file only when the value is not `plans`.
+  `list` and the dashboard report the effective `plansDir`. YAML siblings and
+  rejected config names fail closed; unknown JSON keys are ignored. Leftover
+  `plans/` after a non-default `plansDir` is `plans_dir_conflict`, distinct
+  from `plans_not_initialized`.
+
 ## [0.8.0] - 2026-09-27
 
 ### Added

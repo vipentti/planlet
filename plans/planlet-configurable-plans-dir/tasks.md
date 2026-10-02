@@ -16,7 +16,7 @@
       leftover-`plans/` gate failure, and YAML/invalid-path fail-closed
       cases. Verify: create, task check, complete, and link rewrite under
       `docs/plans`; gate ok vs `plans_dir_conflict`.
-- [ ] T5 Update `planlet_design.md` §9 and §9.1, README layout and CI,
+- [x] T5 Update `planlet_design.md` §9 and §9.1, README layout and CI,
       CHANGELOG `[Unreleased]`, and regenerate the agent section if snippet
       bytes changed. Verify: referenced paths exist; `format:check`; no
       `.planlet.json` in this repository.

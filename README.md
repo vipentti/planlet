@@ -12,6 +12,9 @@ plans/<slug>/
 └── tasks.md
 ```
 
+That is the default. Planlets live in `plans/<slug>/` unless `.planlet.json`
+sets `plansDir`.
+
 Markdown is the source of truth. The CLI provides deterministic discovery,
 validation, progress, and lifecycle operations; the bundled agent skills provide
 the investigation and judgment around them.
@@ -50,9 +53,11 @@ cd your-repository
 planlet init
 ```
 
-`init` creates `plans/` and installs the three agent skills. On an interactive
-terminal it asks which harnesses to install for; otherwise it installs all of
-them. Supported harnesses:
+`init` creates the plans directory (default `plans/`) and installs the three
+agent skills. On an interactive terminal it asks which harnesses to install
+for; otherwise it installs all of them. Pass `--plans-dir <relative>` to
+create a non-default directory and write `.planlet.json`; `--plans-dir plans`
+writes no file. Supported harnesses:
 
 | Harness                     | `--tools` ID     | Skill destination |
 | --------------------------- | ---------------- | ----------------- |
@@ -64,6 +69,25 @@ them. Supported harnesses:
 Commit the installed copies so everyone cloning the repository gets the same
 workflows. Refresh them after a Planlet upgrade with `planlet update`, and
 inspect installation state without mutating anything with `planlet tools`.
+
+## Configuration
+
+Optional committed `.planlet.json` at the discovered repository root:
+
+```json
+{ "plansDir": "docs/plans" }
+```
+
+Absent file means `plans/`. JSON only. Unknown keys are ignored. A malformed
+file, invalid `plansDir`, or a reserved sibling (`.planlet.yaml`,
+`.planlet.yml`, `.planletrc.json`, `.planlet.config.json`) is a loud error,
+not a silent default. Read from the working tree of that root only.
+
+To move an existing tree: `git mv` active planlets and `plans/completed/` to
+the new directory, add `.planlet.json`, and fix relative links that point
+outside the planlet by the extra path segments. There is no `planlet move`
+command. If leftover `plans/` still contains a child directory, Planlet fails
+with `plans_dir_conflict`.
 
 ## The skill-first flow
 
@@ -152,7 +176,8 @@ planlet check-completion --base <git-ref>
 
 Planlet resolves supplied base to commit, compares its three-dot range with
 `HEAD`, and checks planlets touched since merge base. Current checkout supplies
-lifecycle state. Report fields are `ok`, `base`, `touched`, `completed`, and
+lifecycle state, including `.planlet.json`; the gate pathspec is that
+`plansDir` (default `plans/`). Report fields are `ok`, `base`, `touched`, `completed`, and
 `violations`. `completed` lists slugs whose active directory was removed and a
 matching dated archive was added in the range. Gate is read-only: it does not
 edit, stage, lock, complete, or archive planlets. Exit 0 means no violation.
@@ -217,8 +242,8 @@ generated from them.
 `--tools` accepts comma-separated `agents`, `claude`, `codex`, and
 `github-copilot` IDs. The `agents`, `codex`, and `github-copilot` IDs share the
 `.agents/skills` destination; `github-copilot` names GitHub Copilot explicitly.
-`planlet init --tools none` creates only `plans/` and still writes the
-onboarding section to `AGENTS.md`; pass `--no-agents` to skip it. Locally
+`planlet init --tools none` creates only the plans directory and still writes
+the onboarding section to `AGENTS.md`; pass `--no-agents` to skip it. Locally
 modified generated files require explicit `--force` before replacement.
 
 Without `--tools`, `planlet init` asks which destinations to install to when

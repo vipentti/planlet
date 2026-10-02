@@ -318,7 +318,26 @@ Defaults:
 - Plan filename: `plan.md`
 - Task filename: `tasks.md`
 
-The MVP should prefer convention over configuration. Custom paths can be considered later, but the CLI should support an explicit `--root <path>` for automation and unusual repository layouts.
+The default is convention: active planlets live in `plans/` and completed
+archives in `plans/completed/`. An optional committed `.planlet.json` at the
+discovered repository root may set `plansDir` to another relative posix path
+(for example `docs/plans`). Absent file means `plans/`. The file is JSON only;
+`.planlet.yaml` / `.planlet.yml` and rejected names (`.planletrc.json`,
+`.planlet.config.json`) are errors, not silent fallbacks. Unknown JSON keys are
+ignored. `--root` still selects the repository root (skills, agent files, git
+cwd). It is not a plans-directory override.
+
+Completed archive name, `plan.md`, and `tasks.md` are unchanged. `completed/`
+stays a child of the plans directory, so completion still rewrites outbound
+relative links by one `../`. There is no `planlet move` command. Relocating an
+existing tree is a documented `git mv` plus a manual link fix in the same
+commit as `.planlet.json`. If `plansDir` is not `plans` and leftover `plans/`
+still contains a child directory, commands fail with `plans_dir_conflict`
+instead of splitting trees.
+
+`planlet init --plans-dir <relative>` writes `.planlet.json` only when the
+value is not `plans`, then creates that directory. Later commands read the
+file; they do not accept `--plans-dir`.
 
 ### 9.1 Repository-root discovery
 
@@ -326,10 +345,10 @@ Suggested behavior:
 
 1. Use `--root` when supplied.
 2. Otherwise walk upward from the current directory until a repository marker such as `.git` is found.
-3. If no repository marker is found, use the current directory only when it already contains `plans/` or when the command explicitly creates a new setup.
-4. Never walk above the discovered root when resolving plan paths.
+3. If no repository marker is found, use the current directory only when it already contains `plans/`, a readable `.planlet.json` (or a reserved config-shaped name that Planlet rejects), or when the command explicitly creates a new setup.
+4. Never walk above the discovered root when resolving plan paths. Config is read only from that root; there is no parent-directory cascade.
 
-The MVP supports exactly one `plans/` directory per repository, located at the discovered root. Multi-package monorepos that want isolated planlet sets are out of scope for the MVP; `--root` can be pointed at a package subdirectory as a manual workaround, but repository-root discovery does not search for or aggregate multiple `plans/` directories automatically.
+Exactly one plans directory per discovered root. `plansDir` selects its location. Discovery does not search for or aggregate multiple plan trees. Multi-package monorepos that want isolated planlet sets point `--root` at a package subdirectory as a manual workaround.
 
 ## 10. Planlet File Contract
 
@@ -355,7 +374,7 @@ Example persistent slug validation expression (storage format):
 ^[a-z0-9]+(?:-[a-z0-9]+)*$
 ```
 
-For new planlets, `planlet create` additionally rejects slugs that start with a date-shaped prefix `YYYY-MM-DD-` (for example `2026-08-25-my-plan`). That prefix is reserved for archived storage names under `plans/completed/`. Existing active and completed planlets that already use a date-prefixed logical slug remain valid for read, validation, task updates, and completion without migration; only new creation is blocked.
+For new planlets, `planlet create` additionally rejects slugs that start with a date-shaped prefix `YYYY-MM-DD-` (for example `2026-08-25-my-plan`). That prefix is reserved for archived storage names under `<plansDir>/completed/`. Existing active and completed planlets that already use a date-prefixed logical slug remain valid for read, validation, task updates, and completion without migration; only new creation is blocked.
 
 ### 10.2 Completed archive names
 
@@ -552,7 +571,7 @@ The CLI should follow agent-ergonomic principles:
 Setup and skill installation:
 
 ```text
-planlet init [--tools <ids>]
+planlet init [--tools <ids>] [--force] [--no-agents] [--plans-dir <relative>]
 planlet update [--tools <ids>]
 planlet tools
 ```
@@ -664,6 +683,8 @@ Suggested error codes:
 
 - `repo_not_found`
 - `plans_not_initialized`
+- `invalid_config`
+- `plans_dir_conflict`
 - `invalid_slug`
 - `plan_not_found`
 - `plan_already_exists`
