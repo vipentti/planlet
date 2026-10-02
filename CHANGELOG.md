@@ -52,6 +52,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and thi
   `tasks.md`, and the task template uses a bare outcome line. New task IDs are
   one greater than the highest numeric suffix still in the file.
 
+- The `planlet-complete` skill resumes an interrupted completion when
+  `validate` warns that an active planlet contains a completion record, or
+  when `complete` returns `write_conflict` with `auditRecorded: true`, by
+  running `complete <slug>` once with no new override. It accepts a slug only
+  from active `list` output and stops on `state: completed`. Stderr
+  diagnostics are reported: an unchanged link stays unrepaired, a staging
+  warning is staged before commit, and a lock-release warning stops further
+  writes. An override reason must be a single line. The repository root is
+  the nearest `.git` entry and is not walked past. CLI availability is
+  checked before operational commands.
+
 ## [0.8.0] - 2026-09-27
 
 ### Added

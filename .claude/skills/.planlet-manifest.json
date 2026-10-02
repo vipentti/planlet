@@ -1,9 +1,9 @@
 {
   "schemaVersion": 2,
   "files": {
-    "planlet-complete/SKILL.md": "32b8acee53ca93ca3472142dbfa029ff693481d53629755a9d47d4d7bc1e372b",
+    "planlet-complete/SKILL.md": "bce2d0d4fe8de0429722b94ca4a536d7548fa6c50ab429c42eb7c74fb3248460",
     "planlet-complete/agents/openai.yaml": "f4df999b41feddee85f906ceddf84ced3a5ef60daf7467e7a37bec158cb8451e",
-    "planlet-complete/references/completion-guidance.md": "0a14fb567098df8bf77e14769df4e994e1d653459b8a870962152af133af34cf",
+    "planlet-complete/references/completion-guidance.md": "e4075cdc4eebf3cc8129f481d5f30f8c1241010bc4853199b52fd6ee555ef959",
     "planlet-implement/SKILL.md": "aa2c663c876caeff683bd8c26e3190c5ed5b7cff6c3e159a6e5a05c1663a7fd9",
     "planlet-implement/agents/openai.yaml": "1c7b5ff9f8b87f34c4395a3cf72d26e1d3878577dae0701488312910260be1c2",
     "planlet-implement/references/implementation-guidance.md": "e51429d631ab00f4f73488114b600ad0b3dc89b480e47da920afafe50a2a009d",
