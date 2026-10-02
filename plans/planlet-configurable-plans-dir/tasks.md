@@ -1,6 +1,6 @@
 # Tasks: Configurable Plans Directory
 
-- [ ] T1 Add `.planlet.json` parser, plans-dir resolver, leftover `plans/`
+- [x] T1 Add `.planlet.json` parser, plans-dir resolver, leftover `plans/`
       guard, and `invalid_config` / `plans_dir_conflict` error codes.
       Verify: unit tests for absent file, unknown keys, reserved names,
       invalid JSON, `..`, leftover vs empty `plans/`.
