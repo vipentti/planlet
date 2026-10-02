@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import test from "node:test";
@@ -255,6 +255,57 @@ test("a plansDir git mv of an already-ready planlet does not false-fail", async 
     assert.deepEqual(output(result.capture), {
       ok: true,
       base: "relocate-base",
+      touched: [],
+      completed: [],
+      violations: [],
+    });
+  });
+});
+
+test("a plansDir git mv plus outbound link rewrite does not false-fail", async () => {
+  await withGitRoot(async (root) => {
+    makeBase(root);
+    writePlanlet(root, "ready-plan", READY_TASKS);
+    writeFileSync(
+      join(root, "plans", "ready-plan", "plan.md"),
+      "# ready-plan\n\nSee [design](../../placeholder.txt).\n",
+    );
+    commitAll(root, "ready plan");
+    const relocateBase = spawnSync("git", ["branch", "link-relocate-base"], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    assert.equal(relocateBase.status, 0, relocateBase.stderr);
+    mkdirSync(join(root, "docs"));
+    const moved = spawnSync("git", ["mv", "plans", "docs/plans"], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    assert.equal(moved.status, 0, moved.stderr);
+    const planPath = join(root, "docs", "plans", "ready-plan", "plan.md");
+    writeFileSync(
+      planPath,
+      readFileSync(planPath, "utf8").replace(
+        "../../placeholder.txt",
+        "../../../placeholder.txt",
+      ),
+    );
+    writeFileSync(
+      join(root, ".planlet.json"),
+      `${JSON.stringify({ plansDir: "docs/plans" }, null, 2)}\n`,
+    );
+    commitAll(root, "relocate plans and links");
+
+    const result = await invoke(root, [
+      "check-completion",
+      "--base",
+      "link-relocate-base",
+    ]);
+
+    assert.equal(result.exitCode, 0);
+    assert.deepEqual(output(result.capture), {
+      ok: true,
+      base: "link-relocate-base",
       touched: [],
       completed: [],
       violations: [],

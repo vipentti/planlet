@@ -1,7 +1,10 @@
+import { join } from "node:path";
+
 import { isPlanletError } from "../errors/planlet-error.js";
 import {
   listDiffEntries,
   readCommitFile,
+  readGitBlob,
   resolveMergeBase,
   type DiffPathEntry,
 } from "./git.js";
@@ -11,9 +14,11 @@ import {
   parseArchiveName,
   type ParsedArchiveName,
 } from "./plan/slugs.js";
-import { byName } from "./paths.js";
+import { byName, tryLstat } from "./paths.js";
+import { rewriteArchiveLinks } from "./plan/link-rewrite.js";
 import {
   DEFAULT_PLANS_DIR,
+  joinPlansRelative,
   parsePlansDirDocument,
   plansDirPathspec,
   readPlansDir,
@@ -234,6 +239,7 @@ export function checkCompletion(
       entries,
       basePlansDir,
       plansDir,
+      options.repositoryRoot,
     ),
     validation,
     extractCompletedSlugs(changedPaths, plansDir),
@@ -268,6 +274,7 @@ function isExactPrefixRelocation(
   entries: readonly DiffPathEntry[],
   fromPlansDir: string,
   toPlansDir: string,
+  repositoryRoot?: string,
 ): boolean {
   const fromFiles = new Map<string, string>();
   const toFiles = new Map<string, string>();
@@ -290,8 +297,39 @@ function isExactPrefixRelocation(
   if (fromFiles.size === 0 || fromFiles.size !== toFiles.size) {
     return false;
   }
+  const extraDepth =
+    toPlansDir.split("/").length - fromPlansDir.split("/").length;
   for (const [rest, sha] of fromFiles) {
-    if (toFiles.get(rest) !== sha) {
+    const toSha = toFiles.get(rest);
+    if (toSha === undefined) {
+      return false;
+    }
+    if (toSha === sha) {
+      continue;
+    }
+    if (repositoryRoot === undefined || extraDepth < 1) {
+      return false;
+    }
+    const fileName = rest.split("/").at(-1);
+    if (fileName === undefined) {
+      return false;
+    }
+    let expected = readGitBlob(repositoryRoot, sha);
+    const newText = readGitBlob(repositoryRoot, toSha);
+    const planDir = joinPlansRelative(fromPlansDir, slug);
+    const archiveDir = joinPlansRelative(toPlansDir, slug);
+    const exists = (path: string): boolean =>
+      tryLstat(join(repositoryRoot, ...path.split("/"))) !== null;
+    for (let index = 0; index < extraDepth; index += 1) {
+      expected = rewriteArchiveLinks({
+        fileName,
+        planDir,
+        archiveDir,
+        exists,
+        text: expected,
+      }).text;
+    }
+    if (expected !== newText) {
       return false;
     }
   }
@@ -303,11 +341,19 @@ export function excludeExactPrefixRelocations(
   entries: readonly DiffPathEntry[],
   fromPlansDir: string,
   toPlansDir: string,
+  repositoryRoot?: string,
 ): readonly string[] {
   if (fromPlansDir === toPlansDir) {
     return slugs;
   }
   return slugs.filter(
-    (slug) => !isExactPrefixRelocation(slug, entries, fromPlansDir, toPlansDir),
+    (slug) =>
+      !isExactPrefixRelocation(
+        slug,
+        entries,
+        fromPlansDir,
+        toPlansDir,
+        repositoryRoot,
+      ),
   );
 }

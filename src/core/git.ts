@@ -287,6 +287,21 @@ export function readCommitFile(
   return shown.stdout;
 }
 
+export function readGitBlob(repositoryRoot: string, sha: string): string {
+  if (!/^[0-9a-f]{40}$/.test(sha) || sha === "0".repeat(40)) {
+    throw new PlanletError("git_error", "Could not read Git blob", {
+      details: { sha },
+    });
+  }
+  const shown = runGitOutput(repositoryRoot, ["cat-file", "-p", sha]);
+  if (shown.failure !== undefined) {
+    throw new PlanletError("git_error", "Could not read Git blob", {
+      details: { sha, reason: shown.failure },
+    });
+  }
+  return shown.stdout;
+}
+
 /**
  * Stages a planlet move with exactly one index mutation. Inspects the source
  * with `git ls-files` first: when the source has index entries (tracked, or
