@@ -306,6 +306,181 @@ test("unrewritten outbound links after a deeper git mv stay touched", async () =
   });
 });
 
+test("a URL edit during plansDir relocation stays touched", async () => {
+  await withGitRoot(async (root) => {
+    makeBase(root);
+    writePlanlet(root, "ready-plan", READY_TASKS);
+    writeFileSync(
+      join(root, "plans", "ready-plan", "plan.md"),
+      "# ready-plan\n\nSee [site](https://old.example/x).\n",
+    );
+    commitAll(root, "ready plan");
+    const relocateBase = spawnSync("git", ["branch", "url-edit-base"], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    assert.equal(relocateBase.status, 0, relocateBase.stderr);
+    mkdirSync(join(root, "docs"));
+    const moved = spawnSync("git", ["mv", "plans", "docs/plans"], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    assert.equal(moved.status, 0, moved.stderr);
+    writeFileSync(
+      join(root, "docs", "plans", "ready-plan", "plan.md"),
+      "# ready-plan\n\nSee [site](https://new.example/x).\n",
+    );
+    writeFileSync(
+      join(root, ".planlet.json"),
+      `${JSON.stringify({ plansDir: "docs/plans" }, null, 2)}\n`,
+    );
+    commitAll(root, "relocate with URL edit");
+
+    const result = await invoke(root, [
+      "check-completion",
+      "--base",
+      "url-edit-base",
+    ]);
+
+    assert.equal(result.exitCode, 4);
+    assert.deepEqual(output(result.capture).touched, ["ready-plan"]);
+  });
+});
+
+test("a fragment edit after a correct path rewrite stays touched", async () => {
+  await withGitRoot(async (root) => {
+    makeBase(root);
+    writePlanlet(root, "ready-plan", READY_TASKS);
+    writeFileSync(
+      join(root, "plans", "ready-plan", "plan.md"),
+      "# ready-plan\n\nSee [design](../../placeholder.txt#keep).\n",
+    );
+    commitAll(root, "ready plan");
+    const relocateBase = spawnSync("git", ["branch", "fragment-edit-base"], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    assert.equal(relocateBase.status, 0, relocateBase.stderr);
+    mkdirSync(join(root, "docs"));
+    const moved = spawnSync("git", ["mv", "plans", "docs/plans"], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    assert.equal(moved.status, 0, moved.stderr);
+    writeFileSync(
+      join(root, "docs", "plans", "ready-plan", "plan.md"),
+      "# ready-plan\n\nSee [design](../../../placeholder.txt#changed).\n",
+    );
+    writeFileSync(
+      join(root, ".planlet.json"),
+      `${JSON.stringify({ plansDir: "docs/plans" }, null, 2)}\n`,
+    );
+    commitAll(root, "relocate with fragment edit");
+
+    const result = await invoke(root, [
+      "check-completion",
+      "--base",
+      "fragment-edit-base",
+    ]);
+
+    assert.equal(result.exitCode, 4);
+    assert.deepEqual(output(result.capture).touched, ["ready-plan"]);
+  });
+});
+
+test("a nested plansDir git mv of slug plans does not false-fail", async () => {
+  await withGitRoot(async (root) => {
+    makeBase(root);
+    mkdirSync(join(root, "docs", "plans"), { recursive: true });
+    writeFileSync(join(root, "docs", "plans", "plan.md"), "# plans\n");
+    writeFileSync(join(root, "docs", "plans", "tasks.md"), READY_TASKS);
+    writeFileSync(
+      join(root, ".planlet.json"),
+      `${JSON.stringify({ plansDir: "docs" }, null, 2)}\n`,
+    );
+    commitAll(root, "docs plans slug");
+    const relocateBase = spawnSync("git", ["branch", "overlap-base"], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    assert.equal(relocateBase.status, 0, relocateBase.stderr);
+    mkdirSync(join(root, "nest"));
+    const parked = spawnSync("git", ["mv", "docs/plans", "nest/plans"], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    assert.equal(parked.status, 0, parked.stderr);
+    mkdirSync(join(root, "docs", "plans"));
+    const nested = spawnSync("git", ["mv", "nest/plans", "docs/plans/plans"], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    assert.equal(nested.status, 0, nested.stderr);
+    writeFileSync(
+      join(root, ".planlet.json"),
+      `${JSON.stringify({ plansDir: "docs/plans" }, null, 2)}\n`,
+    );
+    commitAll(root, "docs/plans");
+
+    const result = await invoke(root, [
+      "check-completion",
+      "--base",
+      "overlap-base",
+    ]);
+
+    assert.equal(result.exitCode, 0);
+    assert.deepEqual(output(result.capture).touched, []);
+  });
+});
+
+test("a shallower plansDir git mv of slug plans does not false-fail", async () => {
+  await withGitRoot(async (root) => {
+    makeBase(root);
+    mkdirSync(join(root, "docs", "plans", "plans"), { recursive: true });
+    writeFileSync(join(root, "docs", "plans", "plans", "plan.md"), "# plans\n");
+    writeFileSync(
+      join(root, "docs", "plans", "plans", "tasks.md"),
+      READY_TASKS,
+    );
+    writeFileSync(
+      join(root, ".planlet.json"),
+      `${JSON.stringify({ plansDir: "docs/plans" }, null, 2)}\n`,
+    );
+    commitAll(root, "nested plans slug");
+    const relocateBase = spawnSync("git", ["branch", "overlap-shallow-base"], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    assert.equal(relocateBase.status, 0, relocateBase.stderr);
+    const plan = spawnSync(
+      "git",
+      ["mv", "docs/plans/plans/plan.md", "docs/plans/plan.md"],
+      { cwd: root, encoding: "utf8" },
+    );
+    assert.equal(plan.status, 0, plan.stderr);
+    const tasks = spawnSync(
+      "git",
+      ["mv", "docs/plans/plans/tasks.md", "docs/plans/tasks.md"],
+      { cwd: root, encoding: "utf8" },
+    );
+    assert.equal(tasks.status, 0, tasks.stderr);
+    writeFileSync(
+      join(root, ".planlet.json"),
+      `${JSON.stringify({ plansDir: "docs" }, null, 2)}\n`,
+    );
+    commitAll(root, "docs");
+
+    const result = await invoke(root, [
+      "check-completion",
+      "--base",
+      "overlap-shallow-base",
+    ]);
+
+    assert.equal(result.exitCode, 0);
+    assert.deepEqual(output(result.capture).touched, []);
+  });
+});
+
 test("a same-depth plansDir git mv rewrites outside-tree links", async () => {
   await withGitRoot(async (root) => {
     makeBase(root);

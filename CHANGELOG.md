@@ -23,7 +23,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and thi
   `plansDir` does not make `check-completion` treat them as newly touched:
   Git modes must match, and `plan.md`/`tasks.md` may differ only when
   relative destinations keep the same repository targets after the prefix
-  change. Relocation matching keeps Git
+  change, with scheme, absolute, and invalid destinations plus query and
+  fragment suffixes kept byte-identical. Overlapping old and new `plansDir`
+  prefixes pair by Git add/delete side, not lexical membership in both
+  namespaces. Relocation matching keeps Git
   filename bytes, so distinct non-UTF8 names cannot collapse. A directory
   that cannot be listed is `invalid_config`, not a silent fallback to
   `plans/`.

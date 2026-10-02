@@ -230,6 +230,58 @@ test("exact old-prefix to new-prefix moves are not treated as touched edits", ()
     ),
     ["ready-plan"],
   );
+  assert.deepEqual(
+    excludeExactPrefixRelocations(
+      ["plans"],
+      [
+        {
+          path: "docs/plans/plan.md",
+          srcSha: sha,
+          dstSha: "0".repeat(40),
+          srcMode: "100644",
+          dstMode: "000000",
+          status: "D",
+        },
+        {
+          path: "docs/plans/plans/plan.md",
+          srcSha: "0".repeat(40),
+          dstSha: sha,
+          srcMode: "000000",
+          dstMode: "100644",
+          status: "A",
+        },
+      ],
+      "docs",
+      "docs/plans",
+    ),
+    [],
+  );
+  assert.deepEqual(
+    excludeExactPrefixRelocations(
+      ["plans"],
+      [
+        {
+          path: "docs/plans/plans/plan.md",
+          srcSha: sha,
+          dstSha: "0".repeat(40),
+          srcMode: "100644",
+          dstMode: "000000",
+          status: "D",
+        },
+        {
+          path: "docs/plans/plan.md",
+          srcSha: "0".repeat(40),
+          dstSha: sha,
+          srcMode: "000000",
+          dstMode: "100644",
+          status: "A",
+        },
+      ],
+      "docs/plans",
+      "docs",
+    ),
+    [],
+  );
 });
 
 test("deriveCompletionResult uses one validation snapshot for active state and uniqueness", () => {

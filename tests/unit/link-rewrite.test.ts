@@ -4,7 +4,6 @@ import test from "node:test";
 import {
   relocationMarkdownPreservesTargets,
   rewriteArchiveLinks,
-  rewritePlanletDepthLinks,
   type LinkRewriteResult,
 } from "../../src/core/plan/link-rewrite.js";
 
@@ -408,99 +407,6 @@ test("a second pass over rewritten output changes nothing", () => {
   assert.deepEqual(second.notes, first.notes);
 });
 
-test("rewritePlanletDepthLinks prepends one ../ per extra plansDir segment", () => {
-  const text = "See [design](../../README.md).\n";
-  const one = rewritePlanletDepthLinks({
-    fileName: "plan.md",
-    planDir: "plans/foo",
-    fromPrefix: "plans",
-    toPrefix: "docs/plans",
-    text,
-  });
-  assert.equal(one.text, "See [design](../../../README.md).\n");
-  assert.equal(one.rewrites, 1);
-  const two = rewritePlanletDepthLinks({
-    fileName: "plan.md",
-    planDir: "plans/foo",
-    fromPrefix: "plans",
-    toPrefix: "docs/team/plans",
-    text,
-  });
-  assert.equal(two.text, "See [design](../../../../README.md).\n");
-  assert.equal(two.rewrites, 1);
-  const shallower = rewritePlanletDepthLinks({
-    fileName: "plan.md",
-    planDir: "docs/team/plans/foo",
-    fromPrefix: "docs/team/plans",
-    toPrefix: "docs/plans",
-    text: two.text,
-  });
-  assert.equal(shallower.text, "See [design](../../../README.md).\n");
-  assert.equal(shallower.rewrites, 1);
-});
-
-test("rewritePlanletDepthLinks leaves sibling planlet links unchanged", () => {
-  const text =
-    "See [sib](../other-plan/plan.md) and [root](../../README.md).\n";
-  const result = rewritePlanletDepthLinks({
-    fileName: "plan.md",
-    planDir: "plans/foo",
-    fromPrefix: "plans",
-    toPrefix: "docs/plans",
-    text,
-  });
-  assert.equal(
-    result.text,
-    "See [sib](../other-plan/plan.md) and [root](../../../README.md).\n",
-  );
-  assert.equal(result.rewrites, 1);
-  const shallower = rewritePlanletDepthLinks({
-    fileName: "plan.md",
-    planDir: "docs/plans/foo",
-    fromPrefix: "docs/plans",
-    toPrefix: "plans",
-    text: result.text,
-  });
-  assert.equal(
-    shallower.text,
-    "See [sib](../other-plan/plan.md) and [root](../../README.md).\n",
-  );
-  assert.equal(shallower.rewrites, 1);
-});
-
-test("rewritePlanletDepthLinks strips encoded leading parent segments", () => {
-  const percent = rewritePlanletDepthLinks({
-    fileName: "plan.md",
-    planDir: "docs/team/plans/foo",
-    fromPrefix: "docs/team/plans",
-    toPrefix: "docs/plans",
-    text: "See [design](%2E%2E/%2E%2E/%2E%2E/README.md).\n",
-  });
-  assert.equal(percent.text, "See [design](%2E%2E/%2E%2E/README.md).\n");
-  assert.equal(percent.rewrites, 1);
-  const entities = rewritePlanletDepthLinks({
-    fileName: "plan.md",
-    planDir: "docs/team/plans/foo",
-    fromPrefix: "docs/team/plans",
-    toPrefix: "docs/plans",
-    text: "See [design](&#46;&#46;/../../README.md).\n",
-  });
-  assert.equal(entities.text, "See [design](../../README.md).\n");
-  assert.equal(entities.rewrites, 1);
-  const escaped = rewritePlanletDepthLinks({
-    fileName: "plan.md",
-    planDir: "docs/team/plans/foo",
-    fromPrefix: "docs/team/plans",
-    toPrefix: "docs/plans",
-    text: "See [design](\\%2E\\%2E/\\%2E\\%2E/\\%2E\\%2E/README.md).\n",
-  });
-  assert.equal(
-    escaped.text,
-    "See [design](\\%2E\\%2E/\\%2E\\%2E/README.md).\n",
-  );
-  assert.equal(escaped.rewrites, 1);
-});
-
 test("relocationMarkdownPreservesTargets maps same-depth prefix moves", () => {
   const oldText =
     "See [sib](../other-plan/plan.md) and [guide](../../guide.md).\n";
@@ -522,6 +428,39 @@ test("relocationMarkdownPreservesTargets maps same-depth prefix moves", () => {
       oldText,
       newText:
         "See [sib](../other-plan/plan.md) and [guide](../../../docs/guide.md).\n",
+    }),
+    true,
+  );
+});
+
+test("relocationMarkdownPreservesTargets rejects scheme and fragment edits", () => {
+  assert.equal(
+    relocationMarkdownPreservesTargets({
+      planDir: "plans/foo",
+      fromPrefix: "plans",
+      toPrefix: "docs/plans",
+      oldText: "See [site](https://old.example/x).\n",
+      newText: "See [site](https://new.example/x).\n",
+    }),
+    false,
+  );
+  assert.equal(
+    relocationMarkdownPreservesTargets({
+      planDir: "plans/foo",
+      fromPrefix: "plans",
+      toPrefix: "docs/plans",
+      oldText: "See [design](../../placeholder.txt#keep).\n",
+      newText: "See [design](../../../placeholder.txt#changed).\n",
+    }),
+    false,
+  );
+  assert.equal(
+    relocationMarkdownPreservesTargets({
+      planDir: "plans/foo",
+      fromPrefix: "plans",
+      toPrefix: "docs/plans",
+      oldText: "See [design](../../placeholder.txt#keep).\n",
+      newText: "See [design](../../../placeholder.txt#keep).\n",
     }),
     true,
   );

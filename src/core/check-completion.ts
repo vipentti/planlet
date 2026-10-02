@@ -292,18 +292,29 @@ function isExactPrefixRelocation(
   >();
   for (const entry of entries) {
     const fromRest = slugFileRest(entry.path, fromPlansDir, slug);
-    if (fromRest !== undefined) {
-      if (entry.status !== "D") {
-        return false;
-      }
-      fromFiles.set(fromRest, { sha: entry.srcSha, mode: entry.srcMode });
-    }
     const toRest = slugFileRest(entry.path, toPlansDir, slug);
-    if (toRest !== undefined) {
-      if (entry.status !== "A") {
+    if (entry.status === "D") {
+      if (fromRest !== undefined) {
+        fromFiles.set(fromRest, { sha: entry.srcSha, mode: entry.srcMode });
+        continue;
+      }
+      if (toRest !== undefined) {
         return false;
       }
-      toFiles.set(toRest, { sha: entry.dstSha, mode: entry.dstMode });
+      continue;
+    }
+    if (entry.status === "A") {
+      if (toRest !== undefined) {
+        toFiles.set(toRest, { sha: entry.dstSha, mode: entry.dstMode });
+        continue;
+      }
+      if (fromRest !== undefined) {
+        return false;
+      }
+      continue;
+    }
+    if (fromRest !== undefined || toRest !== undefined) {
+      return false;
     }
   }
   if (fromFiles.size === 0 || fromFiles.size !== toFiles.size) {
