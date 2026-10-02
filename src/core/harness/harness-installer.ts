@@ -10,8 +10,13 @@ import {
   type HarnessDestination,
   type HarnessToolId,
 } from "./harnesses.js";
+import { tryStage } from "../git.js";
 import { byName, pathKind, resolveSafePath, sortedRecord } from "../paths.js";
-import { resolvePlansLocation } from "../plans-dir.js";
+import {
+  prepareInitPlansDirectory,
+  resolvePlansLocation,
+  writePlansDirConfig,
+} from "../plans-dir.js";
 import {
   INSTALLATION_MANIFEST,
   createInstallationManifest,
@@ -237,6 +242,7 @@ export function installHarnessSkills(options: {
   readonly tools?: string | undefined;
   readonly force?: boolean | undefined;
   readonly noAgents?: boolean | undefined;
+  readonly plansDir?: string | undefined;
   readonly source?: CanonicalSkillSource | undefined;
   /** @internal Fault-injection seam for the publish transaction. Tests only. */
   readonly transactionHooks?: InstallTransactionHooks | undefined;
@@ -247,30 +253,56 @@ export function installHarnessSkills(options: {
     options.repositoryRoot,
     selectedToolIds,
   );
-  const plansPath = resolvePlansLocation(options.repositoryRoot).plansPath;
-  const plansKind = pathKind(plansPath);
-  if (
-    options.operation === "init" &&
-    plansKind !== "missing" &&
-    plansKind !== "directory"
-  ) {
-    throw new PlanletError(
-      "write_conflict",
-      `Plans path is not a directory: ${plansPath}`,
-      {
-        details: { path: plansPath },
-      },
-    );
-  }
-
   const warnings: string[] = [];
   const { value, releaseWarning } = withHarnessInstallLock(
     options.repositoryRoot,
     () => {
+      const prepared =
+        options.operation === "init"
+          ? prepareInitPlansDirectory(options.repositoryRoot, options.plansDir)
+          : resolvePlansLocation(options.repositoryRoot);
+      const plansPath = prepared.plansPath;
+      const plansKind = pathKind(plansPath);
+      if (
+        options.operation === "init" &&
+        plansKind !== "missing" &&
+        plansKind !== "directory"
+      ) {
+        throw new PlanletError(
+          "write_conflict",
+          `Plans path is not a directory: ${plansPath}`,
+          {
+            details: { path: plansPath },
+          },
+        );
+      }
+
       const plansInitialized =
         options.operation === "init" && plansKind === "missing";
 
+      const writeConfigIfNeeded = (): boolean => {
+        if (
+          options.operation !== "init" ||
+          !("shouldWriteConfig" in prepared) ||
+          !prepared.shouldWriteConfig
+        ) {
+          return false;
+        }
+        const configPath = writePlansDirConfig(
+          options.repositoryRoot,
+          prepared.plansDir,
+        );
+        tryStage(
+          options.repositoryRoot,
+          [configPath],
+          warnings,
+          ".planlet.json",
+        );
+        return true;
+      };
+
       let summaries: readonly HarnessInstallationSummary[] = [];
+      let wroteConfig = false;
       if (destinations.length > 0) {
         const source = options.source ?? enumerateCanonicalSkills();
         const inspections = destinations.map((destination) =>
@@ -296,6 +328,7 @@ export function installHarnessSkills(options: {
 
         // Preflight passed: only now mutate the repository.
         if (plansInitialized) mkdirSync(plansPath, { recursive: true });
+        wroteConfig = writeConfigIfNeeded();
         summaries = inspections.map((inspection) =>
           options.operation === "update" && inspection.state === "missing"
             ? {
@@ -312,8 +345,9 @@ export function installHarnessSkills(options: {
                 options.transactionHooks,
               ),
         );
-      } else if (plansInitialized) {
-        mkdirSync(plansPath, { recursive: true });
+      } else {
+        if (plansInitialized) mkdirSync(plansPath, { recursive: true });
+        wroteConfig = writeConfigIfNeeded();
       }
 
       // Agent files are written only after every destination inspected and
@@ -330,6 +364,7 @@ export function installHarnessSkills(options: {
         operation: options.operation,
         changed:
           plansInitialized ||
+          wroteConfig ||
           summaries.some((summary) => summary.changed) ||
           agents.changed,
         plansInitialized,

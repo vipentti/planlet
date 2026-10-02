@@ -8,7 +8,7 @@
       complete, link-rewrite prefixes, init mkdir, and both completion-gate
       functions. Verify: default-path suite still passes; gate extracts
       slugs for `docs/plans`.
-- [ ] T3 Add `init --plans-dir`, snippet default-plus-file wording,
+- [x] T3 Add `init --plans-dir`, snippet default-plus-file wording,
       `plansDir` on list and dashboard, and the configured archive path in
       the date-prefix slug error. Verify: `init --plans-dir plans` writes no
       file; snippet tests and list fixtures include `plansDir`.

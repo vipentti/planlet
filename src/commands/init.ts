@@ -6,6 +6,7 @@ export interface HarnessCommandArguments {
   readonly tools?: string | undefined;
   readonly force?: boolean | undefined;
   readonly noAgents?: boolean | undefined;
+  readonly plansDir?: string | undefined;
 }
 
 export function handleHarnessInit(

@@ -1,7 +1,7 @@
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { PlanletError } from "../errors/planlet-error.js";
+import { PlanletError, asWriteConflict } from "../errors/planlet-error.js";
 import { pathKind, resolveSafePath, tryLstat } from "./paths.js";
 
 export const DEFAULT_PLANS_DIR = "plans";
@@ -131,6 +131,80 @@ export function requirePlansDirectory(
     );
   }
   return location;
+}
+
+export interface InitPlansDirectory extends ResolvedPlansLocation {
+  readonly shouldWriteConfig: boolean;
+}
+
+export function prepareInitPlansDirectory(
+  repositoryRoot: string,
+  requestedPlansDir?: string,
+): InitPlansDirectory {
+  const present = presentConfigFiles(repositoryRoot);
+  if (present.length > 1) {
+    throw new PlanletError(
+      "invalid_config",
+      `Multiple Planlet config files: ${present.join(", ")}`,
+      {
+        details: { files: present },
+        next: "Keep exactly one config file named .planlet.json",
+      },
+    );
+  }
+  if (present[0] !== undefined && present[0] !== PLANLET_CONFIG_FILENAME) {
+    throw reservedConfigError(present[0]);
+  }
+  const existing =
+    present[0] === PLANLET_CONFIG_FILENAME
+      ? parsePlansDirFile(repositoryRoot)
+      : DEFAULT_PLANS_DIR;
+  const plansDir =
+    requestedPlansDir === undefined
+      ? existing
+      : assertValidPlansDir(requestedPlansDir);
+  if (
+    requestedPlansDir !== undefined &&
+    present[0] === PLANLET_CONFIG_FILENAME &&
+    existing !== plansDir
+  ) {
+    throw new PlanletError(
+      "write_conflict",
+      `Existing ${PLANLET_CONFIG_FILENAME} already sets plansDir to ${existing}`,
+      {
+        details: {
+          path: join(repositoryRoot, PLANLET_CONFIG_FILENAME),
+          plansDir: existing,
+        },
+        next: `Keep the committed ${PLANLET_CONFIG_FILENAME} or change it in the same commit as a git mv`,
+      },
+    );
+  }
+  assertNoLeftoverDefaultPlans(repositoryRoot, plansDir);
+  return {
+    plansDir,
+    plansPath: resolveUnderPlans(repositoryRoot, plansDir),
+    shouldWriteConfig:
+      requestedPlansDir !== undefined &&
+      plansDir !== DEFAULT_PLANS_DIR &&
+      present.length === 0,
+  };
+}
+
+export function writePlansDirConfig(
+  repositoryRoot: string,
+  plansDir: string,
+): string {
+  const path = join(repositoryRoot, PLANLET_CONFIG_FILENAME);
+  const content = `${JSON.stringify({ plansDir }, null, 2)}\n`;
+  try {
+    writeFileSync(path, content, { encoding: "utf8", flag: "wx" });
+  } catch (error) {
+    throw asWriteConflict(error, `Could not write ${PLANLET_CONFIG_FILENAME}`, {
+      path,
+    });
+  }
+  return path;
 }
 
 function presentConfigFiles(repositoryRoot: string): string[] {

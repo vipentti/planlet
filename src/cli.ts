@@ -39,11 +39,12 @@ const VERSION = (
 
 const COMMAND_HELP: Readonly<Record<string, string>> = {
   init:
-    "Usage: planlet init [--tools <ids>] [--force] [--no-agents]\n\n" +
+    "Usage: planlet init [--tools <ids>] [--force] [--no-agents] [--plans-dir <relative>]\n\n" +
     "--tools takes all, none, or comma-separated agents, claude, codex, github-copilot.\n" +
     "Without it, an interactive terminal is asked which destinations to\n" +
     "install; anything else installs all of them.\n" +
-    "--no-agents skips writing the onboarding section to AGENTS.md and CLAUDE.md.\n",
+    "--no-agents skips writing the onboarding section to AGENTS.md and CLAUDE.md.\n" +
+    "--plans-dir writes .planlet.json when the relative path is not plans.\n",
   update:
     "Usage: planlet update [--tools <ids>] [--force]\n\n" +
     "--tools takes all, none, or comma-separated agents, claude, codex, github-copilot.\n",
@@ -272,13 +273,23 @@ function prepareCommand(
       const { values, positionals } = parse(arguments_, {
         tools: { type: "string" },
         force: { type: "boolean" },
-        ...(command === "init" ? { "no-agents": { type: "boolean" } } : {}),
+        ...(command === "init"
+          ? {
+              "no-agents": { type: "boolean" },
+              "plans-dir": { type: "string" },
+            }
+          : {}),
       });
       requirePositionals(positionals, 0, command);
+      const plansDirValue =
+        "plans-dir" in values ? values["plans-dir"] : undefined;
       const commandArguments = {
         tools: values.tools,
         force: values.force,
         noAgents: values["no-agents"] === true,
+        ...(typeof plansDirValue === "string"
+          ? { plansDir: plansDirValue }
+          : {}),
       };
       // An explicit --tools, a pipe, or a redirect keeps init non-interactive.
       const interactive =

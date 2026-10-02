@@ -101,7 +101,11 @@ function assertNoCompletedCollision(plansPath: string, slug: string): void {
  * rename only after both complete stub files have been written.
  */
 export function createPlanlet(options: CreatePlanletOptions): PlanSummary {
-  const slug = assertCreatableSlug(options.slug);
+  const location = resolvePlansLocation(options.repositoryRoot);
+  const slug = assertCreatableSlug(
+    options.slug,
+    `${location.plansDir}/completed/`,
+  );
   const title =
     options.title === undefined
       ? deriveTitleFromSlug(slug)
@@ -110,7 +114,7 @@ export function createPlanlet(options: CreatePlanletOptions): PlanSummary {
 
   let plansPath: string;
   try {
-    plansPath = resolvePlansLocation(options.repositoryRoot).plansPath;
+    plansPath = location.plansPath;
     mkdirSync(plansPath, { recursive: true });
     assertNoActiveCollision(plansPath, slug);
     assertNoCompletedCollision(plansPath, slug);

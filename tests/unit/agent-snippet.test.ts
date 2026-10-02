@@ -33,6 +33,7 @@ test("snippet source is shared and section rendering is deterministic", () => {
   // CLI-required policy signal only; the full cross-surface wording contract
   // lives in tests/skills/skill-contract.test.ts.
   assert.match(AGENT_SNIPPET, /The `planlet` CLI is required\./);
+  assert.match(AGENT_SNIPPET, /unless `\.planlet\.json` sets `plansDir`/);
 
   const section = renderAgentsSection();
   assert.match(

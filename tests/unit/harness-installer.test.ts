@@ -181,6 +181,40 @@ test("init with none creates plans without resolving or installing skills", () =
     assert.deepEqual(result.data.destinations, []);
     assert.equal(existsSync(join(root, "plans")), true);
     assert.equal(existsSync(join(root, ".agents")), false);
+    assert.equal(existsSync(join(root, ".planlet.json")), false);
+  });
+});
+
+test("init --plans-dir plans writes no config file", () => {
+  withRoot((root) => {
+    const result = installHarnessSkills({
+      repositoryRoot: root,
+      operation: "init",
+      tools: "none",
+      plansDir: "plans",
+    });
+    assert.equal(result.data.plansInitialized, true);
+    assert.equal(existsSync(join(root, "plans")), true);
+    assert.equal(existsSync(join(root, ".planlet.json")), false);
+  });
+});
+
+test("init --plans-dir docs/plans writes config and creates that directory", () => {
+  withRoot((root) => {
+    const result = installHarnessSkills({
+      repositoryRoot: root,
+      operation: "init",
+      tools: "none",
+      noAgents: true,
+      plansDir: "docs/plans",
+    });
+    assert.equal(result.data.plansInitialized, true);
+    assert.equal(existsSync(join(root, "plans")), false);
+    assert.equal(existsSync(join(root, "docs", "plans")), true);
+    assert.equal(
+      readFileSync(join(root, ".planlet.json"), "utf8"),
+      `${JSON.stringify({ plansDir: "docs/plans" }, null, 2)}\n`,
+    );
   });
 });
 
