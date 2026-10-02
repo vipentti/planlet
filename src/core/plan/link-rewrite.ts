@@ -236,12 +236,13 @@ function parseRelocationDestination(
   ) {
     return { kind: "fixed" };
   }
-  const separator = decoded.search(QUERY_OR_FRAGMENT_PATTERN);
-  const rawPath = separator === -1 ? decoded : decoded.slice(0, separator);
-  const suffix = separator === -1 ? "" : decoded.slice(separator);
+  const split = splitRawPathAndSuffix(raw, decoded);
+  if (split === undefined) {
+    return { kind: "fixed" };
+  }
   let path: string;
   try {
-    path = decodeURIComponent(rawPath);
+    path = decodeURIComponent(decodeString(split.pathRaw));
   } catch {
     return { kind: "fixed" };
   }
@@ -252,7 +253,53 @@ function parseRelocationDestination(
   if (resolved === null) {
     return { kind: "fixed" };
   }
-  return { kind: "relative", path: resolved, suffix };
+  return { kind: "relative", path: resolved, suffix: split.suffixRaw };
+}
+
+const MARKDOWN_ESCAPE_OR_REFERENCE =
+  /\\([!-/:-@[-`{-~])|&(#(?:\d{1,7}|x[\da-f]{1,6})|[\da-z]{1,31});/gi;
+
+function splitRawPathAndSuffix(
+  raw: string,
+  markdown: string,
+): { readonly pathRaw: string; readonly suffixRaw: string } | undefined {
+  const rawEndAfter = rawOffsetsAfterMarkdown(raw, markdown);
+  if (rawEndAfter === undefined) {
+    return undefined;
+  }
+  const separator = markdown.search(QUERY_OR_FRAGMENT_PATTERN);
+  if (separator === -1) {
+    return { pathRaw: raw, suffixRaw: "" };
+  }
+  const rawStart = separator === 0 ? 0 : rawEndAfter[separator - 1]!;
+  return {
+    pathRaw: raw.slice(0, rawStart),
+    suffixRaw: raw.slice(rawStart),
+  };
+}
+
+function rawOffsetsAfterMarkdown(
+  raw: string,
+  markdown: string,
+): readonly number[] | undefined {
+  const rawEndAfter: number[] = [];
+  MARKDOWN_ESCAPE_OR_REFERENCE.lastIndex = 0;
+  let last = 0;
+  for (const match of raw.matchAll(MARKDOWN_ESCAPE_OR_REFERENCE)) {
+    const start = match.index;
+    for (let index = last; index < start; index += 1) {
+      rawEndAfter.push(index + 1);
+    }
+    const decoded = decodeString(match[0]);
+    for (let offset = 0; offset < decoded.length; offset += 1) {
+      rawEndAfter.push(start + match[0].length);
+    }
+    last = start + match[0].length;
+  }
+  for (let index = last; index < raw.length; index += 1) {
+    rawEndAfter.push(index + 1);
+  }
+  return rawEndAfter.length === markdown.length ? rawEndAfter : undefined;
 }
 
 function collectDestinations(text: string): readonly Destination[] {

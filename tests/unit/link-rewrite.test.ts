@@ -464,4 +464,14 @@ test("relocationMarkdownPreservesTargets rejects scheme and fragment edits", () 
     }),
     true,
   );
+  assert.equal(
+    relocationMarkdownPreservesTargets({
+      planDir: "plans/foo",
+      fromPrefix: "plans",
+      toPrefix: "docs/plans",
+      oldText: "See [guide](../../guide.md?x=1&amp;y=2).\n",
+      newText: "See [guide](../../../guide.md?x=1&y=2).\n",
+    }),
+    false,
+  );
 });

@@ -388,6 +388,47 @@ test("a fragment edit after a correct path rewrite stays touched", async () => {
   });
 });
 
+test("a markdown entity suffix rewrite during relocation stays touched", async () => {
+  await withGitRoot(async (root) => {
+    makeBase(root);
+    writePlanlet(root, "ready-plan", READY_TASKS);
+    writeFileSync(
+      join(root, "plans", "ready-plan", "plan.md"),
+      "# ready-plan\n\nSee [guide](../../placeholder.txt?x=1&amp;y=2).\n",
+    );
+    commitAll(root, "ready plan");
+    const relocateBase = spawnSync("git", ["branch", "entity-suffix-base"], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    assert.equal(relocateBase.status, 0, relocateBase.stderr);
+    mkdirSync(join(root, "docs"));
+    const moved = spawnSync("git", ["mv", "plans", "docs/plans"], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    assert.equal(moved.status, 0, moved.stderr);
+    writeFileSync(
+      join(root, "docs", "plans", "ready-plan", "plan.md"),
+      "# ready-plan\n\nSee [guide](../../../placeholder.txt?x=1&y=2).\n",
+    );
+    writeFileSync(
+      join(root, ".planlet.json"),
+      `${JSON.stringify({ plansDir: "docs/plans" }, null, 2)}\n`,
+    );
+    commitAll(root, "relocate with entity suffix rewrite");
+
+    const result = await invoke(root, [
+      "check-completion",
+      "--base",
+      "entity-suffix-base",
+    ]);
+
+    assert.equal(result.exitCode, 4);
+    assert.deepEqual(output(result.capture).touched, ["ready-plan"]);
+  });
+});
+
 test("a nested plansDir git mv of slug plans does not false-fail", async () => {
   await withGitRoot(async (root) => {
     makeBase(root);
