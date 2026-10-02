@@ -636,7 +636,10 @@ test("chmod during plansDir relocation stays touched", async () => {
 test(
   "distinct non-UTF8 Git path bytes during relocation stay touched",
   {
-    skip: process.platform === "win32",
+    skip:
+      process.platform === "win32" || process.platform === "darwin"
+        ? "filesystem rejects non-UTF8 names"
+        : false,
   },
   async () => {
     await withGitRoot(async (root) => {

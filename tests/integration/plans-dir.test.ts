@@ -1,5 +1,11 @@
 import assert from "node:assert/strict";
-import { mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import test from "node:test";
@@ -102,12 +108,16 @@ test("docs/plans create, task check, complete, and link rewrite", async () => {
   await withGitRoot(async (root) => {
     writeConfig(root, "docs/plans");
     writeFileSync(join(root, "README.md"), "root\n");
+    const resolvedRoot = realpathSync(root);
     const summary = createPlanlet({
       repositoryRoot: root,
       slug: "fixture-plan",
       title: "Fixture Plan",
     });
-    assert.equal(summary.path, join(root, "docs", "plans", "fixture-plan"));
+    assert.equal(
+      summary.path,
+      join(resolvedRoot, "docs", "plans", "fixture-plan"),
+    );
 
     writeFileSync(join(summary.path, "plan.md"), PLAN);
     writeFileSync(
@@ -130,7 +140,13 @@ test("docs/plans create, task check, complete, and link rewrite", async () => {
     });
     assert.equal(
       completed.destination,
-      join(root, "docs", "plans", "completed", "2028-03-04-fixture-plan"),
+      join(
+        resolvedRoot,
+        "docs",
+        "plans",
+        "completed",
+        "2028-03-04-fixture-plan",
+      ),
     );
     assert.equal(
       readFileSync(join(completed.destination, "plan.md"), "utf8"),

@@ -157,7 +157,10 @@ test("tryStage finds a git marker in a parent directory for a nested root", asyn
 test(
   "listDiffEntries preserves non-UTF8 Git path bytes",
   {
-    skip: process.platform === "win32",
+    skip:
+      process.platform === "win32" || process.platform === "darwin"
+        ? "filesystem rejects non-UTF8 names"
+        : false,
   },
   async () => {
     await withGitRoot(async (root) => {
