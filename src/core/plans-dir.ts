@@ -5,7 +5,7 @@ import { PlanletError, asWriteConflict } from "../errors/planlet-error.js";
 import { pathKind, resolveSafePath, tryLstat } from "./paths.js";
 
 export const DEFAULT_PLANS_DIR = "plans";
-export const PLANLET_CONFIG_FILENAME = ".planlet.json";
+const PLANLET_CONFIG_FILENAME = ".planlet.json";
 
 const RESERVED_CONFIG_FILENAMES = [
   ".planlet.yaml",
