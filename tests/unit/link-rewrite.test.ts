@@ -486,4 +486,16 @@ test("rewritePlanletDepthLinks strips encoded leading parent segments", () => {
   });
   assert.equal(entities.text, "See [design](../../README.md).\n");
   assert.equal(entities.rewrites, 1);
+  const escaped = rewritePlanletDepthLinks({
+    fileName: "plan.md",
+    planDir: "docs/team/plans/foo",
+    fromPrefix: "docs/team/plans",
+    toPrefix: "docs/plans",
+    text: "See [design](\\%2E\\%2E/\\%2E\\%2E/\\%2E\\%2E/README.md).\n",
+  });
+  assert.equal(
+    escaped.text,
+    "See [design](\\%2E\\%2E/\\%2E\\%2E/README.md).\n",
+  );
+  assert.equal(escaped.rewrites, 1);
 });

@@ -196,10 +196,15 @@ function skipLeadingParentSegments(
   raw: string,
   count: number,
 ): number | undefined {
+  const markdown = decodeString(raw);
+  const rawEndAfter = rawOffsetsAfterMarkdown(raw, markdown);
+  if (rawEndAfter === undefined) {
+    return undefined;
+  }
   let index = 0;
   let skipped = 0;
   while (skipped < count) {
-    const segment = readPathSegment(raw, index);
+    const segment = readPercentPathSegment(markdown, index);
     if (segment === undefined) {
       return undefined;
     }
@@ -213,20 +218,47 @@ function skipLeadingParentSegments(
     skipped += 1;
     index = segment.next;
   }
-  return index;
+  return index === 0 ? 0 : rawEndAfter[index - 1];
 }
 
-function readPathSegment(
+const MARKDOWN_ESCAPE_OR_REFERENCE =
+  /\\([!-/:-@[-`{-~])|&(#(?:\d{1,7}|x[\da-f]{1,6})|[\da-z]{1,31});/gi;
+
+function rawOffsetsAfterMarkdown(
   raw: string,
+  markdown: string,
+): readonly number[] | undefined {
+  const rawEndAfter: number[] = [];
+  MARKDOWN_ESCAPE_OR_REFERENCE.lastIndex = 0;
+  let last = 0;
+  for (const match of raw.matchAll(MARKDOWN_ESCAPE_OR_REFERENCE)) {
+    const start = match.index;
+    for (let index = last; index < start; index += 1) {
+      rawEndAfter.push(index + 1);
+    }
+    const decoded = decodeString(match[0]);
+    for (let offset = 0; offset < decoded.length; offset += 1) {
+      rawEndAfter.push(start + match[0].length);
+    }
+    last = start + match[0].length;
+  }
+  for (let index = last; index < raw.length; index += 1) {
+    rawEndAfter.push(index + 1);
+  }
+  return rawEndAfter.length === markdown.length ? rawEndAfter : undefined;
+}
+
+function readPercentPathSegment(
+  markdown: string,
   start: number,
 ): { readonly value: string; readonly next: number } | undefined {
-  if (start >= raw.length) {
+  if (start >= markdown.length) {
     return undefined;
   }
   let index = start;
   let value = "";
-  while (index < raw.length) {
-    const unit = nextDecodedUnit(raw, index);
+  while (index < markdown.length) {
+    const unit = nextPercentDecodedUnit(markdown, index);
     if (unit === undefined) {
       return undefined;
     }
@@ -244,31 +276,18 @@ function readPathSegment(
   return { value, next: index };
 }
 
-function nextDecodedUnit(
-  raw: string,
+function nextPercentDecodedUnit(
+  markdown: string,
   index: number,
 ): { readonly chars: string; readonly next: number } | undefined {
-  const current = raw[index];
+  const current = markdown[index];
   if (current === undefined) {
     return undefined;
-  }
-  if (current === "\\" && index + 1 < raw.length) {
-    return { chars: raw[index + 1]!, next: index + 2 };
-  }
-  if (current === "&") {
-    const semi = raw.indexOf(";", index + 1);
-    if (semi !== -1) {
-      const piece = raw.slice(index, semi + 1);
-      const decoded = decodeString(piece);
-      if (decoded !== piece) {
-        return { chars: decoded, next: semi + 1 };
-      }
-    }
   }
   if (current === "%") {
     for (const units of [1, 2, 3, 4]) {
       const end = index + 3 * units;
-      const slice = raw.slice(index, end);
+      const slice = markdown.slice(index, end);
       if (!/^(?:%[0-9A-Fa-f]{2})+$/.test(slice)) {
         continue;
       }
