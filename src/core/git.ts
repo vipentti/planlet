@@ -135,6 +135,23 @@ function resolveBaseOid(repositoryRoot: string, base: string): string {
   return oid;
 }
 
+export function resolveMergeBase(repositoryRoot: string, base: string): string {
+  const oid = resolveBaseOid(repositoryRoot, base);
+  const mergeBase = runGitOutput(repositoryRoot, ["merge-base", oid, "HEAD"]);
+  if (mergeBase.failure !== undefined) {
+    throw new PlanletError("git_error", "Could not resolve Git merge base", {
+      details: { base, reason: mergeBase.failure },
+    });
+  }
+  const mergeOid = mergeBase.stdout.trim();
+  if (mergeOid.length === 0) {
+    throw new PlanletError("git_error", "Git returned an empty merge base", {
+      details: { base },
+    });
+  }
+  return mergeOid;
+}
+
 /**
  * Resolves a caller-supplied base ref and lists changed paths from its
  * three-dot range to HEAD. Rename detection is disabled so an archive move
@@ -233,13 +250,16 @@ export function readCommitFile(
   options: { readonly base: string; readonly path: string },
 ): string | undefined {
   const oid = resolveBaseOid(repositoryRoot, options.base);
+  const gitPath = options.path.startsWith("./")
+    ? options.path
+    : `./${options.path}`;
   const listed = runGitOutput(repositoryRoot, [
     "ls-tree",
     "--name-only",
     "-z",
     oid,
     "--",
-    options.path,
+    gitPath,
   ]);
   if (listed.failure !== undefined) {
     throw new PlanletError("git_error", "Could not read Git tree path", {
@@ -251,13 +271,10 @@ export function readCommitFile(
     });
   }
   const names = listed.stdout.split("\0").filter((name) => name.length > 0);
-  if (!names.includes(options.path)) {
+  if (names.length === 0) {
     return undefined;
   }
-  const shown = runGitOutput(repositoryRoot, [
-    "show",
-    `${oid}:${options.path}`,
-  ]);
+  const shown = runGitOutput(repositoryRoot, ["show", `${oid}:${gitPath}`]);
   if (shown.failure !== undefined) {
     throw new PlanletError("git_error", "Could not read Git blob", {
       details: {

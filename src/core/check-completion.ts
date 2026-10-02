@@ -1,5 +1,10 @@
 import { isPlanletError } from "../errors/planlet-error.js";
-import { listDiffEntries, readCommitFile, type DiffPathEntry } from "./git.js";
+import {
+  listDiffEntries,
+  readCommitFile,
+  resolveMergeBase,
+  type DiffPathEntry,
+} from "./git.js";
 import { validatePlanlets, type ValidationResult } from "./plan/read-only.js";
 import {
   isValidSlug,
@@ -186,16 +191,17 @@ export function checkCompletion(
   options: CheckCompletionOptions,
 ): CheckCompletionResult {
   const plansDir = readPlansDir(options.repositoryRoot);
-  const basePlansDir = readBasePlansDir(options.repositoryRoot, options.base);
+  const mergeBase = resolveMergeBase(options.repositoryRoot, options.base);
+  const basePlansDir = readBasePlansDir(options.repositoryRoot, mergeBase);
   const currentEntries = listDiffEntries(options.repositoryRoot, {
-    base: options.base,
+    base: mergeBase,
     pathspec: plansDirPathspec(plansDir),
   });
   const baseEntries =
     basePlansDir === plansDir
       ? []
       : listDiffEntries(options.repositoryRoot, {
-          base: options.base,
+          base: mergeBase,
           pathspec: plansDirPathspec(basePlansDir),
         });
   const entries = [...currentEntries, ...baseEntries];
@@ -267,17 +273,17 @@ function isExactPrefixRelocation(
   const toFiles = new Map<string, string>();
   for (const entry of entries) {
     const fromRest = slugFileRest(entry.path, fromPlansDir, slug);
-    if (
-      fromRest !== undefined &&
-      (entry.status === "D" || entry.status === "M")
-    ) {
+    if (fromRest !== undefined) {
+      if (entry.status !== "D") {
+        return false;
+      }
       fromFiles.set(fromRest, entry.srcSha);
     }
     const toRest = slugFileRest(entry.path, toPlansDir, slug);
-    if (
-      toRest !== undefined &&
-      (entry.status === "A" || entry.status === "M")
-    ) {
+    if (toRest !== undefined) {
+      if (entry.status !== "A") {
+        return false;
+      }
       toFiles.set(toRest, entry.dstSha);
     }
   }

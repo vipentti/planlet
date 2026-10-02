@@ -262,6 +262,108 @@ test("a plansDir git mv of an already-ready planlet does not false-fail", async 
   });
 });
 
+test("check-completion uses merge-base plansDir when the named base later diverges", async () => {
+  await withGitRoot(async (root) => {
+    makeBase(root);
+    writePlanlet(root, "ready-plan", READY_TASKS);
+    commitAll(root, "ready plan");
+    const current = spawnSync("git", ["rev-parse", "--abbrev-ref", "HEAD"], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    assert.equal(current.status, 0, current.stderr);
+    const currentBranch = current.stdout.trim();
+    mkdirSync(join(root, "docs"));
+    const moved = spawnSync("git", ["mv", "plans", "docs/plans"], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    assert.equal(moved.status, 0, moved.stderr);
+    writeFileSync(
+      join(root, ".planlet.json"),
+      `${JSON.stringify({ plansDir: "docs/plans" }, null, 2)}\n`,
+    );
+    commitAll(root, "relocate plans");
+    const diverged = spawnSync("git", ["branch", "diverged", "HEAD~1"], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    assert.equal(diverged.status, 0, diverged.stderr);
+    const checkoutDiverged = spawnSync("git", ["checkout", "-q", "diverged"], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    assert.equal(checkoutDiverged.status, 0, checkoutDiverged.stderr);
+    writeFileSync(
+      join(root, ".planlet.json"),
+      `${JSON.stringify({ plansDir: "other" }, null, 2)}\n`,
+    );
+    commitAll(root, "diverge base config");
+    const checkoutBack = spawnSync("git", ["checkout", "-q", currentBranch], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    assert.equal(checkoutBack.status, 0, checkoutBack.stderr);
+
+    const result = await invoke(root, [
+      "check-completion",
+      "--base",
+      "diverged",
+    ]);
+
+    assert.equal(result.exitCode, 0);
+    assert.deepEqual(output(result.capture), {
+      ok: true,
+      base: "diverged",
+      touched: [],
+      completed: [],
+      violations: [],
+    });
+  });
+});
+
+test("nested Planlet roots honor a committed .planlet.json after git mv", async () => {
+  await withGitRoot(async (root) => {
+    makeBase(root);
+    const nested = join(root, "packages", "pkg");
+    mkdirSync(join(nested, "plans"), { recursive: true });
+    writePlanlet(nested, "nested-ready", READY_TASKS);
+    commitAll(root, "nested ready plan");
+    const relocateBase = spawnSync("git", ["branch", "nested-relocate-base"], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    assert.equal(relocateBase.status, 0, relocateBase.stderr);
+    mkdirSync(join(nested, "docs"));
+    const moved = spawnSync(
+      "git",
+      ["mv", "packages/pkg/plans", "packages/pkg/docs/plans"],
+      { cwd: root, encoding: "utf8" },
+    );
+    assert.equal(moved.status, 0, moved.stderr);
+    writeFileSync(
+      join(nested, ".planlet.json"),
+      `${JSON.stringify({ plansDir: "docs/plans" }, null, 2)}\n`,
+    );
+    commitAll(root, "nested relocate");
+
+    const result = await invoke(nested, [
+      "check-completion",
+      "--base",
+      "nested-relocate-base",
+    ]);
+
+    assert.equal(result.exitCode, 0);
+    assert.deepEqual(output(result.capture), {
+      ok: true,
+      base: "nested-relocate-base",
+      touched: [],
+      completed: [],
+      violations: [],
+    });
+  });
+});
+
 test("unresolvable and empty bases return git_error without mutation", async () => {
   await withGitRoot(async (root) => {
     makeBase(root);

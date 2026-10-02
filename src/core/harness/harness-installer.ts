@@ -263,7 +263,7 @@ function ownedAgentFiles(
   return agentFileRelativePaths(repositoryRoot, operation, skip).map(
     (relativePath) => ({
       relativePath,
-      path: resolveSafePath(repositoryRoot, relativePath),
+      path: join(repositoryRoot, relativePath),
     }),
   );
 }
@@ -277,15 +277,19 @@ function agentFileRelativePaths(
     return [];
   }
   const names: string[] = [];
-  if (operation === "init") {
-    names.push("AGENTS.md");
-  }
   for (const file of ["AGENTS.md", "CLAUDE.md"] as const) {
-    if (tryLstat(join(repositoryRoot, file))?.isFile() === true) {
+    const stats = tryLstat(join(repositoryRoot, file));
+    if (stats === null) {
+      if (operation === "init" && file === "AGENTS.md") {
+        names.push(file);
+      }
+      continue;
+    }
+    if (stats.isFile()) {
       names.push(file);
     }
   }
-  return [...new Set(names)];
+  return names;
 }
 
 function resolvedPathOverlaps(left: string, right: string): boolean {

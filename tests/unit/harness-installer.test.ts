@@ -414,6 +414,32 @@ test("init --plans-dir rejects a plans path that physically aliases a harness de
   });
 });
 
+test("init skips a symlinked AGENTS.md and still writes a custom plansDir", () => {
+  withRoot((root) => {
+    const outside = join(
+      root,
+      "..",
+      `planlet-agents-outside-${process.pid}.md`,
+    );
+    writeFileSync(outside, "# outside\n");
+    try {
+      symlinkSync(outside, join(root, "AGENTS.md"));
+      const outcome = installHarnessSkills({
+        repositoryRoot: root,
+        operation: "init",
+        tools: "none",
+        plansDir: "docs/plans",
+        source: BASE_SOURCE,
+      });
+      assert.equal(existsSync(join(root, ".planlet.json")), true);
+      assert.equal(existsSync(join(root, "docs", "plans")), true);
+      assert.equal(outcome.data.agentFiles["AGENTS.md"], "skipped");
+    } finally {
+      unlinkSync(outside);
+    }
+  });
+});
+
 test("update upgrades a v1 manifest to v2 without touching unchanged skills", () => {
   withRoot((root) => {
     installHarnessSkills({
