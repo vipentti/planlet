@@ -33,6 +33,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and thi
 
 ### Changed
 
+- The `planlet-implement` skill continues only for a slug in active `list`
+  output. `validate` exit 0 with `state: completed`, or a warning that an
+  active planlet contains a completion record, stops the run. It fixes
+  failures in that planlet's implementation and continues past an unrelated
+  failure only when later tasks do not depend on it. Success-path stderr
+  diagnostics are reported, including staging and lock-release warnings.
+  `ready_to_complete` and its `next` hint stay a handoff to
+  `planlet-complete`. Checkboxes stay unchanged until `task check`. The
+  repository root is the nearest `.git` entry and is not walked past. CLI
+  availability is checked before operational commands.
+
 - The `planlet-plan` skill resolves a revision only to an active planlet: an
   explicit slug, the sole active planlet, or a user choice when several exist.
   It writes `plan.md` and `tasks.md` under the `plansDir` reported by `list`.
