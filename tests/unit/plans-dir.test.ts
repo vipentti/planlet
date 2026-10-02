@@ -173,6 +173,8 @@ test("plansDir traversal, globs, and empty segments fail closed", () => {
     ".",
     "",
     "plans/custom",
+    "Plans/custom",
+    "PLANS",
   ]) {
     assert.throws(
       () => assertValidPlansDir(value),
@@ -275,5 +277,15 @@ test("a plansDir path with a symlink component is invalid_config", () => {
         return true;
       },
     );
+  });
+});
+
+test("absent config still accepts an in-repository plans/ symlink", () => {
+  withRoot((root) => {
+    const store = join(root, "store");
+    mkdirSync(store);
+    symlinkSync(store, join(root, "plans"));
+    assert.equal(readPlansDir(root), "plans");
+    assert.equal(requirePlansDirectory(root).plansPath, realpathSync(store));
   });
 });

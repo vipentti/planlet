@@ -321,7 +321,9 @@ Defaults:
 The default is convention: active planlets live in `plans/` and completed
 archives in `plans/completed/`. An optional committed `.planlet.json` at the
 discovered repository root may set `plansDir` to another relative posix path
-(for example `docs/plans`). Absent file means `plans/`. The file is JSON only;
+(for example `docs/plans`). The first segment must not case-insensitively
+alias `plans` unless the value is exactly `plans`, so `Plans/custom` and
+`PLANS` are rejected. Absent file means `plans/`. The file is JSON only;
 `.planlet.yaml` / `.planlet.yml` and rejected names (`.planletrc.json`,
 `.planlet.config.json`) are errors, not silent fallbacks. Unknown JSON keys are
 ignored. `--root` still selects the repository root (skills, agent files, git

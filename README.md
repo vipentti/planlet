@@ -81,7 +81,9 @@ Optional committed `.planlet.json` at the discovered repository root:
 Absent file means `plans/`. JSON only. Unknown keys are ignored. A malformed
 file, invalid `plansDir`, or a reserved sibling (`.planlet.yaml`,
 `.planlet.yml`, `.planletrc.json`, `.planlet.config.json`) is a loud error,
-not a silent default. Read from the working tree of that root only.
+not a silent default. `plansDir` must not start with a case-insensitive
+`plans` segment unless it is exactly `plans`. Read from the working tree of
+that root only.
 
 To move an existing tree: `git mv` active planlets and `plans/completed/` to
 the new directory, add `.planlet.json`, and fix relative links that point

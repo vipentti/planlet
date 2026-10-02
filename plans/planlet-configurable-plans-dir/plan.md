@@ -60,9 +60,12 @@ renderer as `init`/`update`.
 
 **`plansDir` syntax.** Relative posix path: no leading or trailing slash, no
 empty / `.` / `..` segments, no backslash, no whitespace, no git pathspec
-globs (`*`, `?`, `[`). Each segment matches `[A-Za-z0-9._-]`. Resolve with
-`resolveSafePath` so a symlink cannot leave the root. A non-directory
-existing path stays `write_conflict`.
+globs (`*`, `?`, `[`). Each segment matches `[A-Za-z0-9._-]`. The first
+segment must not case-insensitively alias `plans` unless the value is exactly
+`plans`. Resolve with `resolveSafePath` so a symlink cannot leave the root.
+A non-directory existing path stays `write_conflict`. Configured non-default
+paths may not contain symlink components; a default `plans/` symlink that
+stays inside the repository remains valid.
 
 **Reserved names.** If `.planlet.yaml`, `.planlet.yml`, `.planletrc.json`, or
 `.planlet.config.json` exists at the root, fail with `invalid_config` naming

@@ -237,6 +237,25 @@ test("init --plans-dir plans/custom is rejected before writing a config", () => 
   });
 });
 
+test("init --plans-dir docs/plans is write_conflict when docs is a file", () => {
+  withRoot((root) => {
+    writeFileSync(join(root, "docs"), "not a directory\n");
+    assert.throws(
+      () =>
+        installHarnessSkills({
+          repositoryRoot: root,
+          operation: "init",
+          tools: "none",
+          noAgents: true,
+          plansDir: "docs/plans",
+        }),
+      (error: unknown) =>
+        error instanceof PlanletError && error.code === "write_conflict",
+    );
+    assert.equal(existsSync(join(root, ".planlet.json")), false);
+  });
+});
+
 test("update upgrades a v1 manifest to v2 without touching unchanged skills", () => {
   withRoot((root) => {
     installHarnessSkills({

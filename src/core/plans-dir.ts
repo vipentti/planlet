@@ -60,7 +60,7 @@ export function assertValidPlansDir(value: string): string {
   }
   if (
     value !== DEFAULT_PLANS_DIR &&
-    value.startsWith(`${DEFAULT_PLANS_DIR}/`)
+    segments[0]!.toLowerCase() === DEFAULT_PLANS_DIR
   ) {
     throw invalidPlansDir(value);
   }
@@ -111,7 +111,9 @@ export function readPlansDir(repositoryRoot: string): string {
     present[0] === PLANLET_CONFIG_FILENAME
       ? parsePlansDirFile(repositoryRoot)
       : DEFAULT_PLANS_DIR;
-  assertNoPlansDirSymlinks(repositoryRoot, plansDir);
+  if (plansDir !== DEFAULT_PLANS_DIR) {
+    assertNoPlansDirSymlinks(repositoryRoot, plansDir);
+  }
   assertNoLeftoverDefaultPlans(repositoryRoot, plansDir);
   return plansDir;
 }
@@ -187,7 +189,10 @@ export function prepareInitPlansDirectory(
       },
     );
   }
-  assertNoPlansDirSymlinks(repositoryRoot, plansDir);
+  if (plansDir !== DEFAULT_PLANS_DIR) {
+    assertNoPlansDirSymlinks(repositoryRoot, plansDir);
+  }
+  assertPlansDirComponentsAreDirectories(repositoryRoot, plansDir);
   assertNoLeftoverDefaultPlans(repositoryRoot, plansDir);
   return {
     plansDir,
@@ -276,6 +281,27 @@ function parsePlansDirFile(repositoryRoot: string): string {
     });
   }
   return assertValidPlansDir(record.plansDir);
+}
+
+function assertPlansDirComponentsAreDirectories(
+  repositoryRoot: string,
+  plansDir: string,
+): void {
+  let cursor = repositoryRoot;
+  for (const segment of plansDir.split("/")) {
+    cursor = join(cursor, segment);
+    const kind = pathKind(cursor);
+    if (kind === "missing") {
+      return;
+    }
+    if (kind !== "directory") {
+      throw new PlanletError(
+        "write_conflict",
+        `Plans path is not a directory: ${cursor}`,
+        { details: { path: cursor, plansDir } },
+      );
+    }
+  }
 }
 
 function assertNoPlansDirSymlinks(
@@ -374,6 +400,6 @@ function reservedConfigError(name: string): PlanletError {
 function invalidPlansDir(value: string): PlanletError {
   return new PlanletError("invalid_config", `Invalid plansDir: ${value}`, {
     details: { plansDir: value },
-    next: "Use a relative posix path with no .., empty, or glob segments",
+    next: "Use a relative posix path with no .., empty, glob, or plans-prefixed segments",
   });
 }
