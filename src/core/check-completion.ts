@@ -321,7 +321,7 @@ function isExactPrefixRelocation(
     }
     if (
       repositoryRoot === undefined ||
-      extraDepth < 1 ||
+      extraDepth === 0 ||
       (rest !== "plan.md" && rest !== "tasks.md")
     ) {
       return false;

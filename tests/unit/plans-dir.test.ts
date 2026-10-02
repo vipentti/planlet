@@ -286,6 +286,30 @@ test("an existing directory case alias is invalid_config", () => {
   });
 });
 
+test("a default Plans directory alias is invalid_config", () => {
+  withRoot((root) => {
+    mkdirSync(join(root, "Plans"));
+    assert.throws(
+      () => readPlansDir(root),
+      (error: unknown) =>
+        error instanceof PlanletError && error.code === "invalid_config",
+    );
+  });
+});
+
+test("leftover Plans with a custom plansDir is invalid_config", () => {
+  withRoot((root) => {
+    mkdirSync(join(root, "docs", "plans"), { recursive: true });
+    mkdirSync(join(root, "Plans", "old-plan"), { recursive: true });
+    writeConfig(root, JSON.stringify({ plansDir: "docs/plans" }));
+    assert.throws(
+      () => readPlansDir(root),
+      (error: unknown) =>
+        error instanceof PlanletError && error.code === "invalid_config",
+    );
+  });
+});
+
 test("missing configured directory is plans_not_initialized after a successful parse", () => {
   withRoot((root) => {
     writeConfig(root, JSON.stringify({ plansDir: "docs/plans" }));

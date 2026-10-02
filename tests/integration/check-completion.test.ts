@@ -476,6 +476,82 @@ test("a two-segment plansDir git mv plus link rewrite does not false-fail", asyn
   });
 });
 
+test("a deeper-to-shallower plansDir git mv plus link rewrite does not false-fail", async () => {
+  await withGitRoot(async (root) => {
+    makeBase(root);
+    writePlanlet(root, "ready-plan", READY_TASKS);
+    writeFileSync(
+      join(root, "plans", "ready-plan", "plan.md"),
+      "# ready-plan\n\nSee [sib](../other-plan/plan.md) and [design](../../placeholder.txt).\n",
+    );
+    commitAll(root, "ready plan");
+    mkdirSync(join(root, "docs", "team"), { recursive: true });
+    const deepened = spawnSync("git", ["mv", "plans", "docs/team/plans"], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    assert.equal(deepened.status, 0, deepened.stderr);
+    const deepPlan = join(
+      root,
+      "docs",
+      "team",
+      "plans",
+      "ready-plan",
+      "plan.md",
+    );
+    writeFileSync(
+      deepPlan,
+      readFileSync(deepPlan, "utf8").replace(
+        "../../placeholder.txt",
+        "../../../../placeholder.txt",
+      ),
+    );
+    writeFileSync(
+      join(root, ".planlet.json"),
+      `${JSON.stringify({ plansDir: "docs/team/plans" }, null, 2)}\n`,
+    );
+    commitAll(root, "deep plans");
+    const relocateBase = spawnSync("git", ["branch", "shallow-base"], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    assert.equal(relocateBase.status, 0, relocateBase.stderr);
+    const moved = spawnSync("git", ["mv", "docs/team/plans", "docs/plans"], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    assert.equal(moved.status, 0, moved.stderr);
+    const planPath = join(root, "docs", "plans", "ready-plan", "plan.md");
+    writeFileSync(
+      planPath,
+      readFileSync(planPath, "utf8").replace(
+        "../../../../placeholder.txt",
+        "../../../placeholder.txt",
+      ),
+    );
+    writeFileSync(
+      join(root, ".planlet.json"),
+      `${JSON.stringify({ plansDir: "docs/plans" }, null, 2)}\n`,
+    );
+    commitAll(root, "relocate shallower");
+
+    const result = await invoke(root, [
+      "check-completion",
+      "--base",
+      "shallow-base",
+    ]);
+
+    assert.equal(result.exitCode, 0);
+    assert.deepEqual(output(result.capture), {
+      ok: true,
+      base: "shallow-base",
+      touched: [],
+      completed: [],
+      violations: [],
+    });
+  });
+});
+
 test("a one-level move still relocates when the unadjusted new-relative target exists", async () => {
   await withGitRoot(async (root) => {
     makeBase(root);

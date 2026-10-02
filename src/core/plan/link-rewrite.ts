@@ -143,9 +143,10 @@ function decide(decoded: string, options: LinkRewriteOptions): Decision {
 }
 
 /**
- * Prepends one `../` per extra plansDir segment to destinations that leave
- * the old plans tree. Sibling planlets move with that tree, so their relative
- * links stay byte-identical.
+ * Adjusts relative destinations that leave the old plans tree by one `../`
+ * per extra plansDir segment. Deeper trees prepend; shallower trees strip
+ * matching leading `../`. Sibling planlets move with that tree, so their
+ * relative links stay byte-identical.
  */
 export function rewritePlanletDepthLinks(options: {
   readonly fileName: string;
@@ -156,25 +157,33 @@ export function rewritePlanletDepthLinks(options: {
 }): LinkRewriteResult {
   const extraDepth =
     options.toPrefix.split("/").length - options.fromPrefix.split("/").length;
-  if (extraDepth < 1) {
+  if (extraDepth === 0) {
     return { text: options.text, rewrites: 0, notes: [] };
   }
-  const prefix = PREFIX.repeat(extraDepth);
+  const prefix = PREFIX.repeat(Math.abs(extraDepth));
   const edits: number[] = [];
   for (const destination of collectDestinations(options.text)) {
     if (
-      leavesPlansTree(
+      !leavesPlansTree(
         decodeString(destination.raw),
         options.planDir,
         options.fromPrefix,
       )
     ) {
+      continue;
+    }
+    if (extraDepth > 0) {
+      edits.push(destination.offset);
+    } else if (destination.raw.startsWith(prefix)) {
       edits.push(destination.offset);
     }
   }
   let text = options.text;
   for (const offset of edits.toReversed()) {
-    text = `${text.slice(0, offset)}${prefix}${text.slice(offset)}`;
+    text =
+      extraDepth > 0
+        ? `${text.slice(0, offset)}${prefix}${text.slice(offset)}`
+        : `${text.slice(0, offset)}${text.slice(offset + prefix.length)}`;
   }
   return { text, rewrites: edits.length, notes: [] };
 }

@@ -14,14 +14,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and thi
   and refuses a path that equals, contains, or sits inside a harness
   destination or agent file that same init/update will write. Segments ending
   in a period, or Win32 reserved device names, are invalid. Config filenames
-  and `plansDir` segments must match on-disk spelling. `list` and the
+  and `plansDir` segments must match on-disk spelling, including the default
+  `plans/` segment and leftover default storage. `list` and the
   dashboard report the effective `plansDir`. YAML siblings and rejected
   config names fail closed; unknown JSON keys are ignored. Leftover `plans/`
   after a non-default `plansDir` is `plans_dir_conflict`, distinct from
   `plans_not_initialized`. A `git mv` of unchanged planlets onto a new
   `plansDir` does not make `check-completion` treat them as newly touched:
   Git modes must match, and only `plan.md`/`tasks.md` may differ by the
-  depth-link rewrite. A directory that cannot be listed is `invalid_config`,
+  depth-link rewrite in either direction. A directory that cannot be listed is `invalid_config`,
   not a silent fallback to `plans/`.
 
 ## [0.8.0] - 2026-09-27

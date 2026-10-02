@@ -146,6 +146,7 @@ export function readPlansDir(
     present[0] === PLANLET_CONFIG_FILENAME
       ? parsePlansDirFile(repositoryRoot)
       : DEFAULT_PLANS_DIR;
+  assertExactPlansDirSpelling(repositoryRoot, plansDir, dependencies);
   if (plansDir !== DEFAULT_PLANS_DIR) {
     assertNoPlansDirSymlinks(repositoryRoot, plansDir, dependencies);
     assertPlansDirComponentsAreDirectories(
@@ -154,7 +155,7 @@ export function readPlansDir(
       dependencies,
     );
   }
-  assertNoLeftoverDefaultPlans(repositoryRoot, plansDir);
+  assertNoLeftoverDefaultPlans(repositoryRoot, plansDir, dependencies);
   return plansDir;
 }
 
@@ -240,7 +241,8 @@ export function prepareInitPlansDirectory(
       dependencies,
     );
   }
-  assertNoLeftoverDefaultPlans(repositoryRoot, plansDir);
+  assertExactPlansDirSpelling(repositoryRoot, plansDir, dependencies);
+  assertNoLeftoverDefaultPlans(repositoryRoot, plansDir, dependencies);
   return {
     plansDir,
     plansPath: resolveUnderPlans(repositoryRoot, plansDir),
@@ -431,6 +433,20 @@ export function parsePlansDirDocument(
   return assertValidPlansDir(record.plansDir);
 }
 
+function assertExactPlansDirSpelling(
+  repositoryRoot: string,
+  plansDir: string,
+  dependencies?: PlansDirDependencies,
+): void {
+  let cursor = repositoryRoot;
+  for (const segment of plansDir.split("/")) {
+    if (hasExactNamedChild(cursor, segment, dependencies) === "missing") {
+      return;
+    }
+    cursor = join(cursor, segment);
+  }
+}
+
 function assertPlansDirComponentsAreDirectories(
   repositoryRoot: string,
   plansDir: string,
@@ -487,8 +503,17 @@ function assertNoPlansDirSymlinks(
 function assertNoLeftoverDefaultPlans(
   repositoryRoot: string,
   plansDir: string,
+  dependencies?: PlansDirDependencies,
 ): void {
   if (plansDir === DEFAULT_PLANS_DIR) {
+    return;
+  }
+  const leftoverKind = hasExactNamedChild(
+    repositoryRoot,
+    DEFAULT_PLANS_DIR,
+    dependencies,
+  );
+  if (leftoverKind === "missing") {
     return;
   }
   const leftoverPath = join(repositoryRoot, DEFAULT_PLANS_DIR);

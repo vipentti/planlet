@@ -427,6 +427,15 @@ test("rewritePlanletDepthLinks prepends one ../ per extra plansDir segment", () 
   });
   assert.equal(two.text, "See [design](../../../../README.md).\n");
   assert.equal(two.rewrites, 1);
+  const shallower = rewritePlanletDepthLinks({
+    fileName: "plan.md",
+    planDir: "docs/team/plans/foo",
+    fromPrefix: "docs/team/plans",
+    toPrefix: "docs/plans",
+    text: two.text,
+  });
+  assert.equal(shallower.text, "See [design](../../../README.md).\n");
+  assert.equal(shallower.rewrites, 1);
 });
 
 test("rewritePlanletDepthLinks leaves sibling planlet links unchanged", () => {
@@ -444,4 +453,16 @@ test("rewritePlanletDepthLinks leaves sibling planlet links unchanged", () => {
     "See [sib](../other-plan/plan.md) and [root](../../../README.md).\n",
   );
   assert.equal(result.rewrites, 1);
+  const shallower = rewritePlanletDepthLinks({
+    fileName: "plan.md",
+    planDir: "docs/plans/foo",
+    fromPrefix: "docs/plans",
+    toPrefix: "plans",
+    text: result.text,
+  });
+  assert.equal(
+    shallower.text,
+    "See [sib](../other-plan/plan.md) and [root](../../README.md).\n",
+  );
+  assert.equal(shallower.rewrites, 1);
 });
