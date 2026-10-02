@@ -12,7 +12,7 @@
       `plansDir` on list and dashboard, and the configured archive path in
       the date-prefix slug error. Verify: `init --plans-dir plans` writes no
       file; snippet tests and list fixtures include `plansDir`.
-- [ ] T4 Cover the two-segment lifecycle, missing configured directory,
+- [x] T4 Cover the two-segment lifecycle, missing configured directory,
       leftover-`plans/` gate failure, and YAML/invalid-path fail-closed
       cases. Verify: create, task check, complete, and link rewrite under
       `docs/plans`; gate ok vs `plans_dir_conflict`.
