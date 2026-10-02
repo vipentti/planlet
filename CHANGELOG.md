@@ -31,6 +31,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and thi
   that cannot be listed is `invalid_config`, not a silent fallback to
   `plans/`.
 
+### Changed
+
+- The `planlet-plan` skill resolves a revision only to an active planlet: an
+  explicit slug, the sole active planlet, or a user choice when several exist.
+  It writes `plan.md` and `tasks.md` under the `plansDir` reported by `list`.
+  New slugs need at least one letter and must not start with `YYYY-MM-DD-`.
+  Planning leaves `## Verification Evidence` for implementation to record in
+  `tasks.md`, and the task template uses a bare outcome line. New task IDs are
+  one greater than the highest numeric suffix still in the file.
+
 ## [0.8.0] - 2026-09-27
 
 ### Added
