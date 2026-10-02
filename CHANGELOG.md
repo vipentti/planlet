@@ -12,7 +12,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and thi
   `plansDir` (relative posix path). Absent file keeps `plans/`. `planlet init
 --plans-dir <relative>` writes the file only when the value is not `plans`,
   and refuses a path that equals, contains, or sits inside a harness
-  destination or agent file that same init/update will write. `list` and the
+  destination or agent file that same init/update will write. Segments ending
+  in a period are invalid. `list` and the
   dashboard report the effective `plansDir`. YAML siblings and rejected
   config names fail closed; unknown JSON keys are ignored. Leftover `plans/`
   after a non-default `plansDir` is `plans_dir_conflict`, distinct from

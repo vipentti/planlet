@@ -55,6 +55,7 @@ export function assertValidPlansDir(value: string): string {
         segment === "" ||
         segment === "." ||
         segment === ".." ||
+        segment.endsWith(".") ||
         !PLANS_DIR_SEGMENT.test(segment),
     )
   ) {

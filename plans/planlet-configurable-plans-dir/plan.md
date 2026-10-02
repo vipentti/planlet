@@ -113,9 +113,10 @@ one consumer `planlet update`.
 `plans` array. Do not reuse the `plans` key.
 
 **Migration (docs only).** Operator-run, one commit: `git mv` active
-planlets and `plans/completed/` to `<plansDir>/`, add `.planlet.json`, fix
-relative links whose targets live outside the planlet by the extra segments.
-Completion rewrite is not a relocation rewriter.
+planlets and `plans/completed/` to `<plansDir>/`, add `.planlet.json`, and
+add `../` prefixes only to relative links whose resolved targets sit outside
+the old plans tree. Links into that moved tree, including sibling planlets,
+stay unchanged. Completion rewrite is not a relocation rewriter.
 
 ## Acceptance Criteria
 

@@ -259,6 +259,8 @@ test("init --plans-dir rejects reserved first segments", () => {
     ".planlet.yaml",
     "docs/.git/plans",
     "docs/.GIT/plans",
+    ".agents.",
+    "AGENTS.md.",
   ]) {
     withRoot((root) => {
       assert.throws(
