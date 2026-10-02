@@ -4,7 +4,11 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
 
-import { listDiffPaths, tryStage } from "../../src/core/git.js";
+import {
+  listDiffEntries,
+  listDiffPaths,
+  tryStage,
+} from "../../src/core/git.js";
 import { PlanletError } from "../../src/errors/planlet-error.js";
 import {
   addWorktree,
@@ -31,6 +35,17 @@ test("listDiffPaths resolves base refs and preserves NUL-delimited paths", async
       listDiffPaths(root, { base: "HEAD~1", pathspec: "plans/" }),
       ["plans/space-plan/file with space name.md"],
     );
+    const entries = listDiffEntries(root, {
+      base: "HEAD~1",
+      pathspec: "plans/",
+    });
+    assert.equal(entries.length, 1);
+    assert.equal(entries[0]!.path, "plans/space-plan/file with space name.md");
+    assert.equal(entries[0]!.srcMode, "000000");
+    assert.equal(entries[0]!.dstMode, "100644");
+    assert.equal(entries[0]!.status, "A");
+    assert.match(entries[0]!.srcSha, /^0{40}$/);
+    assert.match(entries[0]!.dstSha, /^[0-9a-f]{40}$/);
   });
 });
 

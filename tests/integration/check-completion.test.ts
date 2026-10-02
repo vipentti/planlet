@@ -1,5 +1,11 @@
 import assert from "node:assert/strict";
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import test from "node:test";
@@ -259,6 +265,105 @@ test("a plansDir git mv of an already-ready planlet does not false-fail", async 
       completed: [],
       violations: [],
     });
+  });
+});
+
+test("chmod during plansDir relocation stays touched", async () => {
+  await withGitRoot(async (root) => {
+    makeBase(root);
+    writePlanlet(root, "ready-plan", READY_TASKS);
+    commitAll(root, "ready plan");
+    const relocateBase = spawnSync("git", ["branch", "chmod-base"], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    assert.equal(relocateBase.status, 0, relocateBase.stderr);
+    mkdirSync(join(root, "docs"));
+    const moved = spawnSync("git", ["mv", "plans", "docs/plans"], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    assert.equal(moved.status, 0, moved.stderr);
+    chmodSync(join(root, "docs", "plans", "ready-plan", "plan.md"), 0o755);
+    writeFileSync(
+      join(root, ".planlet.json"),
+      `${JSON.stringify({ plansDir: "docs/plans" }, null, 2)}\n`,
+    );
+    const add = spawnSync("git", ["add", "."], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    assert.equal(add.status, 0, add.stderr);
+    const chmod = spawnSync(
+      "git",
+      ["update-index", "--chmod=+x", "docs/plans/ready-plan/plan.md"],
+      { cwd: root, encoding: "utf8" },
+    );
+    assert.equal(chmod.status, 0, chmod.stderr);
+    const commit = spawnSync(
+      "git",
+      [
+        "-c",
+        "user.email=planlet@test",
+        "-c",
+        "user.name=Planlet Test",
+        "commit",
+        "-qm",
+        "relocate with chmod",
+      ],
+      { cwd: root, encoding: "utf8" },
+    );
+    assert.equal(commit.status, 0, commit.stderr);
+
+    const result = await invoke(root, [
+      "check-completion",
+      "--base",
+      "chmod-base",
+    ]);
+
+    assert.equal(result.exitCode, 4);
+    assert.deepEqual(output(result.capture).touched, ["ready-plan"]);
+  });
+});
+
+test("non-UTF8 blob edits during plansDir relocation stay touched", async () => {
+  await withGitRoot(async (root) => {
+    makeBase(root);
+    writePlanlet(root, "ready-plan", READY_TASKS);
+    writeFileSync(
+      join(root, "plans", "ready-plan", "notes.bin"),
+      Buffer.from([0xff, 0xfe, 0x00]),
+    );
+    commitAll(root, "ready plan");
+    const relocateBase = spawnSync("git", ["branch", "binary-base"], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    assert.equal(relocateBase.status, 0, relocateBase.stderr);
+    mkdirSync(join(root, "docs"));
+    const moved = spawnSync("git", ["mv", "plans", "docs/plans"], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    assert.equal(moved.status, 0, moved.stderr);
+    writeFileSync(
+      join(root, "docs", "plans", "ready-plan", "notes.bin"),
+      Buffer.from([0xff, 0xfe, 0x01]),
+    );
+    writeFileSync(
+      join(root, ".planlet.json"),
+      `${JSON.stringify({ plansDir: "docs/plans" }, null, 2)}\n`,
+    );
+    commitAll(root, "relocate with binary edit");
+
+    const result = await invoke(root, [
+      "check-completion",
+      "--base",
+      "binary-base",
+    ]);
+
+    assert.equal(result.exitCode, 4);
+    assert.deepEqual(output(result.capture).touched, ["ready-plan"]);
   });
 });
 

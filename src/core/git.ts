@@ -30,6 +30,38 @@ function runGitOutput(
   }
 }
 
+function runGitBlob(
+  repositoryRoot: string,
+  args: readonly string[],
+): { stdout: Buffer; failure: string | undefined } {
+  try {
+    const result = spawnSync("git", args, {
+      cwd: repositoryRoot,
+    });
+    if (result.error !== undefined) {
+      return { stdout: Buffer.alloc(0), failure: result.error.message };
+    }
+    if (result.status !== 0) {
+      const stderr =
+        result.stderr instanceof Buffer
+          ? result.stderr.toString("utf8")
+          : String(result.stderr);
+      return {
+        stdout: Buffer.alloc(0),
+        failure:
+          stderr.trim() || `git ${args[0]} exited with status ${result.status}`,
+      };
+    }
+    const stdout =
+      result.stdout instanceof Buffer
+        ? result.stdout
+        : Buffer.from(result.stdout ?? "");
+    return { stdout, failure: undefined };
+  } catch (error) {
+    return { stdout: Buffer.alloc(0), failure: errorMessage(error) };
+  }
+}
+
 function runGit(
   repositoryRoot: string,
   args: readonly string[],
@@ -186,6 +218,8 @@ export function listDiffPaths(
 
 export interface DiffPathEntry {
   readonly path: string;
+  readonly srcMode: string;
+  readonly dstMode: string;
   readonly srcSha: string;
   readonly dstSha: string;
   readonly status: string;
@@ -237,6 +271,8 @@ export function listDiffEntries(
     }
     entries.push({
       path,
+      srcMode: match[1]!,
+      dstMode: match[2]!,
       srcSha: match[3]!,
       dstSha: match[4]!,
       status: match[5]!,
@@ -287,13 +323,13 @@ export function readCommitFile(
   return shown.stdout;
 }
 
-export function readGitBlob(repositoryRoot: string, sha: string): string {
+export function readGitBlob(repositoryRoot: string, sha: string): Buffer {
   if (!/^[0-9a-f]{40}$/.test(sha) || sha === "0".repeat(40)) {
     throw new PlanletError("git_error", "Could not read Git blob", {
       details: { sha },
     });
   }
-  const shown = runGitOutput(repositoryRoot, ["cat-file", "-p", sha]);
+  const shown = runGitBlob(repositoryRoot, ["cat-file", "-p", sha]);
   if (shown.failure !== undefined) {
     throw new PlanletError("git_error", "Could not read Git blob", {
       details: { sha, reason: shown.failure },

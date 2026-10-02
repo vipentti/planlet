@@ -2,7 +2,7 @@ import { readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { PlanletError, asWriteConflict } from "../errors/planlet-error.js";
-import { pathKind, resolveSafePath, tryLstat } from "./paths.js";
+import { resolveSafePath, tryLstat } from "./paths.js";
 
 export const DEFAULT_PLANS_DIR = "plans";
 const PLANLET_CONFIG_FILENAME = ".planlet.json";
@@ -29,12 +29,13 @@ export interface ResolvedPlansLocation {
   readonly plansPath: string;
 }
 
+const WIN32_RESERVED_SEGMENT =
+  /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/i;
+
 export function hasPlansLayoutMarker(path: string): boolean {
-  if (tryLstat(join(path, DEFAULT_PLANS_DIR))?.isDirectory() === true) {
-    return true;
-  }
-  return CONFIG_CANDIDATE_FILENAMES.some(
-    (name) => tryLstat(join(path, name)) !== null,
+  return (
+    hasExactNamedChild(path, DEFAULT_PLANS_DIR) === "directory" ||
+    presentConfigFiles(path).length > 0
   );
 }
 
@@ -67,7 +68,13 @@ export function assertValidPlansDir(value: string): string {
   ) {
     throw invalidPlansDir(value);
   }
-  if (segments.some((segment) => segment.toLowerCase() === ".git")) {
+  if (
+    segments.some(
+      (segment) =>
+        segment.toLowerCase() === ".git" ||
+        WIN32_RESERVED_SEGMENT.test(segment),
+    )
+  ) {
     throw invalidPlansDir(value);
   }
   if (
@@ -235,9 +242,66 @@ export function writePlansDirConfig(
 }
 
 function presentConfigFiles(repositoryRoot: string): string[] {
-  return CONFIG_CANDIDATE_FILENAMES.filter(
-    (name) => tryLstat(join(repositoryRoot, name)) !== null,
+  let names: readonly string[];
+  try {
+    names = readdirSync(repositoryRoot);
+  } catch {
+    return [];
+  }
+  const present: string[] = [];
+  for (const candidate of CONFIG_CANDIDATE_FILENAMES) {
+    const aliases = names.filter(
+      (name) =>
+        name !== candidate && name.toLowerCase() === candidate.toLowerCase(),
+    );
+    if (aliases.length > 0) {
+      throw new PlanletError(
+        "invalid_config",
+        `Planlet config name must match exactly: ${candidate}`,
+        {
+          details: { path: join(repositoryRoot, aliases[0]!), files: aliases },
+          next: `Rename ${aliases[0]} to ${candidate}`,
+        },
+      );
+    }
+    if (names.includes(candidate)) {
+      present.push(candidate);
+    }
+  }
+  return present;
+}
+
+function hasExactNamedChild(
+  parent: string,
+  segment: string,
+): "missing" | "directory" | "other" {
+  let names: readonly string[];
+  try {
+    names = readdirSync(parent);
+  } catch {
+    return "missing";
+  }
+  const aliases = names.filter(
+    (name) => name !== segment && name.toLowerCase() === segment.toLowerCase(),
   );
+  if (aliases.length > 0) {
+    throw new PlanletError(
+      "invalid_config",
+      `plansDir segment must match on-disk spelling: ${segment}`,
+      {
+        details: { path: join(parent, aliases[0]!), plansDir: segment },
+        next: `Use the exact directory name ${aliases[0]} or rename it`,
+      },
+    );
+  }
+  if (!names.includes(segment)) {
+    return "missing";
+  }
+  const stats = tryLstat(join(parent, segment));
+  if (stats === null) {
+    return "missing";
+  }
+  return stats.isDirectory() ? "directory" : "other";
 }
 
 function parsePlansDirFile(repositoryRoot: string): string {
@@ -310,12 +374,12 @@ function assertPlansDirComponentsAreDirectories(
 ): void {
   let cursor = repositoryRoot;
   for (const segment of plansDir.split("/")) {
-    cursor = join(cursor, segment);
-    const kind = pathKind(cursor);
-    if (kind === "missing") {
+    const child = hasExactNamedChild(cursor, segment);
+    if (child === "missing") {
       return;
     }
-    if (kind !== "directory") {
+    cursor = join(cursor, segment);
+    if (child !== "directory") {
       throw new PlanletError(
         "write_conflict",
         `Plans path is not a directory: ${cursor}`,
@@ -331,6 +395,9 @@ function assertNoPlansDirSymlinks(
 ): void {
   let cursor = repositoryRoot;
   for (const segment of plansDir.split("/")) {
+    if (hasExactNamedChild(cursor, segment) === "missing") {
+      return;
+    }
     cursor = join(cursor, segment);
     const stats = tryLstat(cursor);
     if (stats === null) {

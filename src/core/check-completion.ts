@@ -267,6 +267,14 @@ function slugFileRest(
   return rest.slice(1).join("/");
 }
 
+function decodeUtf8Strict(bytes: Buffer): string | undefined {
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    return undefined;
+  }
+}
+
 function isExactPrefixRelocation(
   slug: string,
   entries: readonly DiffPathEntry[],
@@ -274,22 +282,28 @@ function isExactPrefixRelocation(
   toPlansDir: string,
   repositoryRoot?: string,
 ): boolean {
-  const fromFiles = new Map<string, string>();
-  const toFiles = new Map<string, string>();
+  const fromFiles = new Map<
+    string,
+    { readonly sha: string; readonly mode: string }
+  >();
+  const toFiles = new Map<
+    string,
+    { readonly sha: string; readonly mode: string }
+  >();
   for (const entry of entries) {
     const fromRest = slugFileRest(entry.path, fromPlansDir, slug);
     if (fromRest !== undefined) {
       if (entry.status !== "D") {
         return false;
       }
-      fromFiles.set(fromRest, entry.srcSha);
+      fromFiles.set(fromRest, { sha: entry.srcSha, mode: entry.srcMode });
     }
     const toRest = slugFileRest(entry.path, toPlansDir, slug);
     if (toRest !== undefined) {
       if (entry.status !== "A") {
         return false;
       }
-      toFiles.set(toRest, entry.dstSha);
+      toFiles.set(toRest, { sha: entry.dstSha, mode: entry.dstMode });
     }
   }
   if (fromFiles.size === 0 || fromFiles.size !== toFiles.size) {
@@ -297,30 +311,36 @@ function isExactPrefixRelocation(
   }
   const extraDepth =
     toPlansDir.split("/").length - fromPlansDir.split("/").length;
-  for (const [rest, sha] of fromFiles) {
-    const toSha = toFiles.get(rest);
-    if (toSha === undefined) {
+  for (const [rest, from] of fromFiles) {
+    const to = toFiles.get(rest);
+    if (to === undefined || to.mode !== from.mode) {
       return false;
     }
-    if (toSha === sha) {
+    if (to.sha === from.sha) {
       continue;
     }
-    if (repositoryRoot === undefined || extraDepth < 1) {
+    if (
+      repositoryRoot === undefined ||
+      extraDepth < 1 ||
+      (rest !== "plan.md" && rest !== "tasks.md")
+    ) {
       return false;
     }
-    const fileName = rest.split("/").at(-1);
-    if (fileName === undefined) {
+    const oldText = decodeUtf8Strict(readGitBlob(repositoryRoot, from.sha));
+    if (oldText === undefined) {
       return false;
     }
-    const expected = rewritePlanletDepthLinks({
-      fileName,
-      planDir: joinPlansRelative(fromPlansDir, slug),
-      fromPrefix: fromPlansDir,
-      toPrefix: toPlansDir,
-      text: readGitBlob(repositoryRoot, sha),
-    }).text;
-    const newText = readGitBlob(repositoryRoot, toSha);
-    if (expected !== newText) {
+    const expected = Buffer.from(
+      rewritePlanletDepthLinks({
+        fileName: rest,
+        planDir: joinPlansRelative(fromPlansDir, slug),
+        fromPrefix: fromPlansDir,
+        toPrefix: toPlansDir,
+        text: oldText,
+      }).text,
+      "utf8",
+    );
+    if (!expected.equals(readGitBlob(repositoryRoot, to.sha))) {
       return false;
     }
   }

@@ -13,12 +13,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and thi
 --plans-dir <relative>` writes the file only when the value is not `plans`,
   and refuses a path that equals, contains, or sits inside a harness
   destination or agent file that same init/update will write. Segments ending
-  in a period are invalid. `list` and the
+  in a period, or Win32 reserved device names, are invalid. Config filenames
+  and `plansDir` segments must match on-disk spelling. `list` and the
   dashboard report the effective `plansDir`. YAML siblings and rejected
   config names fail closed; unknown JSON keys are ignored. Leftover `plans/`
   after a non-default `plansDir` is `plans_dir_conflict`, distinct from
   `plans_not_initialized`. A `git mv` of unchanged planlets onto a new
-  `plansDir` does not make `check-completion` treat them as newly touched.
+  `plansDir` does not make `check-completion` treat them as newly touched:
+  Git modes must match, and only `plan.md`/`tasks.md` may differ by the
+  depth-link rewrite.
 
 ## [0.8.0] - 2026-09-27
 

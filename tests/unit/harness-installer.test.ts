@@ -261,6 +261,9 @@ test("init --plans-dir rejects reserved first segments", () => {
     "docs/.GIT/plans",
     ".agents.",
     "AGENTS.md.",
+    "NUL",
+    "con.txt",
+    "docs/COM1/plans",
   ]) {
     withRoot((root) => {
       assert.throws(
@@ -294,6 +297,25 @@ test("init --plans-dir docs/plans is write_conflict when docs is a file", () => 
         }),
       (error: unknown) =>
         error instanceof PlanletError && error.code === "write_conflict",
+    );
+    assert.equal(existsSync(join(root, ".planlet.json")), false);
+  });
+});
+
+test("init --plans-dir Docs/plans is invalid_config when docs exists", () => {
+  withRoot((root) => {
+    mkdirSync(join(root, "docs"));
+    assert.throws(
+      () =>
+        installHarnessSkills({
+          repositoryRoot: root,
+          operation: "init",
+          tools: "none",
+          noAgents: true,
+          plansDir: "Docs/plans",
+        }),
+      (error: unknown) =>
+        error instanceof PlanletError && error.code === "invalid_config",
     );
     assert.equal(existsSync(join(root, ".planlet.json")), false);
   });

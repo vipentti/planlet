@@ -193,6 +193,9 @@ test("plansDir traversal, globs, and empty segments fail closed", () => {
     "docs/.GIT/plans",
     ".agents.",
     "AGENTS.md.",
+    "NUL",
+    "con.txt",
+    "docs/COM1/plans",
   ]) {
     assert.throws(
       () => assertValidPlansDir(value),
@@ -251,6 +254,32 @@ test("empty leftover plans/ is not a conflict", () => {
     mkdirSync(join(root, "plans"));
     writeConfig(root, JSON.stringify({ plansDir: "docs/plans" }));
     assert.equal(readPlansDir(root), "docs/plans");
+  });
+});
+
+test("a case-only config filename is invalid_config", () => {
+  withRoot((root) => {
+    writeFileSync(
+      join(root, ".PLANLET.JSON"),
+      JSON.stringify({ plansDir: "docs/plans" }),
+    );
+    assert.throws(
+      () => readPlansDir(root),
+      (error: unknown) =>
+        error instanceof PlanletError && error.code === "invalid_config",
+    );
+  });
+});
+
+test("an existing directory case alias is invalid_config", () => {
+  withRoot((root) => {
+    mkdirSync(join(root, "docs"));
+    writeConfig(root, JSON.stringify({ plansDir: "Docs/plans" }));
+    assert.throws(
+      () => readPlansDir(root),
+      (error: unknown) =>
+        error instanceof PlanletError && error.code === "invalid_config",
+    );
   });
 });
 
