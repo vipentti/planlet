@@ -247,7 +247,7 @@ function posixPathOverlaps(left: string, right: string): boolean {
   const b = right.split("/");
   const n = Math.min(a.length, b.length);
   for (let i = 0; i < n; i += 1) {
-    if (a[i] !== b[i]) {
+    if (a[i]!.toLowerCase() !== b[i]!.toLowerCase()) {
       return false;
     }
   }
