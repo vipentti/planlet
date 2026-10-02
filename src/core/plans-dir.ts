@@ -1,8 +1,12 @@
 import { readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { PlanletError, asWriteConflict } from "../errors/planlet-error.js";
-import { resolveSafePath, tryLstat } from "./paths.js";
+import {
+  PlanletError,
+  asWriteConflict,
+  isPlanletError,
+} from "../errors/planlet-error.js";
+import { errnoIs, resolveSafePath, tryLstat } from "./paths.js";
 
 export const DEFAULT_PLANS_DIR = "plans";
 const PLANLET_CONFIG_FILENAME = ".planlet.json";
@@ -29,13 +33,21 @@ export interface ResolvedPlansLocation {
   readonly plansPath: string;
 }
 
+/** @internal Directory-listing seam. Tests only. */
+export interface PlansDirDependencies {
+  readonly listNames?: (directory: string) => string[];
+}
+
 const WIN32_RESERVED_SEGMENT =
   /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/i;
 
-export function hasPlansLayoutMarker(path: string): boolean {
+export function hasPlansLayoutMarker(
+  path: string,
+  dependencies?: PlansDirDependencies,
+): boolean {
   return (
-    hasExactNamedChild(path, DEFAULT_PLANS_DIR) === "directory" ||
-    presentConfigFiles(path).length > 0
+    hasExactNamedChild(path, DEFAULT_PLANS_DIR, dependencies) === "directory" ||
+    presentConfigFiles(path, dependencies).length > 0
   );
 }
 
@@ -110,8 +122,11 @@ export function resolveUnderPlans(
   );
 }
 
-export function readPlansDir(repositoryRoot: string): string {
-  const present = presentConfigFiles(repositoryRoot);
+export function readPlansDir(
+  repositoryRoot: string,
+  dependencies?: PlansDirDependencies,
+): string {
+  const present = presentConfigFiles(repositoryRoot, dependencies);
   if (present.length > 1) {
     throw new PlanletError(
       "invalid_config",
@@ -132,8 +147,12 @@ export function readPlansDir(repositoryRoot: string): string {
       ? parsePlansDirFile(repositoryRoot)
       : DEFAULT_PLANS_DIR;
   if (plansDir !== DEFAULT_PLANS_DIR) {
-    assertNoPlansDirSymlinks(repositoryRoot, plansDir);
-    assertPlansDirComponentsAreDirectories(repositoryRoot, plansDir);
+    assertNoPlansDirSymlinks(repositoryRoot, plansDir, dependencies);
+    assertPlansDirComponentsAreDirectories(
+      repositoryRoot,
+      plansDir,
+      dependencies,
+    );
   }
   assertNoLeftoverDefaultPlans(repositoryRoot, plansDir);
   return plansDir;
@@ -141,8 +160,9 @@ export function readPlansDir(repositoryRoot: string): string {
 
 export function resolvePlansLocation(
   repositoryRoot: string,
+  dependencies?: PlansDirDependencies,
 ): ResolvedPlansLocation {
-  const plansDir = readPlansDir(repositoryRoot);
+  const plansDir = readPlansDir(repositoryRoot, dependencies);
   return {
     plansDir,
     plansPath: resolveUnderPlans(repositoryRoot, plansDir),
@@ -151,8 +171,9 @@ export function resolvePlansLocation(
 
 export function requirePlansDirectory(
   repositoryRoot: string,
+  dependencies?: PlansDirDependencies,
 ): ResolvedPlansLocation {
-  const location = resolvePlansLocation(repositoryRoot);
+  const location = resolvePlansLocation(repositoryRoot, dependencies);
   if (tryLstat(location.plansPath)?.isDirectory() !== true) {
     throw new PlanletError(
       "plans_not_initialized",
@@ -170,8 +191,9 @@ export interface InitPlansDirectory extends ResolvedPlansLocation {
 export function prepareInitPlansDirectory(
   repositoryRoot: string,
   requestedPlansDir?: string,
+  dependencies?: PlansDirDependencies,
 ): InitPlansDirectory {
-  const present = presentConfigFiles(repositoryRoot);
+  const present = presentConfigFiles(repositoryRoot, dependencies);
   if (present.length > 1) {
     throw new PlanletError(
       "invalid_config",
@@ -211,8 +233,12 @@ export function prepareInitPlansDirectory(
     );
   }
   if (plansDir !== DEFAULT_PLANS_DIR) {
-    assertNoPlansDirSymlinks(repositoryRoot, plansDir);
-    assertPlansDirComponentsAreDirectories(repositoryRoot, plansDir);
+    assertNoPlansDirSymlinks(repositoryRoot, plansDir, dependencies);
+    assertPlansDirComponentsAreDirectories(
+      repositoryRoot,
+      plansDir,
+      dependencies,
+    );
   }
   assertNoLeftoverDefaultPlans(repositoryRoot, plansDir);
   return {
@@ -241,12 +267,20 @@ export function writePlansDirConfig(
   return path;
 }
 
-function presentConfigFiles(repositoryRoot: string): string[] {
-  let names: readonly string[];
-  try {
-    names = readdirSync(repositoryRoot);
-  } catch {
-    return [];
+function presentConfigFiles(
+  repositoryRoot: string,
+  dependencies?: PlansDirDependencies,
+): string[] {
+  const names = listDirectoryNames(repositoryRoot, dependencies);
+  if (names === undefined) {
+    throw new PlanletError(
+      "invalid_config",
+      `Cannot list directory: ${repositoryRoot}`,
+      {
+        details: { path: repositoryRoot },
+        next: "Make the directory listable or fix the path",
+      },
+    );
   }
   const present: string[] = [];
   for (const candidate of CONFIG_CANDIDATE_FILENAMES) {
@@ -264,7 +298,8 @@ function presentConfigFiles(repositoryRoot: string): string[] {
         },
       );
     }
-    if (names.includes(candidate)) {
+    const configPath = join(repositoryRoot, candidate);
+    if (names.includes(candidate) || tryLstat(configPath) !== null) {
       present.push(candidate);
     }
   }
@@ -274,11 +309,16 @@ function presentConfigFiles(repositoryRoot: string): string[] {
 function hasExactNamedChild(
   parent: string,
   segment: string,
+  dependencies?: PlansDirDependencies,
 ): "missing" | "directory" | "other" {
-  let names: readonly string[];
-  try {
-    names = readdirSync(parent);
-  } catch {
+  const childPath = join(parent, segment);
+  const stats = tryLstat(childPath);
+  const parentStats = tryLstat(parent);
+  if (parentStats === null || !parentStats.isDirectory()) {
+    return "missing";
+  }
+  const names = listDirectoryNames(parent, dependencies);
+  if (names === undefined) {
     return "missing";
   }
   const aliases = names.filter(
@@ -294,14 +334,37 @@ function hasExactNamedChild(
       },
     );
   }
-  if (!names.includes(segment)) {
-    return "missing";
-  }
-  const stats = tryLstat(join(parent, segment));
   if (stats === null) {
     return "missing";
   }
   return stats.isDirectory() ? "directory" : "other";
+}
+
+function listDirectoryNames(
+  directory: string,
+  dependencies?: PlansDirDependencies,
+): string[] | undefined {
+  try {
+    return (dependencies?.listNames ?? ((path) => readdirSync(path)))(
+      directory,
+    );
+  } catch (error) {
+    if (errnoIs(error, "ENOENT")) {
+      return undefined;
+    }
+    throw cannotListDirectory(directory, error);
+  }
+}
+
+function cannotListDirectory(path: string, error: unknown): PlanletError {
+  if (isPlanletError(error)) {
+    return error;
+  }
+  return new PlanletError("invalid_config", `Cannot list directory: ${path}`, {
+    details: { path },
+    cause: error,
+    next: "Make the directory listable or fix the path",
+  });
 }
 
 function parsePlansDirFile(repositoryRoot: string): string {
@@ -371,10 +434,11 @@ export function parsePlansDirDocument(
 function assertPlansDirComponentsAreDirectories(
   repositoryRoot: string,
   plansDir: string,
+  dependencies?: PlansDirDependencies,
 ): void {
   let cursor = repositoryRoot;
   for (const segment of plansDir.split("/")) {
-    const child = hasExactNamedChild(cursor, segment);
+    const child = hasExactNamedChild(cursor, segment, dependencies);
     if (child === "missing") {
       return;
     }
@@ -392,10 +456,11 @@ function assertPlansDirComponentsAreDirectories(
 function assertNoPlansDirSymlinks(
   repositoryRoot: string,
   plansDir: string,
+  dependencies?: PlansDirDependencies,
 ): void {
   let cursor = repositoryRoot;
   for (const segment of plansDir.split("/")) {
-    if (hasExactNamedChild(cursor, segment) === "missing") {
+    if (hasExactNamedChild(cursor, segment, dependencies) === "missing") {
       return;
     }
     cursor = join(cursor, segment);
@@ -412,6 +477,9 @@ function assertNoPlansDirSymlinks(
           next: "Point plansDir at a real directory inside the repository, not a symlink",
         },
       );
+    }
+    if (!stats.isDirectory()) {
+      return;
     }
   }
 }

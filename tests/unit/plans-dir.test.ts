@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import {
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   realpathSync,
   rmSync,
   symlinkSync,
@@ -14,10 +15,12 @@ import test from "node:test";
 import {
   DEFAULT_PLANS_DIR,
   assertValidPlansDir,
+  hasPlansLayoutMarker,
   plansDirPathspec,
   readPlansDir,
   requirePlansDirectory,
   resolvePlansLocation,
+  type PlansDirDependencies,
 } from "../../src/core/plans-dir.js";
 import { PlanletError } from "../../src/errors/planlet-error.js";
 
@@ -351,5 +354,79 @@ test("absent config still accepts an in-repository plans/ symlink", () => {
     symlinkSync(store, join(root, "plans"));
     assert.equal(readPlansDir(root), "plans");
     assert.equal(requirePlansDirectory(root).plansPath, realpathSync(store));
+  });
+});
+
+function errnoError(code: string, path: string): NodeJS.ErrnoException {
+  const error = new Error(`${code}: ${path}`) as NodeJS.ErrnoException;
+  error.code = code;
+  return error;
+}
+
+test("an unlistable repository root is invalid_config, not a silent plans/ fallback", () => {
+  withRoot((root) => {
+    mkdirSync(join(root, "plans"));
+    writeConfig(root, JSON.stringify({ plansDir: "docs/plans" }));
+    for (const code of ["EACCES", "EIO", "ENOTDIR"]) {
+      const blocked: PlansDirDependencies = {
+        listNames: () => {
+          throw errnoError(code, root);
+        },
+      };
+      assert.throws(
+        () => readPlansDir(root, blocked),
+        (error: unknown) =>
+          error instanceof PlanletError && error.code === "invalid_config",
+        code,
+      );
+    }
+    assert.throws(
+      () =>
+        hasPlansLayoutMarker(root, {
+          listNames: () => {
+            throw errnoError("EACCES", root);
+          },
+        }),
+      (error: unknown) =>
+        error instanceof PlanletError && error.code === "invalid_config",
+    );
+  });
+});
+
+test("an unlistable plansDir component is invalid_config, not skipped validation", () => {
+  withRoot((root) => {
+    mkdirSync(join(root, "docs", "plans"), { recursive: true });
+    writeConfig(root, JSON.stringify({ plansDir: "docs/plans" }));
+    const docs = join(root, "docs");
+    assert.throws(
+      () =>
+        readPlansDir(root, {
+          listNames: (directory) => {
+            if (directory === docs) {
+              throw errnoError("EACCES", docs);
+            }
+            return readdirSync(directory);
+          },
+        }),
+      (error: unknown) =>
+        error instanceof PlanletError && error.code === "invalid_config",
+    );
+  });
+});
+
+test("a missing plansDir parent remains absent after a successful listing of the root", () => {
+  withRoot((root) => {
+    writeConfig(root, JSON.stringify({ plansDir: "docs/plans" }));
+    assert.equal(
+      readPlansDir(root, {
+        listNames: (directory) => {
+          if (directory === join(root, "docs")) {
+            throw errnoError("ENOENT", directory);
+          }
+          return readdirSync(directory);
+        },
+      }),
+      "docs/plans",
+    );
   });
 });
