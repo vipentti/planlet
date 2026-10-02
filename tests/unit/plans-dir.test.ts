@@ -172,6 +172,7 @@ test("plansDir traversal, globs, and empty segments fail closed", () => {
     "docs/plans*",
     ".",
     "",
+    "plans/custom",
   ]) {
     assert.throws(
       () => assertValidPlansDir(value),
@@ -242,5 +243,37 @@ test("a config symlink that escapes the root is invalid_config", () => {
           error instanceof PlanletError && error.code === "invalid_config",
       );
     });
+  });
+});
+
+test("an in-repository config symlink is invalid_config", () => {
+  withRoot((root) => {
+    writeFileSync(
+      join(root, "actual.json"),
+      JSON.stringify({ plansDir: "docs/plans" }),
+    );
+    symlinkSync(join(root, "actual.json"), join(root, ".planlet.json"));
+    assert.throws(
+      () => readPlansDir(root),
+      (error: unknown) =>
+        error instanceof PlanletError && error.code === "invalid_config",
+    );
+  });
+});
+
+test("a plansDir path with a symlink component is invalid_config", () => {
+  withRoot((root) => {
+    mkdirSync(join(root, "store", "plans"), { recursive: true });
+    symlinkSync(join(root, "store"), join(root, "docs"));
+    writeConfig(root, JSON.stringify({ plansDir: "docs/plans" }));
+    assert.throws(
+      () => readPlansDir(root),
+      (error: unknown) => {
+        assert.ok(error instanceof PlanletError);
+        assert.equal(error.code, "invalid_config");
+        assert.match(error.message, /symlink/);
+        return true;
+      },
+    );
   });
 });

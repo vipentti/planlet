@@ -327,8 +327,8 @@ export function installHarnessSkills(options: {
         }
 
         // Preflight passed: only now mutate the repository.
-        if (plansInitialized) mkdirSync(plansPath, { recursive: true });
         wroteConfig = writeConfigIfNeeded();
+        if (plansInitialized) mkdirSync(plansPath, { recursive: true });
         summaries = inspections.map((inspection) =>
           options.operation === "update" && inspection.state === "missing"
             ? {
@@ -346,8 +346,8 @@ export function installHarnessSkills(options: {
               ),
         );
       } else {
-        if (plansInitialized) mkdirSync(plansPath, { recursive: true });
         wroteConfig = writeConfigIfNeeded();
+        if (plansInitialized) mkdirSync(plansPath, { recursive: true });
       }
 
       // Agent files are written only after every destination inspected and

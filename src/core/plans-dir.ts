@@ -58,6 +58,12 @@ export function assertValidPlansDir(value: string): string {
   ) {
     throw invalidPlansDir(value);
   }
+  if (
+    value !== DEFAULT_PLANS_DIR &&
+    value.startsWith(`${DEFAULT_PLANS_DIR}/`)
+  ) {
+    throw invalidPlansDir(value);
+  }
   return value;
 }
 
@@ -105,6 +111,7 @@ export function readPlansDir(repositoryRoot: string): string {
     present[0] === PLANLET_CONFIG_FILENAME
       ? parsePlansDirFile(repositoryRoot)
       : DEFAULT_PLANS_DIR;
+  assertNoPlansDirSymlinks(repositoryRoot, plansDir);
   assertNoLeftoverDefaultPlans(repositoryRoot, plansDir);
   return plansDir;
 }
@@ -180,6 +187,7 @@ export function prepareInitPlansDirectory(
       },
     );
   }
+  assertNoPlansDirSymlinks(repositoryRoot, plansDir);
   assertNoLeftoverDefaultPlans(repositoryRoot, plansDir);
   return {
     plansDir,
@@ -215,31 +223,7 @@ function presentConfigFiles(repositoryRoot: string): string[] {
 
 function parsePlansDirFile(repositoryRoot: string): string {
   const configPath = join(repositoryRoot, PLANLET_CONFIG_FILENAME);
-  const kind = pathKind(configPath);
-  if (kind === "directory") {
-    throw new PlanletError(
-      "invalid_config",
-      `Planlet config path is not a regular file: ${configPath}`,
-      {
-        details: { path: configPath },
-        next: "Replace .planlet.json with a JSON object that may set plansDir",
-      },
-    );
-  }
-  let resolvedPath: string;
-  try {
-    resolvedPath = resolveSafePath(repositoryRoot, PLANLET_CONFIG_FILENAME);
-  } catch (error) {
-    if (error instanceof PlanletError) {
-      throw new PlanletError(
-        "invalid_config",
-        `Cannot read Planlet config: ${PLANLET_CONFIG_FILENAME}`,
-        { details: { path: configPath }, cause: error },
-      );
-    }
-    throw error;
-  }
-  if (tryLstat(resolvedPath)?.isFile() !== true) {
+  if (pathKind(configPath) !== "file") {
     throw new PlanletError(
       "invalid_config",
       `Planlet config path is not a regular file: ${configPath}`,
@@ -252,7 +236,7 @@ function parsePlansDirFile(repositoryRoot: string): string {
 
   let text: string;
   try {
-    text = readFileSync(resolvedPath, "utf8");
+    text = readFileSync(configPath, "utf8");
   } catch (error) {
     throw new PlanletError(
       "invalid_config",
@@ -292,6 +276,30 @@ function parsePlansDirFile(repositoryRoot: string): string {
     });
   }
   return assertValidPlansDir(record.plansDir);
+}
+
+function assertNoPlansDirSymlinks(
+  repositoryRoot: string,
+  plansDir: string,
+): void {
+  let cursor = repositoryRoot;
+  for (const segment of plansDir.split("/")) {
+    cursor = join(cursor, segment);
+    const stats = tryLstat(cursor);
+    if (stats === null) {
+      return;
+    }
+    if (stats.isSymbolicLink()) {
+      throw new PlanletError(
+        "invalid_config",
+        `plansDir path contains a symlink: ${plansDir}`,
+        {
+          details: { plansDir, path: cursor },
+          next: "Point plansDir at a real directory inside the repository, not a symlink",
+        },
+      );
+    }
+  }
 }
 
 function assertNoLeftoverDefaultPlans(

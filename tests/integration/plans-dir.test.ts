@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import test from "node:test";
@@ -209,5 +209,28 @@ test("check-completion extracts a two-segment prefix from git diffs", async () =
       completed: [],
       violations: [{ slug: "ready-plan", next: "planlet complete ready-plan" }],
     });
+  });
+});
+
+test("a plansDir symlink component fails the gate with invalid_config", async () => {
+  await withGitRoot(async (root) => {
+    makeGitBase(root);
+    mkdirSync(join(root, "store", "plans", "ready-plan"), { recursive: true });
+    writeFileSync(
+      join(root, "store", "plans", "ready-plan", "plan.md"),
+      "# Ready Plan\n",
+    );
+    writeFileSync(
+      join(root, "store", "plans", "ready-plan", "tasks.md"),
+      "# Tasks\n\n- [x] T1 Done\n",
+    );
+    symlinkSync(join(root, "store"), join(root, "docs"));
+    writeConfig(root, "docs/plans");
+    commitAll(root, "symlinked plansDir");
+
+    const result = await invoke(root, ["check-completion", "--base", "base"]);
+    assert.equal(result.exitCode, 1);
+    assert.equal(errorCode(result.capture), "invalid_config");
+    assert.equal(result.capture.stdout.join(""), "");
   });
 });
