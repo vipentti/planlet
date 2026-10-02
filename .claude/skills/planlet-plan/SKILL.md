@@ -12,14 +12,14 @@ Create or revise one focused planlet while keeping planning separate from implem
 
 ## Start the workflow
 
-1. Discover the repository root without traversing above its boundary.
-2. Use one available `planlet` executable throughout the workflow. Confirm each needed operation with `planlet help <command>`; do not infer support from this skill. Pass `--root "<repository-root>"` to every operational command. Treat angle-bracket runtime values as separate argv values; when invoking through a shell, apply shell-specific escaping instead of interpolating raw text.
-3. Use `planlet --root "<repository-root>" list` to inspect active logical slugs and `planlet --root "<repository-root>" list --completed` to inspect completed logical slugs. For a revision, accept one explicit active slug from the active list. With no slug, select and announce the sole active planlet, or ask the user to choose when several exist. Never select by recency or list order. If no active planlet matches, stop without writing. Do not revise a completed archive. When a revision slug is resolved, run `planlet --root "<repository-root>" validate <slug>`, and read both files completely with `planlet --root "<repository-root>" --full show <slug> --part plan` and `planlet --root "<repository-root>" --full show <slug> --part tasks`.
-4. Read applicable repository instructions when present.
-5. The `planlet` CLI is required. If no executable is available, install it
+1. Walk upward from the current directory to the nearest `.git` file or directory. Pass that directory as `--root` and do not walk past it.
+2. The `planlet` CLI is required. If no executable is available, install it
    (`npm install -g @vipentti/planlet`) or invoke it through `npx @vipentti/planlet`. If it still
    cannot run, stop and report that, naming the missing executable. Do not reimplement CLI
    operations by editing planlet files.
+   Use one available `planlet` executable throughout the workflow. Confirm each needed operation with `planlet help <command>`; do not infer support from this skill. Pass `--root "<repository-root>"` to every operational command. Treat angle-bracket runtime values as separate argv values; when invoking through a shell, apply shell-specific escaping instead of interpolating raw text.
+3. Use `planlet --root "<repository-root>" list` to inspect active logical slugs and `planlet --root "<repository-root>" list --completed` to inspect completed logical slugs. For a revision, accept one explicit active slug from the active list. With no slug, select and announce the sole active planlet, or ask the user to choose when several exist. Never select by recency or list order. If no active planlet matches, stop without writing. Do not revise a completed archive. When a revision slug is resolved, run `planlet --root "<repository-root>" validate <slug>`, and read both files completely with `planlet --root "<repository-root>" --full show <slug> --part plan` and `planlet --root "<repository-root>" --full show <slug> --part tasks`.
+4. Read applicable repository instructions when present.
 
 ## Develop the proposal
 

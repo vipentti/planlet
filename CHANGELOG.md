@@ -50,7 +50,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and thi
   New slugs need at least one letter and must not start with `YYYY-MM-DD-`.
   Planning leaves `## Verification Evidence` for implementation to record in
   `tasks.md`, and the task template uses a bare outcome line. New task IDs are
-  one greater than the highest numeric suffix still in the file.
+  one greater than the highest numeric suffix still in the file. The repository
+  root is the nearest `.git` entry and is not walked past. CLI availability is
+  checked before operational commands.
 
 - The `planlet-complete` skill resumes an interrupted completion when
   `validate` warns that an active planlet contains a completion record, or
@@ -58,7 +60,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and thi
   running `complete <slug>` once with no new override. It accepts a slug only
   from active `list` output and stops on `state: completed`. Stderr
   diagnostics are reported: an unchanged link stays unrepaired, a staging
-  warning is staged before commit, and a lock-release warning stops further
+  warning is recovered with `git add -A -- <source> <destination>` when the
+  source is in the index and `git add -- <destination>` otherwise, and a
+  lock-release warning stops further
   writes. An override reason must be a single line. The repository root is
   the nearest `.git` entry and is not walked past. CLI availability is
   checked before operational commands.

@@ -348,6 +348,9 @@ test("the complete skill reports every completion warning it is given", () => {
   assert.match(completeCorpus, /never present them as a problem/);
   assert.match(completeCorpus, /stderr diagnostics/);
   assert.match(completeCorpus, /Could not stage/);
+  assert.match(completeCorpus, /git add -A -- <source> <destination>/);
+  assert.match(completeCorpus, /git add -- <destination>/);
+  assert.doesNotMatch(completeCorpus, /that pathspec/);
   assert.match(completeCorpus, /lock-release/);
   assert.doesNotMatch(completeCorpus, /Each one names a link/);
 });
@@ -359,12 +362,18 @@ test("the complete skill resumes a recorded completion instead of refusing it", 
   );
   const corpus = `${complete}\n${guidance}`;
 
-  assert.match(complete, /nearest `\.git` file or directory/);
-  assert.ok(
-    complete.indexOf("The `planlet` CLI is required.") <
-      complete.indexOf('planlet --root "<repository-root>" list'),
-    "CLI availability must precede operational commands",
-  );
+  for (const skillPath of [
+    "skills/planlet-plan/SKILL.md",
+    "skills/planlet-complete/SKILL.md",
+  ]) {
+    const skill = read(skillPath);
+    assert.match(skill, /nearest `\.git` file or directory/);
+    assert.ok(
+      skill.indexOf("The `planlet` CLI is required.") <
+        skill.indexOf('planlet --root "<repository-root>" list'),
+      `${skillPath}: CLI availability must precede list`,
+    );
+  }
   assert.match(complete, /only when that list shows it/);
   assert.match(complete, /Never select by recency or output order/);
   assert.match(complete, /state: completed/);
