@@ -191,8 +191,8 @@ export function prepareInitPlansDirectory(
   }
   if (plansDir !== DEFAULT_PLANS_DIR) {
     assertNoPlansDirSymlinks(repositoryRoot, plansDir);
+    assertPlansDirComponentsAreDirectories(repositoryRoot, plansDir);
   }
-  assertPlansDirComponentsAreDirectories(repositoryRoot, plansDir);
   assertNoLeftoverDefaultPlans(repositoryRoot, plansDir);
   return {
     plansDir,

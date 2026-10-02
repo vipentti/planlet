@@ -185,6 +185,21 @@ test("init with none creates plans without resolving or installing skills", () =
   });
 });
 
+test("init accepts an in-repository default plans/ symlink", () => {
+  withRoot((root) => {
+    mkdirSync(join(root, "store"));
+    symlinkSync(join(root, "store"), join(root, "plans"));
+    const result = installHarnessSkills({
+      repositoryRoot: root,
+      operation: "init",
+      tools: "none",
+      noAgents: true,
+    });
+    assert.equal(result.data.plansInitialized, false);
+    assert.equal(existsSync(join(root, ".planlet.json")), false);
+  });
+});
+
 test("init --plans-dir plans writes no config file", () => {
   withRoot((root) => {
     const result = installHarnessSkills({
