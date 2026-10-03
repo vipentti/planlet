@@ -31,6 +31,42 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and thi
   that cannot be listed is `invalid_config`, not a silent fallback to
   `plans/`.
 
+### Changed
+
+- The `planlet-implement` skill continues only for a slug in active `list`
+  output. `validate` exit 0 with `state: completed`, or a warning that an
+  active planlet contains a completion record, stops the run. It fixes
+  failures in that planlet's implementation and continues past an unrelated
+  failure only when later tasks do not depend on it. Success-path stderr
+  diagnostics are reported, including staging and lock-release warnings.
+  `ready_to_complete` and its `next` hint stay a handoff to
+  `planlet-complete`. Checkboxes stay unchanged until `task check`. The
+  repository root is the nearest `.git` entry and is not walked past. CLI
+  availability is checked before operational commands.
+
+- The `planlet-plan` skill resolves a revision only to an active planlet: an
+  explicit slug, the sole active planlet, or a user choice when several exist.
+  It writes `plan.md` and `tasks.md` under the `plansDir` reported by `list`.
+  New slugs need at least one letter and must not start with `YYYY-MM-DD-`.
+  Planning leaves `## Verification Evidence` for implementation to record in
+  `tasks.md`, and the task template uses a bare outcome line. New task IDs are
+  one greater than the highest numeric suffix still in the file. The repository
+  root is the nearest `.git` entry and is not walked past. CLI availability is
+  checked before operational commands.
+
+- The `planlet-complete` skill resumes an interrupted completion when
+  `validate` warns that an active planlet contains a completion record, or
+  when `complete` returns `write_conflict` with `auditRecorded: true`, by
+  running `complete <slug>` once with no new override. It accepts a slug only
+  from active `list` output and stops on `state: completed`. Stderr
+  diagnostics are reported: an unchanged link stays unrepaired, a staging
+  warning is recovered with `git add -A -- <source> <destination>` when the
+  source is in the index and `git add -- <destination>` otherwise, and a
+  lock-release warning stops further
+  writes. An override reason must be a single line. The repository root is
+  the nearest `.git` entry and is not walked past. CLI availability is
+  checked before operational commands.
+
 ## [0.8.0] - 2026-09-27
 
 ### Added
