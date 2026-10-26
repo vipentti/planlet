@@ -1,6 +1,6 @@
 # Planlet Skill Scenarios
 
-Run each scenario in a fresh disposable repository fixture outside the canonical `skills/` tree and active `plans/` state. Copy only the files named by the setup, start with fresh agent context where practical, and retain the prompt, agent output, resulting files, and diff for review. Require CLI-first behavior with no manual lifecycle fallback; an agent that cannot run the CLI stops and reports naming the missing executable.
+Run each scenario in a fresh disposable repository fixture outside the canonical `skills/` tree and active `plans/` state. Copy only the files named by the setup, start with fresh agent context where practical, and retain the prompt, agent output, resulting files, and diff for review. Require CLI-first behavior for lifecycle operations with no manual lifecycle fallback; an agent that cannot run the CLI for such an operation stops and reports naming the missing executable.
 
 ## Planning scenarios
 
@@ -8,23 +8,23 @@ Run each scenario in a fresh disposable repository fixture outside the canonical
 
 - Fixture: A small repository with instructions, source, tests, and no active planlets.
 - Prompt: "Plan a better import experience."
-- Expected decisions: Inspect relevant code; look up repository facts instead of asking; surface material open decisions in small related batches (prefer about 2–4) with a recommended answer for each; recommend a bounded approach; propose a valid unused slug; wait for confirmation.
-- Expected artifacts: None before confirmation; afterward, exactly one `plan.md` and `tasks.md` whose acceptance criteria and tasks reflect the confirmed scope.
-- Safety checks: No product edits, extra documents, or premature persistence.
+- Expected decisions: Inspect relevant code; look up repository facts instead of asking; surface material open decisions in small related batches (prefer about 2–4) with a recommended answer for each; recommend a bounded approach; propose a valid unused slug; once answers settle the decisions, persist without presenting the plan or asking to write.
+- Expected artifacts: None while material questions are open; afterward, exactly one valid `plan.md` and `tasks.md` whose acceptance criteria and tasks reflect the answered scope, plus a brief report that does not reproduce the plan.
+- Safety checks: No product edits, extra documents, persistence before material questions are answered, or confirmation prompt to write.
 
 ### S2 Precise request
 
 - Fixture: A repository whose existing interface and tests make the requested change unambiguous.
 - Prompt: Specify the target behavior, compatibility constraint, and required test in detail.
-- Expected decisions: Inspect the repository; if the request is already precise, proceed without ceremonial questions; present a direct proposal with verification.
-- Expected artifacts: A confirmed two-file planlet with a valid unused slug and verifiable tasks.
-- Safety checks: No ceremonial sections without content and no implementation edits.
+- Expected decisions: Inspect the repository; if the request is already precise, proceed without ceremonial questions; persist the planlet directly with verification strategy.
+- Expected artifacts: A valid two-file planlet with an unused slug and verifiable tasks, written without a confirmation round, and a brief report naming paths and the validation result.
+- Safety checks: No ceremonial sections without content, no plan reproduced in conversation, and no implementation edits.
 
-### S3 Declined persistence
+### S3 Discussion-only request
 
-- Fixture: Any repository without the proposed slug.
-- Prompt: Request a plan, review the proposal, then decline file creation.
-- Expected decisions: Accept the decline and preserve the conversational proposal only.
+- Fixture: Any repository without the proposed slug, with no `planlet` executable available.
+- Prompt: Ask to brainstorm and compare approaches for a change, explicitly without saving a plan.
+- Expected decisions: Answer in conversation only, without installing, invoking, or requiring the CLI.
 - Expected artifacts: No new planlet directory or files.
 - Safety checks: Repository diff remains empty.
 
@@ -32,7 +32,7 @@ Run each scenario in a fresh disposable repository fixture outside the canonical
 
 - Fixture: One valid active planlet containing completed T1, unfinished T2, and a highest historical ID of T4.
 - Prompt: Revise scope so T2 remains applicable, one unfinished outcome is removed, and one new outcome is added.
-- Expected decisions: Re-read both files; reconcile scope and tasks; preserve T1 and T2 IDs; explain any effect on completed T1; allocate the new task at T5 or above.
+- Expected decisions: Apply the requested revision directly without a confirmation round; re-read both files; reconcile scope and tasks; preserve T1 and T2 IDs; explain any effect on completed T1; allocate the new task at T5 or above.
 - Expected artifacts: Both files updated consistently with no silent deletion of completed work.
 - Safety checks: No renumbering, duplicate IDs, or product edits.
 
@@ -98,4 +98,4 @@ Run each scenario in a fresh disposable repository fixture outside the canonical
 
 ## Review criteria
 
-For every run, confirm exact target selection, complete file re-reading, CLI-first delegation, valid paths and task IDs, narrow mutation scope, accurate final summary, and preservation of fixture changes unrelated to the scenario. Revise a skill when its raw output or diff is unsafe, ambiguous, inconsistent across the two files, or needlessly ceremonial.
+For every lifecycle run, confirm exact target selection, complete file re-reading, CLI-first delegation, valid paths and task IDs, narrow mutation scope, accurate final summary, and preservation of fixture changes unrelated to the scenario. For S3, confirm the agent neither installs nor invokes the CLI and leaves the repository unchanged. Revise a skill when its raw output or diff is unsafe, ambiguous, inconsistent across the two files, or needlessly ceremonial.

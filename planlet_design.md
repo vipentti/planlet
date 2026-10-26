@@ -172,14 +172,12 @@ The Plan skill should:
 5. Call out risks, migrations, compatibility concerns, and testing needs.
 6. Narrow the discussion into a concrete, buildable scope.
 7. Propose a descriptive kebab-case slug.
-8. Present a concise plan and task breakdown in the conversation.
-9. Ask the user to confirm before writing the planlet to the repository.
-10. After confirmation, use `planlet create` to scaffold both `plan.md` and `tasks.md`, then replace the stubs with the agreed plan and task content.
-11. Validate the populated planlet and report its path and status.
+8. Once material decisions are settled, use `planlet create` to scaffold both `plan.md` and `tasks.md`, then replace the stubs with the plan and task content, without first presenting it in the conversation or asking to write it.
+9. Validate the populated planlet and report its path, validation result, and only consequential assumptions or unresolved concerns, without reproducing the plan.
 
-Planning is conversational and may be abandoned without creating files. Unlike OpenSpec's separate Explore and Propose commands, Planlet intentionally combines exploration and proposal into one skill while retaining a confirmation boundary before persistence.
+Planning is file-first. Creating a plan is not approving it, and approving it is not implementing it: the persisted files are reviewable drafts that the user reads, edits, or asks the agent to revise, and implementation starts only on a separate request. Clarifying questions come before files are written, never after. When the user explicitly asks only to brainstorm, compare options, or discuss without saving, the skill stays conversational and creates no files. Unlike OpenSpec's separate Explore and Propose commands, Planlet intentionally combines exploration and proposal into one skill.
 
-If the user already knows exactly what they want, the skill should avoid unnecessary questions and proceed directly to repository analysis and a proposed written plan.
+If the user already knows exactly what they want, the skill should avoid unnecessary questions and proceed directly to repository analysis and a written plan.
 
 ### 8.2 Human review and revision
 
@@ -758,14 +756,15 @@ Responsibilities:
 - Compare options and recommend an approach.
 - Define scope, exclusions, acceptance criteria, and the verification strategy, without recording run results.
 - Propose the slug.
-- Obtain confirmation before writing.
-- After confirmation, scaffold new files with `planlet create` (per §8.1 step 10) rather than writing them directly, then replace the stubs with the agreed content; revise existing files consistently.
+- Once material decisions are settled, scaffold new files with `planlet create` (per §8.1 step 8) rather than writing them directly, then replace the stubs with the plan content without a separate confirmation round; apply requested revisions to existing files directly and consistently.
+- Report briefly without reproducing the plan.
 - Run CLI validation.
 
 Must not:
 
 - Modify product code during planning.
-- Persist a plan before confirmation.
+- Ask clarifying questions after persisting instead of before.
+- Persist files for an explicit discussion-only request.
 - Create extra documents by default.
 - Leave `tasks.md` inconsistent with `plan.md`.
 
@@ -1135,7 +1134,7 @@ Skills need scenario-based evaluation in addition to CLI tests:
 
 - Vague feature request requiring exploration.
 - Precise request requiring few or no questions.
-- User declines persistence after planning.
+- Explicit discussion-only request leaves the repository unchanged without requiring the CLI.
 - Revision that changes both plan and tasks.
 - Implementation against a codebase that drifted after planning.
 - Failing verification that must leave a task unchecked.
@@ -1212,8 +1211,8 @@ These should not complicate the initial two-file workflow prematurely.
 The initial product should be considered useful when:
 
 1. A user can ask a supported agent to plan a code change.
-2. The skill investigates and discusses the request before writing files.
-3. The user confirms persistence and receives `plans/<slug>/plan.md` and `tasks.md`.
+2. The skill investigates the request and settles material questions before writing files.
+3. The user receives `plans/<slug>/plan.md` and `tasks.md` as reviewable drafts without a separate confirmation round.
 4. Another fresh agent session can understand the work using only the repository and those files.
 5. The Implement skill completes tasks and updates checkboxes incrementally.
 6. The CLI lists several active planlets with accurate compact progress.
