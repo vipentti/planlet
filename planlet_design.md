@@ -751,7 +751,8 @@ metadata.
 Responsibilities:
 
 - Explore the user's request and repository.
-- For vague or incomplete requests, surface material open decisions (outcome, boundaries, constraints, acceptance, verification, task sizing) in small related batches with a recommended answer; look up repository facts instead of asking.
+- Separate the problem and desired outcome from any proposed solution; challenge premises the repository contradicts, but plan within a solution the user explicitly requires.
+- For vague or incomplete requests, surface material open decisions (outcome, boundaries, constraints, acceptance, verification, task sizing) in small related batches with a recommended answer; ask outcome and scope before dependent choices; look up repository facts instead of asking; stop once a fresh implementer would not need to make consequential product decisions.
 - For precise requests, skip ceremonial questions and proceed to analysis and proposal.
 - Compare options and recommend an approach.
 - Define scope, exclusions, acceptance criteria, and the verification strategy, without recording run results.
@@ -1134,6 +1135,8 @@ Skills need scenario-based evaluation in addition to CLI tests:
 
 - Vague feature request requiring exploration.
 - Precise request requiring few or no questions.
+- Proposed solution resting on a premise the repository contradicts.
+- User who accepts or partly overrides a batch of recommendations.
 - Explicit discussion-only request leaves the repository unchanged without requiring the CLI.
 - Revision that changes both plan and tasks.
 - Implementation against a codebase that drifted after planning.

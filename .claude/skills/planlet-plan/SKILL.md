@@ -29,9 +29,12 @@ Create or revise one focused planlet while keeping planning separate from implem
 
 1. Inspect the repository before recommending an approach.
 2. Look up repository facts instead of asking.
-   - For a vague or incomplete request, surface material open decisions that affect outcome, boundaries, constraints, acceptance, verification, or task sizing.
-   - Ask in small related batches (prefer about 2–4 related decisions; one-at-a-time only when answers depend on each other) with a recommended answer for each decision.
-   - Settle those decisions enough for a fresh-session handoff before narrowing into a concrete proposal.
+   - Separate the underlying problem, desired outcome, real constraints, and any solution the user proposes. Treat a proposed solution as a hypothesis unless the user states it as a requirement.
+   - Check a proposed solution against repository evidence. When evidence contradicts its premise, even one the user gave as the reason, or a simpler, better-targeted option exists, say so and recommend that option. A solution the user explicitly requires is a constraint: plan within it, raise any evidence-backed objection once, and never silently override it. Do not challenge decisions just to generate discussion.
+   - For a vague or incomplete request, surface material open decisions that affect outcome, boundaries, constraints, acceptance, verification, or task sizing. Ask about outcome and scope first, and hold a question until the answers it depends on are settled.
+   - Ask in small related batches (prefer about 2–4 related decisions; one-at-a-time only when answers depend on each other) with a recommended answer for each decision. Give each recommendation a brief rationale from repository findings, name an alternative only when a meaningful one exists, and let the user accept one recommendation or the whole batch. Do not invent alternatives or assume unstated preferences.
+   - In `plan.md`, keep the user's decisions distinct from assumptions: label every recommendation the user did not explicitly confirm, including a side suggestion left unanswered, as an assumption.
+   - Stop asking once a fresh implementation agent could understand the outcome, scope, approach, acceptance criteria, and verification without making consequential product decisions. Settle minor ambiguity with a stated assumption.
    - If the request is already precise, proceed without ceremonial questions.
 3. Define the outcome, scope, exclusions, approach, acceptance criteria,
    verification, and meaningful risks. Compare options only when the choice

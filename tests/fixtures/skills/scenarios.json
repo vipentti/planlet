@@ -7,7 +7,8 @@
     "evidence": [
       "prefer about 2–4 related decisions",
       "with a recommended answer for each decision",
-      "Look up repository facts instead of asking"
+      "Look up repository facts instead of asking",
+      "hold a question until the answers it depends on are settled"
     ]
   },
   {
@@ -36,6 +37,28 @@
     "prompt": "Revise scope and corresponding implementation tasks.",
     "expectedDecision": "reconcile-plan-and-tasks",
     "evidence": ["reconcile both documents", "Preserve IDs for unchanged tasks"]
+  },
+  {
+    "id": "contradicted-premise-planning",
+    "skill": "planlet-plan",
+    "prompt": "The CLI is slow because it has no cache. Plan adding Redis caching.",
+    "expectedDecision": "challenge-contradicted-premise",
+    "evidence": [
+      "Treat a proposed solution as a hypothesis unless the user states it as a requirement",
+      "even one the user gave as the reason",
+      "A solution the user explicitly requires is a constraint"
+    ]
+  },
+  {
+    "id": "recommendation-led-planning",
+    "skill": "planlet-plan",
+    "prompt": "I don't know the options; use your recommendations.",
+    "expectedDecision": "accept-recommendation-batch",
+    "evidence": [
+      "let the user accept one recommendation or the whole batch",
+      "label every recommendation the user did not explicitly confirm",
+      "Stop asking once a fresh implementation agent could understand"
+    ]
   },
   {
     "id": "implementation-drift",
