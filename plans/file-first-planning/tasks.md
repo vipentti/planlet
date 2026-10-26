@@ -1,7 +1,7 @@
 # Tasks: File-First Planning
 
 - [x] T1 Rewrite `planlet-plan` `SKILL.md` and planning guidance for file-first persistence and the brief report.
-- [ ] T2 Align `planlet_design.md` §8.1, §14.1, and §23 with file-first planning.
+- [x] T2 Align `planlet_design.md` §8.1, §14.1, and §23 with file-first planning.
 - [ ] T3 Update planning scenarios S1-S4 in `evaluations/skills/scenarios.md`.
 - [ ] T4 Update contract tests and the scenario fixture to track the new skill wording.
 - [ ] T5 Build the CLI and regenerate tracked installed skill copies and manifests.
