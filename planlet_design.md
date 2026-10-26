@@ -1134,7 +1134,7 @@ Skills need scenario-based evaluation in addition to CLI tests:
 
 - Vague feature request requiring exploration.
 - Precise request requiring few or no questions.
-- User declines persistence after planning.
+- Explicit discussion-only request leaves the repository unchanged without requiring the CLI.
 - Revision that changes both plan and tasks.
 - Implementation against a codebase that drifted after planning.
 - Failing verification that must leave a task unchecked.

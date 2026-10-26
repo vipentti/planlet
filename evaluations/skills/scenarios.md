@@ -98,4 +98,4 @@ Run each scenario in a fresh disposable repository fixture outside the canonical
 
 ## Review criteria
 
-For every run, confirm exact target selection, complete file re-reading, CLI-first delegation, valid paths and task IDs, narrow mutation scope, accurate final summary, and preservation of fixture changes unrelated to the scenario. Revise a skill when its raw output or diff is unsafe, ambiguous, inconsistent across the two files, or needlessly ceremonial.
+For every lifecycle run, confirm exact target selection, complete file re-reading, CLI-first delegation, valid paths and task IDs, narrow mutation scope, accurate final summary, and preservation of fixture changes unrelated to the scenario. For S3, confirm the agent neither installs nor invokes the CLI and leaves the repository unchanged. Revise a skill when its raw output or diff is unsafe, ambiguous, inconsistent across the two files, or needlessly ceremonial.
