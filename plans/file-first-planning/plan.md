@@ -60,9 +60,9 @@ confirmation; starting implementation remains a separate user request, as
 **New workflow.** Investigate the repository and ask material clarification
 questions first, using the existing batching and recommended-answer rules.
 When the decisions needed for a fresh-session handoff are settled, or the
-request is already precise, run `planlet create`, populate both stubs, run the
-compression pass on the drafted `tasks.md`, then `validate` and re-read both
-files with full `show`. The compression pass moves from "before presenting"
+request is already precise, draft both files and run the compression pass on
+the drafted `tasks.md` in memory, then run `planlet create`, populate both
+stubs, and `validate` and re-read both files with full `show`. The compression pass moves from "before presenting"
 to "before persisting"; its procedure is unchanged.
 
 **Questions before files, not after.** Unresolved material decisions are asked
