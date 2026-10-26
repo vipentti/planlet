@@ -16,6 +16,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and thi
   result, and only consequential assumptions or open concerns. Explicit
   discussion-only requests stay conversational, need no CLI, and leave the
   repository unchanged; revision requests edit the existing files directly.
+- `planlet-plan` now separates the underlying problem from a proposed
+  solution and challenges premises the repository contradicts, while
+  planning within a solution the user explicitly requires. It asks outcome
+  and scope before dependent choices, gives each question a recommendation
+  with a brief rationale that the user can accept singly or as a batch,
+  records unconfirmed recommendations as assumptions, and stops asking once
+  a fresh implementer needs no further product decisions.
 
 ## [0.9.0] - 2026-10-05
 
