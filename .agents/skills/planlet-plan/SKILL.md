@@ -58,31 +58,35 @@ Create or revise one focused planlet while keeping planning separate from implem
    templates in [plan-template.md](assets/plan-template.md) and
    [tasks-template.md](assets/tasks-template.md).
 
-6. Before presenting the proposal, run a compression pass over the draft
+6. Before persisting the planlet, run a compression pass over the draft
    `tasks.md` against `plan.md` to remove recoverable detail; see
    [planning guidance](references/planning-guidance.md) for the full
    procedure.
 
-7. Present the proposed plan and tasks in conversation. Outside the proposed
-   file content, keep commentary brief: call out only material assumptions,
-   exclusions, unresolved decisions, or tradeoffs that need review. Do not
-   restate the plan in a second narrative summary. Obtain explicit confirmation
-   before writing either file. If confirmation is declined or absent, leave the repository unchanged.
+7. Persist without a confirmation round. Once the decisions needed for a
+   fresh-session handoff are settled, or the request is already precise, write
+   the planlet as described under Persist or revise. Do not present the plan or
+   task list in conversation and do not ask for confirmation to write; the
+   persisted files are reviewable drafts, not approval to implement. Ask
+   unresolved material decisions before creating files, never after. When the
+   user explicitly asks only to brainstorm, compare options, or keep a proposal
+   conversational without saving, answer in conversation and leave the
+   repository unchanged.
 
 ## Persist or revise
 
 Write `plan.md` and `tasks.md` only under `<plansDir>/<slug>/`. Take `plansDir` from the earlier `list` output; it is `plans` when unset.
 
-For a new confirmed planlet:
+For a new planlet:
 
 1. Run `planlet --root "<repository-root>" create <slug> --title "<title>"`. Treat non-zero exit as no authorization to write around a slug, path, or collision failure.
-2. Confirm CLI created only H1 stubs in that directory. When the harness exposes a dedicated file-reading capability, read each created file with it rather than through a shell command, because such a harness can reject a write to a file it has not read and may not count a shell read. Then replace those two stubs with approved `plan.md` and `tasks.md` content, because `create` writes H1 stubs only and no CLI command accepts plan or task body content. Never use `create` for revision or overwrite an existing planlet.
+2. Confirm CLI created only H1 stubs in that directory. When the harness exposes a dedicated file-reading capability, read each created file with it rather than through a shell command, because such a harness can reject a write to a file it has not read and may not count a shell read. Then replace those two stubs with the drafted `plan.md` and `tasks.md` content, because `create` writes H1 stubs only and no CLI command accepts plan or task body content. Never use `create` for revision or overwrite an existing planlet.
 3. Run `planlet --root "<repository-root>" validate <slug>`, then re-read both files with `planlet --root "<repository-root>" --full show <slug> --part plan` and `planlet --root "<repository-root>" --full show <slug> --part tasks`; inspect exact persisted content.
 
-For a confirmed revision, edit both existing files in that directory directly because CLI has no semantic revision operation. When the harness exposes a dedicated file-reading capability, read each file with it before editing, because such a harness can reject an edit to a file it has not read and may not count a shell read. Preserve IDs for unchanged tasks, assign each new ID as one greater than the highest numeric suffix present in the file, and never silently remove completed work. Then run targeted `validate` and full `show` inspection as above.
+For a requested revision, edit both existing files in that directory directly because CLI has no semantic revision operation. When the harness exposes a dedicated file-reading capability, read each file with it before editing, because such a harness can reject an edit to a file it has not read and may not count a shell read. Preserve IDs for unchanged tasks, assign each new ID as one greater than the highest numeric suffix present in the file, and never silently remove completed work. Then run targeted `validate` and full `show` inspection as above.
 
 Do not modify product code, create extra planning documents by default, or begin implementation unless the user separately requests it.
 
 ## Finish
 
-Report selected logical slug, paths written or revised, proposal status, exact CLI validation result, warnings, and unresolved decisions.
+Report selected logical slug, paths written or revised, exact CLI validation result, warnings, and only consequential assumptions or unresolved decisions. Do not reproduce the plan or task list, and do not ask for confirmation to write. The user reviews and revises the files directly; implementation needs a separate request.
