@@ -14,8 +14,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and thi
   to write. The persisted files are reviewable drafts; implementation still
   needs a separate request. The final report names paths, the validation
   result, and only consequential assumptions or open concerns. Explicit
-  discussion-only requests still leave the repository unchanged, and
-  revision requests edit the existing files directly.
+  discussion-only requests stay conversational, need no CLI, and leave the
+  repository unchanged; revision requests edit the existing files directly.
 
 ## [0.9.0] - 2026-10-05
 

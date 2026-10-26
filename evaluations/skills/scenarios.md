@@ -1,6 +1,6 @@
 # Planlet Skill Scenarios
 
-Run each scenario in a fresh disposable repository fixture outside the canonical `skills/` tree and active `plans/` state. Copy only the files named by the setup, start with fresh agent context where practical, and retain the prompt, agent output, resulting files, and diff for review. Require CLI-first behavior with no manual lifecycle fallback; an agent that cannot run the CLI stops and reports naming the missing executable.
+Run each scenario in a fresh disposable repository fixture outside the canonical `skills/` tree and active `plans/` state. Copy only the files named by the setup, start with fresh agent context where practical, and retain the prompt, agent output, resulting files, and diff for review. Require CLI-first behavior for lifecycle operations with no manual lifecycle fallback; an agent that cannot run the CLI for such an operation stops and reports naming the missing executable.
 
 ## Planning scenarios
 
@@ -22,9 +22,9 @@ Run each scenario in a fresh disposable repository fixture outside the canonical
 
 ### S3 Discussion-only request
 
-- Fixture: Any repository without the proposed slug.
+- Fixture: Any repository without the proposed slug, with no `planlet` executable available.
 - Prompt: Ask to brainstorm and compare approaches for a change, explicitly without saving a plan.
-- Expected decisions: Answer in conversation only.
+- Expected decisions: Answer in conversation only, without installing, invoking, or requiring the CLI.
 - Expected artifacts: No new planlet directory or files.
 - Safety checks: Repository diff remains empty.
 
