@@ -8,7 +8,7 @@
   - Verify: `node dist/planlet.mjs --root . tools` reports every destination `installed`.
 - [x] T6 Add the `[Unreleased]` changelog entry for the published-skill behavior change.
 - [x] T7 Run the manual behavior scenarios defined in `plan.md` Verification and record their outcome.
-- [ ] T8 Run the full repository verification suite defined in `plan.md`.
+- [x] T8 Run the full repository verification suite defined in `plan.md`.
 
 ## Verification Evidence
 
