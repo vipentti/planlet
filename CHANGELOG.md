@@ -6,6 +6,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and thi
 
 ## [Unreleased]
 
+### Changed
+
+- `planlet-plan` now plans file-first: once material questions are answered,
+  it creates, populates, and validates `plan.md` and `tasks.md` directly
+  instead of presenting the plan in conversation and asking for confirmation
+  to write. The persisted files are reviewable drafts; implementation still
+  needs a separate request. The final report names paths, the validation
+  result, and only consequential assumptions or open concerns. Explicit
+  discussion-only requests still leave the repository unchanged, and
+  revision requests edit the existing files directly.
+
 ## [0.9.0] - 2026-10-05
 
 ### Added

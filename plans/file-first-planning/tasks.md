@@ -6,5 +6,5 @@
 - [x] T4 Update contract tests and the scenario fixture to track the new skill wording.
 - [x] T5 Build the CLI and regenerate tracked installed skill copies and manifests.
   - Verify: `node dist/planlet.mjs --root . tools` reports every destination `installed`.
-- [ ] T6 Add the `[Unreleased]` changelog entry for the published-skill behavior change.
+- [x] T6 Add the `[Unreleased]` changelog entry for the published-skill behavior change.
 - [ ] T7 Run the full repository verification suite defined in `plan.md`.
