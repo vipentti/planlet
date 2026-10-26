@@ -105,14 +105,19 @@ or `archive` inside the skill corpus.
 - `planlet_design.md` has no statement contradicting the new discovery
   behavior.
 - `evaluations/skills/scenarios.md` covers the five cases: vague problem
-  needing discovery (S1); precise request needing no questions (S2);
+  needing discovery (S1), whose expectations add that a question depending on
+  an unsettled outcome or scope answer is held until a staged user answer
+  settles it; precise request needing no questions (S2);
   discussion-only request leaving the repository unchanged (S3); a specific
   technical solution justified by a premise the fixture contradicts, where the
   agent investigates, challenges the premise, and recommends the simpler fix,
   with a variant where the user mandates the solution and the plan keeps it
   while noting the objection; and a
   user unfamiliar with the choices who accepts a batch of recommendations,
-  which the agent then persists without further questions. Existing scenario IDs
+  which the agent then persists without further questions, with a variant
+  where the user overrides one recommendation and leaves a minor one
+  unanswered, and the persisted `plan.md` states the override as the user's
+  decision and the unanswered item as the agent's assumption. Existing scenario IDs
   keep their numbers; new ones take IDs above S11.
 - The scenario fixture pins skill wording for the two new cases, and contract
   tests pass.
@@ -129,8 +134,8 @@ Targeted:
 
 - `node dist/planlet.mjs --root . tools` reports every destination
   `installed` after `node dist/planlet.mjs update`.
-- Contract tests prove only that wording is present, not behavior. Run the two
-  new scenarios (including the mandated-solution variant) and the S2
+- Contract tests prove only that wording is present, not behavior. Run S1
+  with staged answers, both new scenarios with their variants, and the S2
   precise-request regression as manual agent runs in disposable fixtures per
   `evaluations/skills/scenarios.md`, checking the dialog, decisions, and
   resulting files and diff boundaries against each scenario's expectations.
@@ -139,8 +144,8 @@ Targeted:
   that behavior as unverified there instead of treating the related
   acceptance criteria as proved.
 
-S1 and S3 are rechecked against the text but need no new run unless their
-expectations change.
+S3 is rechecked against the text and needs no new run unless its expectations
+change.
 
 ## Risks and Considerations
 
