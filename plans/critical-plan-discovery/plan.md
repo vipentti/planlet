@@ -56,9 +56,13 @@ problem, desired outcome, real constraints, and the user's proposed solution.
 Treat a proposed solution as a hypothesis unless the user states it as a
 requirement. Check it against repository evidence; when a simpler or better
 targeted alternative exists, or the solution adds disproportionate complexity,
-say so constructively and recommend the alternative. Challenge unsupported
-assumptions, not stated decisions: a solution the user justifies or requires
-is respected.
+say so constructively and recommend the alternative. A rationale does not
+exempt a solution: when repository evidence contradicts the factual premise
+behind it (for example "the CLI is slow because of X"), challenge that premise
+and recommend the better-targeted fix. A solution the user explicitly mandates
+(for example for architectural consistency) is a constraint: plan within it,
+surface any evidence-backed objection once, and never silently override it. Do
+not challenge decisions merely to generate discussion.
 
 **Dependency-ordered questions.** Ask outcome and scope before the technical
 choices that depend on them, and hold a downstream question until its
@@ -89,8 +93,10 @@ or `archive` inside the skill corpus.
 ## Acceptance Criteria
 
 - `planlet-plan` `SKILL.md` states each Approach rule: problem-first separation
-  with proposed solutions as hypotheses, challenging assumptions but not
-  justified decisions, dependency-ordered questions, recommendation with
+  with proposed solutions as hypotheses, challenging evidence-contradicted
+  premises even when a rationale is given, treating an explicitly mandated
+  solution as a constraint with objections surfaced but not overridden,
+  dependency-ordered questions, recommendation with
   rationale and batch acceptance, recommendations kept distinct from confirmed
   decisions, and the fresh-implementer stop condition.
 - The precise-request fast path, discussion-only exception, questions-before-
@@ -101,8 +107,10 @@ or `archive` inside the skill corpus.
 - `evaluations/skills/scenarios.md` covers the five cases: vague problem
   needing discovery (S1); precise request needing no questions (S2);
   discussion-only request leaving the repository unchanged (S3); a specific
-  technical solution resting on an assumption the fixture contradicts, where
-  the agent investigates, challenges it, and recommends the simpler fix; and a
+  technical solution justified by a premise the fixture contradicts, where the
+  agent investigates, challenges the premise, and recommends the simpler fix,
+  with a variant where the user mandates the solution and the plan keeps it
+  while noting the objection; and a
   user unfamiliar with the choices who accepts a batch of recommendations,
   which the agent then persists without further questions. Existing scenario IDs
   keep their numbers; new ones take IDs above S11.
@@ -121,11 +129,18 @@ Targeted:
 
 - `node dist/planlet.mjs --root . tools` reports every destination
   `installed` after `node dist/planlet.mjs update`.
-- Read the reworked Develop the proposal section against each of the five
-  scenarios and confirm the expected behavior follows from the text.
+- Contract tests prove only that wording is present, not behavior. Run the two
+  new scenarios (including the mandated-solution variant) and the S2
+  precise-request regression as manual agent runs in disposable fixtures per
+  `evaluations/skills/scenarios.md`, checking the dialog, decisions, and
+  resulting files and diff boundaries against each scenario's expectations.
+- Manual runs are non-reproducible, so record their outcome once in
+  `tasks.md` `## Verification Evidence`. If a run cannot be performed, record
+  that behavior as unverified there instead of treating the related
+  acceptance criteria as proved.
 
-The evaluation scenarios are manual agent runs; this plan updates their
-expectations but does not require running them.
+S1 and S3 are rechecked against the text but need no new run unless their
+expectations change.
 
 ## Risks and Considerations
 
