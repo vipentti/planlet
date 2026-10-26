@@ -429,6 +429,8 @@ test("provider-neutral scenario suite checks required evidence", () => {
       "precise-planning",
       "discussion-only-planning",
       "consistent-revision",
+      "contradicted-premise-planning",
+      "recommendation-led-planning",
       "implementation-drift",
       "failed-verification",
       "multiple-targets",
