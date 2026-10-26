@@ -56,7 +56,7 @@
     "expectedDecision": "accept-recommendation-batch",
     "evidence": [
       "let the user accept one recommendation or the whole batch",
-      "state a recommendation the user did not confirm as an assumption",
+      "label every recommendation the user did not explicitly confirm",
       "Stop asking once a fresh implementation agent could understand"
     ]
   },
