@@ -14,18 +14,20 @@
     "id": "precise-planning",
     "skill": "planlet-plan",
     "prompt": "Plan adding --csv to report command with unit and integration coverage.",
-    "expectedDecision": "propose-without-extra-questions",
+    "expectedDecision": "persist-without-extra-questions",
     "evidence": [
-      "If the request is already precise, proceed without ceremonial questions"
+      "If the request is already precise, proceed without ceremonial questions",
+      "do not ask for confirmation to write"
     ]
   },
   {
-    "id": "declined-persistence",
+    "id": "discussion-only-planning",
     "skill": "planlet-plan",
-    "prompt": "Do not save proposed plan.",
+    "prompt": "Brainstorm options for this change without saving a plan.",
     "expectedDecision": "leave-repository-unchanged",
     "evidence": [
-      "If confirmation is declined or absent, leave the repository unchanged"
+      "explicitly asks only to brainstorm",
+      "Ask unresolved material decisions before creation, never after"
     ]
   },
   {

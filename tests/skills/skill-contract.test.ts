@@ -202,7 +202,7 @@ test("compact task index keeps template tasks single-line and guidance controls 
       .filter(Boolean);
   }
   function skillSteps(text: string): string[] {
-    // numbered steps in Develop the proposal section (e.g. "5. Turn...", "6. Before presenting...")
+    // numbered steps in Develop the proposal section (e.g. "5. Turn...", "6. Before persisting...")
     return text
       .split(/(?=^\d+\.\s)/m)
       .map((s) => s.trim())
@@ -251,7 +251,7 @@ test("compact task index keeps template tasks single-line and guidance controls 
     compressionParagraph,
     "guidance must have a compression pass paragraph",
   );
-  assert.match(compressionParagraph, /Before presenting/i);
+  assert.match(compressionParagraph, /Before persisting/i);
   assert.match(compressionParagraph, /reread/i);
   assert.match(compressionParagraph, /tasks\.md/i);
   assert.match(compressionParagraph, /plan\.md/i);
@@ -315,7 +315,7 @@ test("compact task index keeps template tasks single-line and guidance controls 
   const steps = skillSteps(planSkill);
   const compressionStep = steps.find((s) => /compression pass/i.test(s));
   assert.ok(compressionStep, "SKILL.md must have a compression pass step");
-  assert.match(compressionStep, /Before presenting/i);
+  assert.match(compressionStep, /Before persisting/i);
   assert.match(compressionStep, /tasks\.md/i);
   assert.match(compressionStep, /plan\.md/i);
   // relationship: the delegation appears in the same step, not via the generic earlier planning-guidance link
@@ -323,8 +323,8 @@ test("compact task index keeps template tasks single-line and guidance controls 
   assert.match(compressionStep, /for the full[\s\S]*procedure/i);
   assert.ok(
     planSkill.indexOf("compression pass") <
-      planSkill.indexOf("Present the proposed plan"),
-    "compression pass must appear before presentation step",
+      planSkill.indexOf("## Persist or revise"),
+    "compression pass must appear before persistence",
   );
 });
 
@@ -427,7 +427,7 @@ test("provider-neutral scenario suite checks required evidence", () => {
     [
       "vague-planning",
       "precise-planning",
-      "declined-persistence",
+      "discussion-only-planning",
       "consistent-revision",
       "implementation-drift",
       "failed-verification",
