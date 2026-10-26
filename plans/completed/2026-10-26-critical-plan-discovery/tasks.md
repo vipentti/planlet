@@ -18,3 +18,8 @@
 - S13 recommendation-led: one batch with recommendations, "all as suggested" persisted without further questions. Pass.
 - S13 variant, first run: user override and agent assumptions labelled, but an unanswered side suggestion was persisted as plain scope. The assumption bullet was tightened to cover unanswered side suggestions; the rerun put confirmed decisions and unconfirmed items in separate labelled lists. Pass after fix.
 - S1 staged answers: a scope-changing answer made the agent hold and re-ask the dependent format, category, and date questions before persisting; plan separates confirmed decisions from assumptions. Pass.
+
+## Completion
+
+- Completed at: 2026-10-26T15:28:57.410Z
+- Mode: normal
