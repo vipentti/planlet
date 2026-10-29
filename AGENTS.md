@@ -50,7 +50,7 @@ When a described CLI capability is not yet present, do not invent commands or re
 - Target exactly one planlet per mutating implementation or completion workflow.
 - Read both planlet files from disk at the start of implementation; do not rely on conversation memory.
 - Keep `plan.md` and `tasks.md` consistent when scope or approach changes.
-- Preserve stable IDs for unchanged tasks. Assign new IDs above the highest existing numeric suffix.
+- Keep checked task IDs and text unchanged. Insert new tasks only after the last checked task, then renumber unchecked tasks after it sequentially, updating references through one old-to-new mapping.
 - Mark a task complete only after its implementation and relevant verification succeed.
 - Keep `plan.md` verification as strategy. Do not copy routine command results into planlet files; the repository suite, review, and CI already hold them. Record a `## Verification Evidence` note only for a durable fact ordinary history cannot reconstruct, and keep every recorded line write-once: no current-head SHA, moving link, bare run ID, log, or local path.
 - Keep task checkboxes current as work progresses, not only at the end.
@@ -90,7 +90,7 @@ there; do not duplicate them here.
 - The canonical filenames are `plan.md` and `tasks.md`.
 - Each file starts with an H1 title.
 - Recognized tasks use `- [ ] T<number> Description` or `- [x] T<number> Description`.
-- Task IDs are unique and stable; reordering tasks must not renumber them.
+- Task IDs are unique. Checked task IDs never change; unchecked tasks after the last checked task are renumbered sequentially in file order after each revision.
 - Active planlets live directly under `plans/`; completed planlets use `<YYYY-MM-DD>-<slug>` archive names under `plans/completed/`.
 - Never overwrite an existing active or completed planlet silently.
 

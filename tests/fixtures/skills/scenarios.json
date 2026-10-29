@@ -36,7 +36,32 @@
     "skill": "planlet-plan",
     "prompt": "Revise scope and corresponding implementation tasks.",
     "expectedDecision": "reconcile-plan-and-tasks",
-    "evidence": ["reconcile both documents", "Preserve IDs for unchanged tasks"]
+    "evidence": [
+      "reconcile both documents",
+      "renumber the unchecked suffix with an old-to-new mapping",
+      "New tasks go only into the suffix, never before or between checked tasks"
+    ]
+  },
+  {
+    "id": "unstarted-renumbering",
+    "skill": "planlet-plan",
+    "prompt": "Insert a task before T1, remove T6, and move T9 before T7.",
+    "expectedDecision": "renumber-whole-list-with-mapping",
+    "evidence": [
+      "(`T1` when the prefix is empty)",
+      "whole IDs only so `T1` never matches inside `T10`",
+      "Never apply replacements one"
+    ]
+  },
+  {
+    "id": "out-of-order-completion-revision",
+    "skill": "planlet-plan",
+    "prompt": "In [x] T1, [ ] T3, [x] T2, [ ] T4, move T3 after T4.",
+    "expectedDecision": "refuse-prefix-reorder",
+    "evidence": [
+      "The boundary is the last checked task by position",
+      "Refuse any request to reorder it or move it past a"
+    ]
   },
   {
     "id": "contradicted-premise-planning",
@@ -77,6 +102,16 @@
     "evidence": [
       "leave failed or unverified tasks unchecked",
       "Preserve a failed or unavailable line when it explains partial progress"
+    ]
+  },
+  {
+    "id": "implementation-scope-addition",
+    "skill": "planlet-implement",
+    "prompt": "Approve the material scope addition that must precede T3.",
+    "expectedDecision": "insert-after-boundary-and-renumber",
+    "evidence": [
+      "Insert new tasks only after the boundary",
+      "apply the complete old-to-new mapping in one pass"
     ]
   },
   {
