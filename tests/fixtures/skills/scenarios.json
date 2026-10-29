@@ -36,7 +36,10 @@
     "skill": "planlet-plan",
     "prompt": "Revise scope and corresponding implementation tasks.",
     "expectedDecision": "reconcile-plan-and-tasks",
-    "evidence": ["reconcile both documents", "Preserve IDs for unchanged tasks"]
+    "evidence": [
+      "reconcile both documents",
+      "renumber the unchecked suffix with an old-to-new mapping"
+    ]
   },
   {
     "id": "contradicted-premise-planning",

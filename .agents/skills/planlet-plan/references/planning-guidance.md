@@ -33,12 +33,58 @@ the section in `tasks.md` only after such a result exists.
 
 ## Revision rules
 
-During revision, keep IDs for semantically unchanged work. Allocate each new
-ID as one greater than the highest numeric suffix present in the file; do not
-renumber after removal or reordering. Keep completed tasks unless the user
-explicitly approves a documented change. If revised scope invalidates completed
-work, explain the effect and update both files consistently. Avoid catch-all
-tasks such as "finish implementation" or "test everything."
+Keep completed tasks unless the user explicitly approves a documented change.
+If revised scope invalidates completed work, explain the effect and update both
+files consistently. Avoid catch-all tasks such as "finish implementation" or
+"test everything." Apply task ID normalization below to every revision that
+edits `tasks.md`.
+
+## Task ID normalization
+
+The boundary is the last checked task by position in `tasks.md`, not the
+highest numeric ID. The prefix is every task up to and including the boundary;
+the suffix is every task after it. With no checked task the prefix is empty.
+Position means order relative to other tasks, not line number.
+
+- Checked tasks are immutable: keep each ID, description, checkbox state, and
+  order relative to other checked tasks.
+- An unchecked task inside the prefix (out-of-order completion) keeps its ID
+  and its order relative to checked tasks. It may be removed when the revised
+  scope no longer needs it. Refuse any request to reorder it or move it past a
+  checked task; make no edit for that part, report the conflict, and suggest
+  removing it and adding a new suffix task instead.
+- New tasks go only into the suffix, never before or between checked tasks.
+  When new work is requested at an earlier position, place it at the earliest
+  suffix position that keeps every prerequisite before its consumer and report
+  the adjusted position.
+- When any prefix task depends on the new work, refuse that insertion and
+  report the conflict. For an unchecked consumer, proceed only after the user
+  explicitly approves removing it and recreating it in the suffix after its new
+  prerequisite. For a checked consumer, also state that the completed work is
+  invalidated, change no checked history, and wait for the user to approve a
+  resolution, such as prerequisite plus redo tasks in the suffix.
+- Within the suffix, insert, remove, and reorder tasks as the revised plan
+  requires.
+- Renumber the suffix sequentially in file order starting at one greater than
+  the highest ID in the prefix (`T1` when the prefix is empty). Removed IDs may
+  be reused.
+
+Mutable text is `plan.md`, unchecked task descriptions, and free-form notes in
+`tasks.md` outside `## Verification Evidence` and `## Completion`. Before
+renumbering, delete or rewrite every mutable reference to a removed task ID,
+because its ID may be reused for different work. Then build the complete
+old-to-new mapping and rewrite every mutable reference in one pass, matching
+whole IDs only so `T1` never matches inside `T10`. Never apply replacements one
+after another: `T3` to `T4` followed by `T4` to `T5` corrupts the first result.
+
+Checked task descriptions, `## Verification Evidence` lines, and completion
+records are write-once. When such text names a removed or renumbered ID, report
+each occurrence and the work that ID now denotes. Never normalize a completed
+or archived planlet.
+
+The CLI validates only current structure: task syntax, valid IDs, and unique
+IDs. It cannot tell whether a task was inserted before previously checked
+work, so these rules are enforced here, not by validation.
 
 ## Persist, then review
 
