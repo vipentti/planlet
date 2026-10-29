@@ -195,8 +195,7 @@ Revision rules:
 
 - Do not silently remove completed tasks.
 - Explain when a plan change invalidates or supersedes completed work.
-- Add, remove, split, or reorder unfinished tasks after the last completed task to match the revised plan.
-- Apply task ID normalization (§10) whenever `tasks.md` changes.
+- Add, remove, split, or reorder unfinished tasks to match the revised plan, within the task ID normalization rules in §10, which also apply whenever `tasks.md` changes.
 - Re-run structural validation after editing.
 
 The CLI can validate structure, but semantic consistency between the two documents remains an agent responsibility.
