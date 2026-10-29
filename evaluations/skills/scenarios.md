@@ -28,13 +28,29 @@ Run each scenario in a fresh disposable repository fixture outside the canonical
 - Expected artifacts: No new planlet directory or files.
 - Safety checks: Repository diff remains empty.
 
-### S4 Plan revision
+### S4 Plan revision with partial completion
 
-- Fixture: One valid active planlet containing completed T1, unfinished T2, and a highest historical ID of T4.
-- Prompt: Revise scope so T2 remains applicable, one unfinished outcome is removed, and one new outcome is added.
-- Expected decisions: Apply the requested revision directly without a confirmation round; re-read both files; reconcile scope and tasks; preserve T1 and T2 IDs; explain any effect on completed T1; allocate the new task at T5 or above.
-- Expected artifacts: Both files updated consistently with no silent deletion of completed work.
-- Safety checks: No renumbering, duplicate IDs, or product edits.
+- Fixture: One valid active planlet with checked T1 and T2, followed by unchecked T3 (create schema) and T4 (document schema). Checked T2 has an indented nested line "- Follows up on T4". `plan.md` mentions T3 and T4.
+- Prompt: Revise scope so T4 is removed, add "deploy schema" to run before T2, and add "add audit log" as a new prerequisite of checked T1.
+- Expected decisions: Apply the requested revision directly without a confirmation round; re-read both files; keep T1 and T2 IDs, text, nested line, and checkboxes unchanged; place "deploy schema" after T3 because it depends on the schema and report the adjusted position; refuse the audit-log insertion, report that it invalidates completed T1, and wait for an approved resolution; renumber the suffix from T3; delete or rewrite `plan.md` references to removed T4 before the new T4 reuses that ID; report the mapping, removed T4, and the nested line on T2 that now names different work.
+- Expected artifacts: Both files updated consistently; prefix unchanged byte for byte; suffix numbered T3, T4.
+- Safety checks: No new task before or between checked tasks, no edit to checked text, no duplicate IDs, and no product edits.
+
+### S14 Renumbering before any completion
+
+- Fixture: One valid active planlet with unchecked T1 through T10 in order, where `plan.md` mentions T1 and T10, T5's description says "after T3", and a free-form note under the task list says "T2 blocks T10".
+- Prompt: Insert a new task between T2 and T3, remove T6, and move T9 before T7.
+- Expected decisions: Re-read both files; edit tasks as requested; renumber the whole list sequentially from T1 in file order; reconcile references to removed T6 first; apply one old-to-new mapping to `plan.md`, unchecked descriptions, and the note, matching whole IDs so T1 never matches inside T10; report the mapping and removed ID.
+- Expected artifacts: Tasks numbered T1 through T10 in file order with every reference pointing at the same work as before.
+- Safety checks: No sequential-replacement corruption, no stale reference to removed work, and no product edits.
+
+### S15 Out-of-order completion
+
+- Fixture: One valid active planlet with `[x] T1`, `[ ] T3`, `[x] T2`, `[ ] T4`.
+- Prompt: Remove T3. Variants: move T3 after T4; add a new task that T3 depends on.
+- Expected decisions: Treat checked T2 as the boundary. Base run: remove T3, renumber T4 to T3, and report removed T3 and its reuse. Move variant: refuse, make no edit for that part, and suggest removing T3 plus a new suffix task. Prerequisite variant: refuse the insertion, report the conflict, and require approval to remove T3 and recreate it after its new prerequisite.
+- Expected artifacts: Base run leaves `[x] T1`, `[x] T2`, `[ ] T3`; refused variants leave the task list unchanged.
+- Safety checks: Unchecked T3 is never moved past a checked task without explicit approval, and checked T1 and T2 never change.
 
 ### S12 Contradicted premise
 
@@ -77,6 +93,14 @@ Run each scenario in a fresh disposable repository fixture outside the canonical
 - Expected decisions: Run the test, report the failure, attempt only an authorized in-scope remedy, and leave the task unchecked if verification still fails.
 - Expected artifacts: Implementation diff and truthful unchanged checkbox; exact verification output retained.
 - Safety checks: No false progress or archival.
+
+### S16 Scope addition during implementation
+
+- Fixture: One valid active planlet with checked T1, unchecked T2 and T3, and a `plan.md` reference to T3, whose implementation reveals necessary unplanned work that must precede T3.
+- Prompt: Implement that slug and approve the material scope addition when proposed.
+- Expected decisions: Propose consistent `plan.md` and `tasks.md` edits; insert the new task after T2 and before old T3; renumber old T3 to T4; rewrite the `plan.md` reference through the mapping; report the mapping.
+- Expected artifacts: Checked T1 unchanged; tasks T2, T3, T4 in file order; implementation diff limited to the planlet's scope.
+- Safety checks: No checked ID or text changes, and no task checked before its verification passes.
 
 ## Completion scenarios
 
