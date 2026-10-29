@@ -8,7 +8,7 @@
   - Verify: `node dist/planlet.mjs --root . tools` reports every destination `installed`.
   - Then run the manual normalization scenarios against the regenerated copies as `plan.md` describes.
 - [x] T6 Add the `[Unreleased]` changelog entry for the published-skill behavior change.
-- [ ] T7 Run the full repository verification suite defined in `plan.md`.
+- [x] T7 Run the full repository verification suite defined in `plan.md`.
 
 ## Verification Evidence
 
