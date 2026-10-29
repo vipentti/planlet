@@ -45,7 +45,7 @@
   {
     "id": "unstarted-renumbering",
     "skill": "planlet-plan",
-    "prompt": "Insert a task between T2 and T3, remove T6, and move T9 before T7.",
+    "prompt": "Insert a task before T1, remove T6, and move T9 before T7.",
     "expectedDecision": "renumber-whole-list-with-mapping",
     "evidence": [
       "(`T1` when the prefix is empty)",

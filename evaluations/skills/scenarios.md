@@ -39,9 +39,9 @@ Run each scenario in a fresh disposable repository fixture outside the canonical
 ### S14 Renumbering before any completion
 
 - Fixture: One valid active planlet with unchecked T1 through T10 in order, where `plan.md` mentions T1 and T10, T5's description says "after T3", and a free-form note under the task list says "T2 blocks T10".
-- Prompt: Insert a new task between T2 and T3, remove T6, and move T9 before T7.
-- Expected decisions: Re-read both files; edit tasks as requested; renumber the whole list sequentially from T1 in file order; reconcile references to removed T6 first; apply one old-to-new mapping to `plan.md`, unchecked descriptions, and the note, matching whole IDs so T1 never matches inside T10; report the mapping and removed ID.
-- Expected artifacts: Tasks numbered T1 through T10 in file order with every reference pointing at the same work as before.
+- Prompt: Insert a new task before T1, remove T6, and move T9 before T7.
+- Expected decisions: Re-read both files; edit tasks as requested; renumber the whole list sequentially from T1 in file order; reconcile references to removed T6 first; apply one old-to-new mapping to `plan.md`, unchecked descriptions, and the note, matching whole IDs so the T1 rewrite never touches T10; report the mapping and removed ID.
+- Expected artifacts: Tasks numbered T1 through T10 in file order; old T1 becomes T2 while old T10 stays T10, and every reference points at the same work as before.
 - Safety checks: No sequential-replacement corruption, no stale reference to removed work, and no product edits.
 
 ### S15 Out-of-order completion
