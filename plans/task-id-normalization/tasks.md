@@ -1,7 +1,7 @@
 # Tasks: Task ID Normalization
 
 - [x] T1 Rewrite `planlet-plan` revision guidance and Finish report for boundary-based normalization.
-- [ ] T2 Align `planlet-implement` material-addition guidance with the same rules.
+- [x] T2 Align `planlet-implement` material-addition guidance with the same rules.
 - [ ] T3 Align `planlet_design.md` §8.2, §10, §19 and `AGENTS.md`, including the enforcement split.
 - [ ] T4 Update skill scenarios, the scenario fixture, and the contract-test scenario list for the coverage in `plan.md`.
 - [ ] T5 Build the CLI and regenerate tracked installed skill copies and manifests.
