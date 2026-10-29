@@ -77,8 +77,10 @@ instead. Other unchecked prefix edits follow normal revision rules.
 
 **Insertion boundary.** New tasks go only into the suffix, never before or
 between checked tasks. When a revision asks for new work at an earlier
-position and nothing in the prefix depends on it, place it immediately after
-the boundary and say so in the report (assumption: placing and reporting is
+position and nothing in the prefix depends on it, place it at the earliest
+suffix position that keeps every prerequisite before its consumer (immediately
+after the boundary unless a suffix task it depends on must come first) and
+report the adjusted position (assumption: placing and reporting is
 preferred over stopping). When an unchecked prefix task depends on the new
 work, appending would put a prerequisite after its consumer, so the skill
 refuses that part and reports the conflict. The resolution needs explicit user
@@ -94,8 +96,9 @@ in the prefix (`T1` when the prefix is empty). This also normalizes a legacy
 out-of-order suffix the first time such a plan is revised. Removed unfinished
 IDs may be reused; that is the accepted cost of readable numbering.
 
-**Reference updates.** Mutable text is `plan.md` and the descriptions of
-unchecked tasks. Before renumbering, reconcile every mutable reference to a
+**Reference updates.** Mutable text is `plan.md`, the descriptions of
+unchecked tasks, and free-form notes in `tasks.md` outside the
+`## Verification Evidence` and `## Completion` sections. Before renumbering, reconcile every mutable reference to a
 removed task ID: delete or rewrite it so no mutable text still names removed
 work, because normalization may reuse that ID for different work. Then build
 the complete old-to-new mapping before editing any text and rewrite every
@@ -143,10 +146,12 @@ compares copies to canonical sources and the CI drift step catch divergence.
 - `planlet_design.md` §8.2, §10, and §19 and `AGENTS.md` describe the same
   rule, and §19 states the CLI-versus-skill enforcement split.
 - Scenarios cover: insertion, removal, and reordering with no checked task;
-  `plan.md` and unchecked-description references including an overlapping pair
-  such as `T1`/`T10`; removal of a referenced task whose ID is then reused,
+  `plan.md`, unchecked-description, and free-form `tasks.md` note references
+  including an overlapping pair such as `T1`/`T10`; removal of a referenced task whose ID is then reused,
   including a checked description naming it; partial completion with stable
-  prefix IDs and a request to insert between checked tasks; legacy
+  prefix IDs and a request to insert between checked tasks, including displaced
+  new work that depends on an unchecked suffix task and so lands after it;
+  legacy
   out-of-order completion, where an unchecked prefix task stays in place, may
   be removed (including the non-monotonic `[x] T1, [ ] T3, [x] T2, [ ] T4`
   removal of `T3` that reuses it), a request to reorder it is refused and
@@ -177,8 +182,10 @@ Targeted:
   evidence strings.
 
 The contract test and wording search are static drift guards only; they do
-not prove agent behavior. Behavior is checked by running the normalization
-scenarios manually on disposable fixtures outside the repository: the
+not prove agent behavior. Behavior is checked after the installed copies are
+regenerated, by running the normalization scenarios manually against those
+regenerated copies, which match canonical sources byte for byte, on disposable
+fixtures outside the repository: the
 `planlet-plan` revision scenarios, plus one `planlet-implement` scenario where
 an approved material scope addition edits a partially completed `tasks.md`.
 Each run inspects the resulting task order, checked prefix, suffix IDs,
