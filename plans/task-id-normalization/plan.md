@@ -56,7 +56,9 @@ boundary; the suffix is every task after it. With no checked task the prefix is
 empty.
 
 **Prefix is immutable for normalization.** Checked tasks keep their ID,
-description, checkbox state, and position. An unchecked task inside the prefix
+description, checkbox state, and order relative to each other. Position means
+relative order throughout this plan, not line number: removing a line above a
+checked task does not move it. An unchecked task inside the prefix
 (legacy out-of-order completion, for example `[x] T1, [ ] T2, [x] T3`) keeps
 its ID and its order relative to checked tasks; it is never moved across the
 boundary, moved between checked tasks, or renumbered. The existing rule still
@@ -64,16 +66,24 @@ applies that completed work is never silently removed.
 
 **Unchecked prefix tasks.** A revision may remove an unchecked prefix task
 that the revised scope no longer needs; checked tasks keep their IDs and
-relative order, and the removed ID is not reused because the suffix starts
-above the highest prefix ID. A revision that would reorder an unchecked prefix
+relative order. The removed ID may be reused by suffix normalization (for
+example, removing `T3` from `[x] T1, [ ] T3, [x] T2, [ ] T4` renumbers `T4` to
+`T3`), so the removed-ID reconciliation and immutable-reference reporting
+under Reference updates apply to it exactly as to a removed suffix task. A
+revision that would reorder an unchecked prefix
 task, or move it past a checked task, is refused: the skill makes no edit for
 that part and reports the conflict, suggesting removal plus a new suffix task
 instead. Other unchecked prefix edits follow normal revision rules.
 
 **Insertion boundary.** New tasks go only into the suffix, never before or
 between checked tasks. When a revision asks for new work at an earlier
-position, place it immediately after the boundary and say so in the report
-(assumption: placing and reporting is preferred over stopping).
+position and nothing in the prefix depends on it, place it immediately after
+the boundary and say so in the report (assumption: placing and reporting is
+preferred over stopping). When an unchecked prefix task depends on the new
+work, appending would put a prerequisite after its consumer, so the skill
+refuses that part and reports the conflict. The resolution needs explicit user
+approval to remove the dependent prefix task and recreate it in the suffix
+after its new prerequisite; the skill never does that silently.
 
 **Suffix is mutable.** Within the suffix, tasks may be inserted, removed, and
 reordered as the revised plan requires.
@@ -136,9 +146,13 @@ compares copies to canonical sources and the CI drift step catch divergence.
   `plan.md` and unchecked-description references including an overlapping pair
   such as `T1`/`T10`; removal of a referenced task whose ID is then reused,
   including a checked description naming it; partial completion with stable
-  prefix IDs and a request to insert between checked tasks; and legacy
+  prefix IDs and a request to insert between checked tasks; legacy
   out-of-order completion, where an unchecked prefix task stays in place, may
-  be removed, and a request to reorder it is refused and reported.
+  be removed (including the non-monotonic `[x] T1, [ ] T3, [x] T2, [ ] T4`
+  removal of `T3` that reuses it), a request to reorder it is refused and
+  reported, and new prerequisite work for it is refused and reported; and a
+  `planlet-implement` material scope addition on a partially completed
+  planlet.
 - The scenario fixture pins evidence strings from the new guidance and
   `npm test` passes.
 - Installed skill copies and manifests match canonical sources.
@@ -148,7 +162,9 @@ compares copies to canonical sources and the CI drift step catch divergence.
 ## Verification
 
 Full repository suite in the documented `AGENTS.md` order, ending with
-`git diff --check` and an empty `git status --porcelain`.
+`git diff --check`. During uncommitted implementation, use
+`git status --porcelain` only to confirm no unexpected files changed; an empty
+status is expected only in a committed or CI checkout.
 
 Targeted:
 
@@ -162,10 +178,12 @@ Targeted:
 
 The contract test and wording search are static drift guards only; they do
 not prove agent behavior. Behavior is checked by running the normalization
-scenarios manually with the updated canonical `planlet-plan` skill on a
-disposable fixture outside the repository, inspecting the resulting task order,
-checked prefix, reported mapping, `plan.md` references, and diff against each
-scenario's expectations. That run is not reconstructable from CI or test
+scenarios manually on disposable fixtures outside the repository: the
+`planlet-plan` revision scenarios, plus one `planlet-implement` scenario where
+an approved material scope addition edits a partially completed `tasks.md`.
+Each run inspects the resulting task order, checked prefix, suffix IDs,
+reported mapping, `plan.md` references, and diff against the scenario's
+expectations. That run is not reconstructable from CI or test
 history, so implementation records its outcome as one `## Verification
 Evidence` line in `tasks.md`; if no agent harness is available to run it, that
 line states the check was unavailable instead.
