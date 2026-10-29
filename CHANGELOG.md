@@ -6,6 +6,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and thi
 
 ## [Unreleased]
 
+### Changed
+
+- `planlet-plan` and `planlet-implement` now keep task IDs readable across
+  revisions. Checked tasks stay immutable; new tasks go only after the last
+  checked task, and unchecked tasks after it are renumbered sequentially in
+  file order (from `T1` when nothing is checked), with references in
+  `plan.md` and mutable task text rewritten through one old-to-new mapping.
+  Insertions that would put new prerequisite work after a task that needs it
+  are refused and reported. Previously every new task took the next ID above
+  the highest existing one. CLI parsing and validation are unchanged and do
+  not enforce these rules.
+
 ## [0.10.0] - 2026-10-26
 
 ### Changed
