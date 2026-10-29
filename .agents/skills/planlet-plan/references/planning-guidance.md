@@ -49,8 +49,8 @@ Position means order relative to other tasks, not line number.
 - Checked tasks are immutable: keep each ID, description, checkbox state, and
   order relative to other checked tasks.
 - An unchecked task inside the prefix (out-of-order completion) keeps its ID
-  and its order relative to checked tasks. It may be removed when the revised
-  scope no longer needs it. Refuse any request to reorder it or move it past a
+  and its order relative to checked tasks. It may be edited in place, or
+  removed when the revised scope no longer needs it. Refuse any request to reorder it or move it past a
   checked task; make no edit for that part, report the conflict, and suggest
   removing it and adding a new suffix task instead.
 - New tasks go only into the suffix, never before or between checked tasks.
