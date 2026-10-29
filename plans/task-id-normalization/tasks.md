@@ -12,4 +12,4 @@
 
 ## Verification Evidence
 
-- Manual normalization scenarios S4, S14, S15 (base and move variant), and S16 ran once with headless Claude Code against the regenerated installed skill copies on disposable fixtures; each matched its expected decisions and artifacts. The S15 prerequisite variant was not run.
+- Manual normalization scenarios S4, S14, S15 (base, move, and prerequisite variants), and S16 ran once with headless Claude Code against the regenerated installed skill copies on disposable fixtures; each matched its expected decisions and artifacts.
