@@ -193,10 +193,10 @@ When a revision changes scope, approach, acceptance criteria, or deliverables, t
 
 Revision rules:
 
-- Preserve stable IDs of unchanged tasks.
 - Do not silently remove completed tasks.
 - Explain when a plan change invalidates or supersedes completed work.
-- Add, remove, split, or reorder unfinished tasks to match the revised plan.
+- Add, remove, split, or reorder unfinished tasks after the last completed task to match the revised plan.
+- Apply task ID normalization (§10) whenever `tasks.md` changes.
 - Re-run structural validation after editing.
 
 The CLI can validate structure, but semantic consistency between the two documents remains an agent responsibility.
@@ -466,10 +466,9 @@ Recommended template:
 Rules:
 
 - A task line uses `- [ ]` or `- [x]`.
-- Each task has a stable, unique ID such as `T1`.
+- Each task has a unique ID such as `T1`.
 - Matching of `[x]` may be case-insensitive on read but should normalize to lowercase on write.
-- IDs must not be renumbered simply because tasks are reordered.
-- New task IDs are assigned as the highest existing numeric suffix plus one, not a count of current tasks, so IDs remain stable and collision-free after tasks are removed or reordered.
+- Task IDs follow boundary-based normalization. The boundary is the last checked task by position, not by highest ID; the prefix is every task up to and including it, and the suffix is every task after it. Checked tasks never change ID, text (including continuation lines), checkbox state, or relative order. An unchecked prefix task (out-of-order completion) keeps its ID and relative order and may only be removed. New tasks go only into the suffix; when a prefix task depends on new work, the revision is refused and reported instead. After any revision, the suffix is renumbered sequentially in file order from one above the highest prefix ID (`T1` when nothing is checked), and references in `plan.md`, unchecked descriptions, and free-form task-file notes are rewritten through one complete old-to-new mapping. Checked descriptions, verification evidence, and completion records are write-once; references there to changed IDs are reported, not rewritten. Completed and archived planlets are never normalized.
 - Task text should describe a verifiable outcome, not an agent thought process.
 - Verification should appear as explicit tasks when it is significant.
 - The MVP need not support nested task trees or dependency syntax.
@@ -1080,6 +1079,8 @@ A valid active planlet should normally satisfy:
 - Task IDs are unique within the file.
 - Checkbox syntax is valid.
 - No completed-plan destination collision exists when completing.
+
+Validation checks current structure only. It has no edit history, so it cannot detect a task inserted before previously checked work, a moved or edited checked task, or a stale task-ID reference, and it does not warn about non-sequential IDs, which legitimate prefixes can contain. The planning and implementation skills enforce task ID normalization (§10); the CLI does not.
 
 A valid completed planlet should additionally satisfy:
 
