@@ -93,4 +93,4 @@ Do not modify product code, create extra planning documents by default, or begin
 
 ## Finish
 
-Report selected logical slug, paths written or revised, exact CLI validation result, warnings, and only consequential assumptions or unresolved decisions. When a revision changed or removed task IDs, report the old-to-new mapping, removed IDs, adjusted insertion positions, refused conflicts, and write-once text that names a changed ID. Do not reproduce the plan or task list, and do not ask for confirmation to write. The user reviews and revises the files directly; implementation needs a separate request.
+Report selected logical slug, paths written or revised, exact CLI validation result, warnings, and only consequential assumptions or unresolved decisions. Always report refused conflicts and adjusted insertion positions. When a revision changed or removed task IDs, also report the old-to-new mapping, removed IDs, and write-once text that names a changed ID. Do not reproduce the plan or task list, and do not ask for confirmation to write. The user reviews and revises the files directly; implementation needs a separate request.

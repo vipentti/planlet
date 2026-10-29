@@ -69,16 +69,18 @@ Position means order relative to other tasks, not line number.
   the highest ID in the prefix (`T1` when the prefix is empty). Removed IDs may
   be reused.
 
-Mutable text is `plan.md`, unchecked task descriptions, and free-form notes in
-`tasks.md` outside `## Verification Evidence` and `## Completion`. Before
+A task description includes its indented continuation lines and nested list
+lines. Mutable text is `plan.md`, unchecked task descriptions, and free-form
+notes in `tasks.md` outside any task description, `## Verification Evidence`,
+and `## Completion`. Before
 renumbering, delete or rewrite every mutable reference to a removed task ID,
 because its ID may be reused for different work. Then build the complete
 old-to-new mapping and rewrite every mutable reference in one pass, matching
 whole IDs only so `T1` never matches inside `T10`. Never apply replacements one
 after another: `T3` to `T4` followed by `T4` to `T5` corrupts the first result.
 
-Checked task descriptions, `## Verification Evidence` lines, and completion
-records are write-once. When such text names a removed or renumbered ID, report
+Checked task descriptions, including their continuation and nested lines,
+`## Verification Evidence` lines, and completion records are write-once. When such text names a removed or renumbered ID, report
 each occurrence and the work that ID now denotes. Never normalize a completed
 or archived planlet.
 
