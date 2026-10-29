@@ -81,11 +81,15 @@ position and nothing in the prefix depends on it, place it at the earliest
 suffix position that keeps every prerequisite before its consumer (immediately
 after the boundary unless a suffix task it depends on must come first) and
 report the adjusted position (assumption: placing and reporting is
-preferred over stopping). When an unchecked prefix task depends on the new
-work, appending would put a prerequisite after its consumer, so the skill
-refuses that part and reports the conflict. The resolution needs explicit user
-approval to remove the dependent prefix task and recreate it in the suffix
-after its new prerequisite; the skill never does that silently.
+preferred over stopping). When any prefix task, checked or unchecked, depends
+on the new work, appending would put a prerequisite after its consumer, so the
+skill refuses that insertion and reports the conflict. For an unchecked
+consumer, the resolution needs explicit user approval to remove it and
+recreate it in the suffix after its new prerequisite. For a checked consumer,
+the report also states that the completed work is invalidated, and the skill
+makes no change to checked history; the user must explicitly approve a
+resolution, such as adding the prerequisite plus redo work in the suffix or
+unchecking through the CLI. The skill never resolves either case silently.
 
 **Suffix is mutable.** Within the suffix, tasks may be inserted, removed, and
 reordered as the revised plan requires.
@@ -155,7 +159,9 @@ compares copies to canonical sources and the CI drift step catch divergence.
   out-of-order completion, where an unchecked prefix task stays in place, may
   be removed (including the non-monotonic `[x] T1, [ ] T3, [x] T2, [ ] T4`
   removal of `T3` that reuses it), a request to reorder it is refused and
-  reported, and new prerequisite work for it is refused and reported; and a
+  reported, and new prerequisite work for it is refused and reported; new
+  prerequisite work for a checked prefix task, which is refused and reported
+  as invalidating that completed work with checked history unchanged; and a
   `planlet-implement` material scope addition on a partially completed
   planlet.
 - The scenario fixture pins evidence strings from the new guidance and
