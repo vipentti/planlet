@@ -58,8 +58,17 @@ empty.
 **Prefix is immutable for normalization.** Checked tasks keep their ID,
 description, checkbox state, and position. An unchecked task inside the prefix
 (legacy out-of-order completion, for example `[x] T1, [ ] T2, [x] T3`) keeps
-its ID and position; it is never moved across the boundary or renumbered. The
-existing rule still applies that completed work is never silently removed.
+its ID and its order relative to checked tasks; it is never moved across the
+boundary, moved between checked tasks, or renumbered. The existing rule still
+applies that completed work is never silently removed.
+
+**Unchecked prefix tasks.** A revision may remove an unchecked prefix task
+that the revised scope no longer needs; checked tasks keep their IDs and
+relative order, and the removed ID is not reused because the suffix starts
+above the highest prefix ID. A revision that would reorder an unchecked prefix
+task, or move it past a checked task, is refused: the skill makes no edit for
+that part and reports the conflict, suggesting removal plus a new suffix task
+instead. Other unchecked prefix edits follow normal revision rules.
 
 **Insertion boundary.** New tasks go only into the suffix, never before or
 between checked tasks. When a revision asks for new work at an earlier
@@ -75,17 +84,23 @@ in the prefix (`T1` when the prefix is empty). This also normalizes a legacy
 out-of-order suffix the first time such a plan is revised. Removed unfinished
 IDs may be reused; that is the accepted cost of readable numbering.
 
-**Reference updates.** Build the complete old-to-new mapping before editing
-any text, then rewrite every reference in one pass: `plan.md`, and the
-descriptions of unchecked tasks. Match whole IDs only, so `T1` never matches
+**Reference updates.** Mutable text is `plan.md` and the descriptions of
+unchecked tasks. Before renumbering, reconcile every mutable reference to a
+removed task ID: delete or rewrite it so no mutable text still names removed
+work, because normalization may reuse that ID for different work. Then build
+the complete old-to-new mapping before editing any text and rewrite every
+mutable reference in one pass. Match whole IDs only, so `T1` never matches
 inside `T10`, and never apply replacements one after another, which would let
-`T3 -> T4` then `T4 -> T5` corrupt an earlier result. Checked task
-descriptions, any `## Verification Evidence` lines, and any completion record
-are write-once and are not rewritten; if such text names a renumbered ID, flag
-it in the report instead (assumption).
+`T3 -> T4` then `T4 -> T5` corrupt an earlier result.
 
-**Report.** When any ID changed, the planning report lists the old-to-new
-mapping so the user can follow the change.
+Checked task descriptions, any `## Verification Evidence` lines, and any
+completion record are write-once and are not rewritten. When such text names a
+removed or renumbered ID, the report lists each occurrence and states which
+work the ID now denotes, so a reused ID never acquires a new referent silently
+(assumption: report rather than refuse).
+
+**Report.** When any ID changed or was removed, the planning report lists the
+old-to-new mapping and removed IDs so the user can follow the change.
 
 **Completed planlets.** Archived planlets are never normalized. The planning
 skill already refuses to revise a completed archive; that stays.
@@ -119,9 +134,11 @@ compares copies to canonical sources and the CI drift step catch divergence.
   rule, and §19 states the CLI-versus-skill enforcement split.
 - Scenarios cover: insertion, removal, and reordering with no checked task;
   `plan.md` and unchecked-description references including an overlapping pair
-  such as `T1`/`T10`; partial completion with stable prefix IDs and a request
-  to insert between checked tasks; and legacy out-of-order completion keeping
-  the unchecked prefix task in place.
+  such as `T1`/`T10`; removal of a referenced task whose ID is then reused,
+  including a checked description naming it; partial completion with stable
+  prefix IDs and a request to insert between checked tasks; and legacy
+  out-of-order completion, where an unchecked prefix task stays in place, may
+  be removed, and a request to reorder it is refused and reported.
 - The scenario fixture pins evidence strings from the new guidance and
   `npm test` passes.
 - Installed skill copies and manifests match canonical sources.
@@ -143,8 +160,15 @@ Targeted:
 - `tests/skills/skill-contract.test.ts` passes with the new scenario IDs and
   evidence strings.
 
-Skill scenarios are manual agent runs; this plan updates their expectations
-but does not require running them.
+The contract test and wording search are static drift guards only; they do
+not prove agent behavior. Behavior is checked by running the normalization
+scenarios manually with the updated canonical `planlet-plan` skill on a
+disposable fixture outside the repository, inspecting the resulting task order,
+checked prefix, reported mapping, `plan.md` references, and diff against each
+scenario's expectations. That run is not reconstructable from CI or test
+history, so implementation records its outcome as one `## Verification
+Evidence` line in `tasks.md`; if no agent harness is available to run it, that
+line states the check was unavailable instead.
 
 ## Risks and Considerations
 
